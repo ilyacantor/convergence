@@ -1,0 +1,329 @@
+=== POSITIVE INVENTORY: WHO IMPORTS THESE FILES ===
+--- combining_v2 ---
+./backend/api/routes/reports_combining_v2.py:17:from backend.engine.combining_v2 import CombiningEngineV2
+./backend/api/routes/compat.py:19:from backend.engine.combining_v2 import CombiningEngineV2
+./backend/api/main.py:80:from backend.api.routes.reports_combining_v2 import router as reports_combining_v2_router
+./tests/test_3c_combining.py:6:from backend.engine.combining_v2 import CombiningEngineV2
+./tests/test_sweep1_engine_stack.py:14:from backend.engine.combining_v2 import CombiningEngineV2
+--- ebitda_bridge_v2 ---
+./backend/engine/qoe_v2.py:14:from backend.engine.ebitda_bridge_v2 import EBITDABridgeV2
+./backend/engine/qoe_v2.py:298:        from backend.engine.ebitda_bridge_v2 import STAGE_ORDER, _derive_trend
+./backend/api/routes/compat.py:22:from backend.engine.ebitda_bridge_v2 import EBITDABridgeV2
+./backend/api/routes/reports_bridge_v2.py:19:from backend.engine.ebitda_bridge_v2 import EBITDABridgeV2
+./tests/test_3e_ebitda_qoe.py:7:from backend.engine.ebitda_bridge_v2 import EBITDABridgeV2, STAGE_ORDER
+./tests/test_sweep1_engine_stack.py:17:from backend.engine.ebitda_bridge_v2 import EBITDABridgeV2
+--- qoe_v2 ---
+./backend/api/routes/compat.py:23:from backend.engine.qoe_v2 import QualityOfEarningsV2
+./backend/api/routes/reports_bridge_v2.py:20:from backend.engine.qoe_v2 import QualityOfEarningsV2
+./tests/test_3e_ebitda_qoe.py:8:from backend.engine.qoe_v2 import QualityOfEarningsV2
+./tests/test_sweep1_engine_stack.py:18:from backend.engine.qoe_v2 import QualityOfEarningsV2
+--- overlap_v2 ---
+./backend/engine/cross_sell_v2.py:20:from backend.engine.overlap_v2 import OverlapEngineV2
+./backend/engine/upsell_v2.py:20:from backend.engine.overlap_v2 import OverlapEngineV2
+./backend/api/routes/reports_overlap_v2.py:21:from backend.engine.overlap_v2 import OverlapEngineV2
+./backend/api/routes/compat.py:20:from backend.engine.overlap_v2 import OverlapEngineV2
+./backend/api/main.py:81:from backend.api.routes.reports_overlap_v2 import router as reports_overlap_v2_router
+./tests/test_3d_overlap.py:7:from backend.engine.overlap_v2 import OverlapEngineV2
+./tests/test_sweep1_engine_stack.py:15:from backend.engine.overlap_v2 import OverlapEngineV2
+--- cross_sell_v2 ---
+./backend/api/routes/reports_overlap_v2.py:20:from backend.engine.cross_sell_v2 import CrossSellEngineV2
+./backend/api/routes/compat.py:21:from backend.engine.cross_sell_v2 import CrossSellEngineV2
+./tests/test_3d_overlap.py:8:from backend.engine.cross_sell_v2 import CrossSellEngineV2
+./tests/test_sweep1_engine_stack.py:16:from backend.engine.cross_sell_v2 import CrossSellEngineV2
+--- upsell_v2 ---
+./backend/api/routes/reports_overlap_v2.py:22:from backend.engine.upsell_v2 import UpsellEngineV2
+--- entity_resolution_v2 ---
+./backend/api/routes/resolution_v2.py:13:from backend.engine.entity_resolution_v2 import EntityResolutionV2
+./tests/test_3b_entity_resolution.py:7:from backend.engine.entity_resolution_v2 import EntityResolutionV2
+./tests/test_sweep1_engine_stack.py:21:from backend.engine.entity_resolution_v2 import EntityResolutionV2
+--- cofa_mapping_writer ---
+./backend/api/routes/cofa_mapping.py:16:from backend.engine.cofa_mapping_writer import write_cofa_mapping
+--- what_if_v2 ---
+./backend/api/routes/compat.py:24:from backend.engine.what_if_v2 import WhatIfEngineV2
+./backend/api/routes/reports_whatif_v2.py:23:from backend.engine.what_if_v2 import WhatIfEngineV2
+./tests/test_3f_whatif.py:6:from backend.engine.what_if_v2 import WhatIfEngineV2
+./tests/test_sweep1_engine_stack.py:19:from backend.engine.what_if_v2 import WhatIfEngineV2
+--- engagement ---
+./backend/engine/qoe.py:25:from backend.engine.engagement import get_active_engagement
+./backend/engine/cross_sell.py:9:Entity IDs and display names are loaded from the active engagement config.
+./backend/engine/cross_sell.py:34:from backend.engine.engagement import get_active_engagement
+./backend/engine/ebitda_bridge.py:21:from backend.engine.engagement import get_active_engagement
+./backend/engine/engagement.py:8:The active engagement is loaded from data/engagements/demo-001.json.
+./backend/engine/engagement.py:76:    """Parse an entity block from the engagement JSON."""
+./backend/engine/ebitda_bridge_v2.py:15:from backend.engine.engagement import get_active_engagement
+./backend/engine/ebitda_bridge_v2.py:111:        """Get entity IDs from the active engagement config."""
+./backend/engine/dashboards.py:20:from backend.engine.engagement import get_active_engagement
+./backend/engine/upsell_v2.py:9:  - relationship_strength (0-30): satisfaction_score from current engagement
+./backend/engine/upsell_v2.py:181:          relationship_strength (0-30): satisfaction from current engagement
+./backend/engine/entity_resolution.py:23:from backend.engine.engagement import get_active_engagement
+./backend/engine/query_resolver_v2.py:11:from backend.engine.engagement import get_active_engagement
+./backend/engine/query_resolver_v2.py:525:        """Get entity IDs from the active engagement config.
+./backend/engine/what_if.py:15:from backend.engine.engagement import get_active_engagement
+./backend/engine/maestra.py:22:from backend.engine.engagement import get_active_engagement
+./backend/engine/maestra.py:114:    """Build default risk register with entity names from engagement config."""
+./backend/engine/maestra.py:197:    """Create a new integration engagement with default state from engagement config."""
+./backend/engine/overlap_v2.py:11:from backend.engine.engagement import get_active_engagement
+./backend/engine/overlap_v2.py:60:        """Get entity IDs from the active engagement config."""
+./backend/api/routes/reports.py:253:    from backend.engine.maestra import create_engagement
+./backend/api/routes/reports.py:313:    from backend.engine.maestra import get_engagement_status
+./backend/api/routes/v2_helpers.py:9:2. Active engagement from engagement_state table
+./backend/api/routes/v2_helpers.py:31:    """Resolve tenant_id from explicit param or active engagement.
+./backend/api/routes/triple_monitor.py:26:from backend.db.engagement_store import EngagementStore
+./backend/api/routes/triple_monitor.py:30:from backend.engine.engagement import get_active_engagement
+./backend/api/routes/triple_monitor.py:707:    """Current engagement state from the engagement config file.
+./backend/api/routes/merge_overview.py:157:        from backend.engine.engagement import get_active_engagement
+./backend/api/routes/reports_bridge_v2.py:116:    entity_id: str = Query(..., description="Entity ID (e.g. the entity name from the engagement)"),
+./tests/test_s1_dcl.py:26:from backend.db.engagement_store import EngagementStore
+./tests/test_3c_combining.py:56:    # COFA conflicts come from Platform's engagement pipeline, not Farm seed.
+--- engagement_config ---
+--- _engine_cache ---
+./backend/engine/dashboards.py:19:from backend.engine import _engine_cache
+./backend/engine/maestra.py:666:        from backend.engine import _engine_cache
+./backend/engine/maestra.py:670:        from backend.engine import _engine_cache
+./backend/engine/maestra.py:674:        from backend.engine import _engine_cache
+./backend/engine/maestra.py:678:        from backend.engine import _engine_cache
+./backend/engine/maestra.py:682:        from backend.engine import _engine_cache
+./backend/api/routes/reports.py:26:from backend.engine import _engine_cache
+--- dashboards ---
+./backend/engine/maestra.py:934:    from backend.engine.dashboards import compute_dashboard
+--- revenue_bridge ---
+./backend/api/routes/reports_whatif_v2.py:24:from backend.engine.revenue_bridge import RevenueBridgeV2
+./tests/test_3f_whatif.py:7:from backend.engine.revenue_bridge import RevenueBridgeV2
+./tests/test_sweep1_engine_stack.py:20:from backend.engine.revenue_bridge import RevenueBridgeV2
+--- engagement_store ---
+./backend/api/routes/triple_monitor.py:26:from backend.db.engagement_store import EngagementStore
+./tests/test_s1_dcl.py:26:from backend.db.engagement_store import EngagementStore
+--- resolution_store ---
+./backend/api/routes/triple_monitor.py:27:from backend.db.resolution_store import ResolutionStore
+./tests/test_s1_dcl.py:25:from backend.db.resolution_store import ResolutionStore
+--- cofa_mapping ---
+./backend/api/routes/cofa_mapping.py:16:from backend.engine.cofa_mapping_writer import write_cofa_mapping
+./backend/api/main.py:86:from backend.api.routes.cofa_mapping import router as cofa_mapping_router
+--- cofa_validation ---
+./backend/api/routes/cofa_validation.py:14:from backend.engine.cofa_validation import COFACompletionGate
+./backend/api/main.py:85:from backend.api.routes.cofa_validation import router as cofa_validation_router
+./tests/test_cofa_gate.py:13:from backend.engine.cofa_validation import COFACompletionGate
+--- resolution_v2 ---
+./backend/api/routes/resolution_v2.py:13:from backend.engine.entity_resolution_v2 import EntityResolutionV2
+./backend/api/main.py:79:from backend.api.routes.resolution_v2 import router as resolution_v2_router
+./tests/test_3b_entity_resolution.py:7:from backend.engine.entity_resolution_v2 import EntityResolutionV2
+./tests/test_sweep1_engine_stack.py:21:from backend.engine.entity_resolution_v2 import EntityResolutionV2
+--- merge_overview ---
+./backend/api/main.py:87:from backend.api.routes.merge_overview import router as merge_overview_router
+--- merge_conflicts ---
+./backend/api/main.py:88:from backend.api.routes.merge_conflicts import router as merge_conflicts_router
+--- reports_combining_v2 ---
+./backend/api/main.py:80:from backend.api.routes.reports_combining_v2 import router as reports_combining_v2_router
+--- reports_bridge_v2 ---
+./backend/api/main.py:82:from backend.api.routes.reports_bridge_v2 import router as reports_bridge_v2_router
+--- reports_overlap_v2 ---
+./backend/api/main.py:81:from backend.api.routes.reports_overlap_v2 import router as reports_overlap_v2_router
+--- reports_whatif_v2 ---
+./backend/api/main.py:83:from backend.api.routes.reports_whatif_v2 import router as reports_whatif_v2_router
+--- v2_helpers ---
+./backend/api/routes/reports_combining_v2.py:15:from backend.api.routes.v2_helpers import resolve_tenant_and_run
+./backend/api/routes/reports_overlap_v2.py:18:from backend.api.routes.v2_helpers import resolve_tenant_and_run
+./backend/api/routes/compat.py:17:from backend.api.routes.v2_helpers import resolve_tenant_and_run
+./backend/api/routes/reports_whatif_v2.py:21:from backend.api.routes.v2_helpers import resolve_tenant_and_run
+./backend/api/routes/resolution_v2.py:11:from backend.api.routes.v2_helpers import resolve_tenant_and_run
+./backend/api/routes/reports_bridge_v2.py:17:from backend.api.routes.v2_helpers import resolve_tenant_and_run
+--- query_resolver_v2 ---
+./backend/engine/combining_v2.py:17:from backend.engine.query_resolver_v2 import TripleQueryResolver
+./backend/engine/revenue_bridge.py:8:from backend.engine.query_resolver_v2 import TripleQueryResolver
+./backend/engine/what_if_v2.py:15:from backend.engine.query_resolver_v2 import TripleQueryResolver
+./backend/api/routes/reports_combining_v2.py:18:from backend.engine.query_resolver_v2 import TripleQueryResolver
+./backend/api/routes/compat.py:25:from backend.engine.query_resolver_v2 import TripleQueryResolver
+./tests/test_3a_query_resolver.py:7:from backend.engine.query_resolver_v2 import TripleQueryResolver
+./tests/test_sweep1_engine_stack.py:13:from backend.engine.query_resolver_v2 import TripleQueryResolver
+
+=== V1 ENGINE FILES: DEAD OR ALIVE ===
+--- v1: entity_resolution ---
+./backend/engine/conflict_detection.py:112:        from backend.engine.entity_resolution import get_entity_store
+./backend/api/routes/entities.py:18:from backend.engine.entity_resolution import get_entity_store
+./backend/api/routes/maestra.py:34:    from backend.engine.entity_resolution import get_entity_store
+./backend/api/query.py:692:            from backend.engine.entity_resolution import get_entity_store
+--- v1: ebitda_bridge ---
+./backend/engine/qoe.py:596:    from backend.engine.ebitda_bridge import compute_ebitda_bridge
+./backend/engine/_engine_cache.py:101:    from backend.engine.ebitda_bridge import compute_ebitda_bridge
+./backend/engine/what_if.py:392:        from backend.engine.ebitda_bridge import compute_ebitda_bridge
+--- v1: qoe ---
+./backend/engine/_engine_cache.py:107:    from backend.engine.qoe import compute_qoe
+./backend/api/routes/reports.py:324:    from backend.engine.qoe import save_qoe_snapshot
+--- v1: cross_sell ---
+./backend/engine/qoe.py:597:    from backend.engine.cross_sell import run_cross_sell_engine
+./backend/engine/ebitda_bridge.py:337:        from backend.engine.cross_sell import run_cross_sell_engine
+./backend/engine/_engine_cache.py:94:    from backend.engine.cross_sell import run_cross_sell_engine
+--- v1: what_if ---
+./backend/api/routes/reports.py:236:    from backend.engine.what_if import PRESETS, LEVER_DEFINITIONS
+
+=== NEGATIVE INVENTORY: VERIFY THESE HAVE NO ME COUPLING ===
+--- dcl_engine ---
+(no hits)
+--- semantic_graph ---
+(no hits)
+--- ontology ---
+(no hits)
+--- graph_store ---
+(no hits)
+--- maestra ---
+(no hits)
+--- narration_service ---
+(no hits)
+--- rag_service ---
+(no hits)
+--- persona_view ---
+(no hits)
+--- schema_loader ---
+(no hits)
+--- mapping_service ---
+(no hits)
+--- source_normalizer ---
+(no hits)
+
+=== COMPAT.PY CONSUMERS (NLQ / Console / Platform) ===
+/home/ilyac/code/nlq/src/nlq/maestra/tools.py:578:    Each engine maps to a DCL /api/reports/* endpoint.
+/home/ilyac/code/nlq/src/nlq/maestra/tools.py:589:        "cross_sell": ("GET", "/api/reports/cross-sell"),
+/home/ilyac/code/nlq/src/nlq/maestra/tools.py:590:        "ebitda_bridge": ("GET", "/api/reports/ebitda-bridge"),
+/home/ilyac/code/nlq/src/nlq/maestra/tools.py:591:        "qoe": ("GET", "/api/reports/qoe"),
+/home/ilyac/code/nlq/src/nlq/maestra/tools.py:592:        "entity_resolution": ("GET", "/api/reports/entity-overlap"),
+/home/ilyac/code/nlq/src/nlq/maestra/tools.py:593:        "cofa_mapping": ("GET", "/api/reports/entity-overlap"),
+/home/ilyac/code/nlq/src/nlq/maestra/tools.py:594:        "what_if": ("POST", "/api/reports/what-if"),
+/home/ilyac/code/nlq/src/nlq/maestra/routes.py:5:now lives in NLQ. These endpoints are mounted at /api/reports/maestra/*.
+/home/ilyac/code/nlq/src/nlq/maestra/routes.py:8:    POST /api/reports/maestra/engage          — Create engagement
+/home/ilyac/code/nlq/src/nlq/maestra/routes.py:9:    POST /api/reports/maestra/{id}/message     — Send message
+/home/ilyac/code/nlq/src/nlq/maestra/routes.py:10:    GET  /api/reports/maestra/{id}/status      — Get status
+/home/ilyac/code/nlq/src/nlq/maestra/routes.py:11:    GET  /api/reports/maestra/{id}/contour/{e} — Get contour map for entity
+/home/ilyac/code/nlq/src/nlq/maestra/routes.py:12:    GET  /api/reports/maestra/{id}/messages    — Get message history
+/home/ilyac/code/nlq/src/nlq/maestra/routes.py:27:router = APIRouter(prefix="/api/reports/maestra", tags=["Maestra"])
+/home/ilyac/code/nlq/src/nlq/maestra/conversation.py:412:                overlap_resp = client.get(f"{dcl_url}/api/reports/entity-overlap")
+/home/ilyac/code/nlq/src/nlq/maestra/conversation.py:1018:                    resp = client.get(f"{dcl_url}/api/reports/entity-overlap")
+/home/ilyac/code/nlq/src/nlq/main.py:81:# DCL report proxy — forwards /api/reports/* to DCL backend for combining
+/home/ilyac/code/nlq/src/nlq/api/dcl_proxy.py:2:DCL Report Proxy — forwards /api/reports/* requests to DCL backend.
+/home/ilyac/code/nlq/src/nlq/api/dcl_proxy.py:249:@router.get("/api/reports/entity-overlap")
+/home/ilyac/code/nlq/src/nlq/api/dcl_proxy.py:253:    summary = await asyncio.to_thread(_dcl_get, "/api/dcl/reports/v2/overlap/summary")
+/home/ilyac/code/nlq/src/nlq/api/dcl_proxy.py:257:        asyncio.to_thread(_dcl_get, "/api/dcl/reports/v2/overlap/customer"),
+/home/ilyac/code/nlq/src/nlq/api/dcl_proxy.py:258:        asyncio.to_thread(_dcl_get, "/api/dcl/reports/v2/overlap/vendor"),
+/home/ilyac/code/nlq/src/nlq/api/dcl_proxy.py:259:        asyncio.to_thread(_dcl_get, "/api/dcl/reports/v2/overlap/employee"),
+/home/ilyac/code/nlq/src/nlq/api/dcl_proxy.py:305:@router.get("/api/reports/cross-sell")
+/home/ilyac/code/nlq/src/nlq/api/dcl_proxy.py:309:        asyncio.to_thread(_dcl_get, "/api/dcl/reports/v2/cross-sell"),
+/home/ilyac/code/nlq/src/nlq/api/dcl_proxy.py:310:        asyncio.to_thread(_dcl_get, "/api/dcl/reports/v2/cross-sell/summary"),
+/home/ilyac/code/nlq/src/nlq/api/dcl_proxy.py:375:@router.get("/api/reports/upsell")
+/home/ilyac/code/nlq/src/nlq/api/dcl_proxy.py:379:        asyncio.to_thread(_dcl_get, "/api/dcl/reports/v2/upsell"),
+/home/ilyac/code/nlq/src/nlq/api/dcl_proxy.py:380:        asyncio.to_thread(_dcl_get, "/api/dcl/reports/v2/upsell/summary"),
+/home/ilyac/code/nlq/src/nlq/api/dcl_proxy.py:441:@router.get("/api/reports/ebitda-bridge")
+/home/ilyac/code/nlq/src/nlq/api/dcl_proxy.py:451:        fetch_tasks.append(asyncio.to_thread(_dcl_get, "/api/dcl/reports/v2/bridge", {"entity_id": eid}))
+/home/ilyac/code/nlq/src/nlq/api/dcl_proxy.py:452:    fetch_tasks.append(asyncio.to_thread(_dcl_get, "/api/dcl/reports/v2/bridge"))
+/home/ilyac/code/nlq/src/nlq/api/dcl_proxy.py:629:@router.get("/api/reports/qoe")
+/home/ilyac/code/nlq/src/nlq/api/dcl_proxy.py:636:        asyncio.to_thread(_dcl_get, "/api/dcl/reports/v2/qoe/combined"),
+/home/ilyac/code/nlq/src/nlq/api/dcl_proxy.py:637:        asyncio.to_thread(_dcl_get, "/api/dcl/reports/v2/cross-sell"),
+/home/ilyac/code/nlq/src/nlq/api/dcl_proxy.py:638:        asyncio.to_thread(_dcl_get, "/api/dcl/reports/v2/upsell"),
+/home/ilyac/code/nlq/src/nlq/api/dcl_proxy.py:725:@router.get("/api/reports/revenue-by-customer")
+/home/ilyac/code/nlq/src/nlq/api/dcl_proxy.py:859:@router.get("/api/reports/dimensional-detail")
+/home/ilyac/code/nlq/src/nlq/api/dcl_proxy.py:1138:@router.get("/api/reports/combining-is")
+/home/ilyac/code/nlq/src/nlq/api/dcl_proxy.py:1146:        _dcl_get, "/api/reports/combining-is", {"period": period}
+/home/ilyac/code/nlq/src/nlq/api/dcl_proxy.py:1176:@router.post("/api/reports/what-if")
+/home/ilyac/code/nlq/src/nlq/api/dcl_proxy.py:1206:        asyncio.to_thread(_dcl_get, "/api/dcl/reports/v2/bridge"),
+/home/ilyac/code/nlq/src/nlq/api/dcl_proxy.py:1209:            "/api/dcl/reports/v2/combining/income-statement",
+/home/ilyac/code/nlq/src/nlq/api/dcl_proxy.py:1357:@router.get("/api/reports/dashboard/{persona}")
+/home/ilyac/code/nlq/src/nlq/api/dcl_proxy.py:1361:        _dcl_get, f"/api/reports/dashboard/{persona}"
+/home/ilyac/code/nlq/src/nlq/api/dcl_proxy.py:1477:    "income_statement": ("Income Statement", _PL_LINES, "/api/dcl/reports/v2/income-statement", "/api/dcl/reports/v2/combining/income-statement"),
+/home/ilyac/code/nlq/src/nlq/api/dcl_proxy.py:1478:    "balance_sheet": ("Balance Sheet", _BS_LINES, "/api/dcl/reports/v2/balance-sheet", "/api/dcl/reports/v2/combining/balance-sheet"),
+/home/ilyac/code/nlq/src/nlq/api/dcl_proxy.py:1479:    "cash_flow": ("Statement of Cash Flows", _CF_LINES, "/api/dcl/reports/v2/cash-flow", "/api/dcl/reports/v2/combining/cash-flow"),
+/home/ilyac/code/nlq/src/nlq/api/dcl_proxy.py:1638:@router.get("/api/reports/financial-statement")
+/home/ilyac/code/nlq/src/nlq/api/dcl_proxy.py:1812:@router.get("/api/reports/pipeline")
+/home/ilyac/code/nlq/src/nlq/api/dcl_proxy.py:1847:@router.get("/api/reports/{path:path}")
+/home/ilyac/code/nlq/src/nlq/api/dcl_proxy.py:1849:    """Forward GET /api/reports/* to DCL backend."""
+/home/ilyac/code/nlq/src/nlq/api/dcl_proxy.py:1859:    dcl_url = f"{DCL_BASE_URL}/api/reports/{path}"
+/home/ilyac/code/nlq/src/nlq/api/dcl_proxy.py:1904:@router.post("/api/reports/{path:path}")
+/home/ilyac/code/nlq/src/nlq/api/dcl_proxy.py:1906:    """Forward POST /api/reports/* to DCL backend."""
+/home/ilyac/code/nlq/src/nlq/api/dcl_proxy.py:1916:    dcl_url = f"{DCL_BASE_URL}/api/reports/{path}"
+/home/ilyac/code/nlq/src/nlq/services/dcl_semantic_client_v2.py:1153:        """Calls /api/dcl/reports/v2/combining/income-statement."""
+/home/ilyac/code/nlq/src/nlq/services/dcl_semantic_client_v2.py:1157:        return self._get("/api/dcl/reports/v2/combining/income-statement", params=params)
+/home/ilyac/code/nlq/src/nlq/services/dcl_semantic_client_v2.py:1164:        """Calls /api/dcl/reports/v2/combining/balance-sheet."""
+/home/ilyac/code/nlq/src/nlq/services/dcl_semantic_client_v2.py:1168:        return self._get("/api/dcl/reports/v2/combining/balance-sheet", params=params)
+/home/ilyac/code/nlq/src/nlq/services/dcl_semantic_client_v2.py:1175:        """Calls /api/dcl/reports/v2/combining/cash-flow."""
+/home/ilyac/code/nlq/src/nlq/services/dcl_semantic_client_v2.py:1179:        return self._get("/api/dcl/reports/v2/combining/cash-flow", params=params)
+/home/ilyac/code/nlq/src/nlq/services/dcl_semantic_client_v2.py:1186:        """Calls /api/dcl/reports/v2/overlap/summary."""
+/home/ilyac/code/nlq/src/nlq/services/dcl_semantic_client_v2.py:1187:        return self._get("/api/dcl/reports/v2/overlap/summary")
+/home/ilyac/code/nlq/src/nlq/services/dcl_semantic_client_v2.py:1190:        """Calls /api/dcl/reports/v2/cross-sell/summary."""
+/home/ilyac/code/nlq/src/nlq/services/dcl_semantic_client_v2.py:1191:        return self._get("/api/dcl/reports/v2/cross-sell/summary")
+/home/ilyac/code/nlq/src/nlq/services/dcl_semantic_client_v2.py:1194:        """Calls /api/dcl/reports/v2/bridge."""
+/home/ilyac/code/nlq/src/nlq/services/dcl_semantic_client_v2.py:1198:        return self._get("/api/dcl/reports/v2/bridge", params=params)
+/home/ilyac/code/nlq/src/nlq/services/dcl_semantic_client_v2.py:1201:        """Calls /api/dcl/reports/v2/qoe."""
+/home/ilyac/code/nlq/src/nlq/services/dcl_semantic_client_v2.py:1205:        return self._get("/api/dcl/reports/v2/qoe", params=params)
+/home/ilyac/code/nlq/src/nlq/services/dcl_semantic_client_v2.py:1213:        """Calls POST /api/dcl/reports/v2/whatif/scenario."""
+/home/ilyac/code/nlq/src/nlq/services/dcl_semantic_client_v2.py:1214:        return self._post("/api/dcl/reports/v2/whatif/scenario", {
+/home/ilyac/code/nlq/src/components/report-portal/api.ts:125:  const res = await fetch(`/api/reports/financial-statement?${params}`)
+/home/ilyac/code/nlq/src/components/report-portal/api.ts:189:  const res = await fetch(`/api/reports/dimensional-detail?${params}`)
+/home/ilyac/code/nlq/src/components/report-portal/api.ts:225:  const res = await fetch(`/api/reports/combining-is?${params}`)
+/home/ilyac/code/nlq/src/components/report-portal/api.ts:240:  const res = await fetch('/api/reports/entity-overlap')
+/home/ilyac/code/nlq/src/components/report-portal/api.ts:255:  const res = await fetch('/api/reports/cross-sell')
+/home/ilyac/code/nlq/src/components/report-portal/api.ts:266:  const res = await fetch('/api/reports/upsell')
+/home/ilyac/code/nlq/src/components/report-portal/api.ts:277:  const res = await fetch(`/api/reports/revenue-by-customer?entity_id=${encodeURIComponent(entityId)}`)
+/home/ilyac/code/nlq/src/components/report-portal/api.ts:288:  const res = await fetch('/api/reports/ebitda-bridge')
+/home/ilyac/code/nlq/src/components/report-portal/api.ts:303:  const res = await fetch('/api/reports/what-if', {
+/home/ilyac/code/nlq/src/components/report-portal/api.ts:318:  const res = await fetch('/api/reports/qoe')
+/home/ilyac/code/nlq/src/components/report-portal/api.ts:334:  const res = await fetch(`/api/reports/pipeline?${params}`)
+/home/ilyac/code/nlq/src/components/report-portal/api.ts:345:  const res = await fetch(`/api/reports/dashboard/${persona}`)
+/home/ilyac/code/nlq/tests/maestra/test_e2e.py:306:            "/api/reports/maestra/engage",
+/home/ilyac/code/nlq/tests/maestra/test_e2e.py:307:            "/api/reports/maestra/00000000-0000-0000-0000-000000000001/message",
+/home/ilyac/code/nlq/tests/maestra/test_e2e.py:308:            "/api/reports/maestra/00000000-0000-0000-0000-000000000001/status",
+/home/ilyac/code/nlq/tests/harness/nlq_harness.py:45:MAESTRA_ENGAGE_ENDPOINT = "/api/reports/maestra/engage"
+/home/ilyac/code/nlq/tests/harness/nlq_harness.py:46:MAESTRA_MESSAGE_ENDPOINT = "/api/reports/maestra/{engagement_id}/message"
+/home/ilyac/code/nlq/tests/harness/nlq_harness.py:47:MAESTRA_STATUS_ENDPOINT = "/api/reports/maestra/{engagement_id}/status"
+/home/ilyac/code/nlq/tests/harness/nlq_harness.py:924:        url = f"{self.base_url}/api/reports/maestra/{self._pd_engagement_id}/message"
+/home/ilyac/code/nlq/tests/harness/nlq_harness.py:989:                    url = f"{self.base_url}/api/reports/maestra/{self._pd_engagement_id}/status"
+/home/ilyac/code/nlq/tests/harness/nlq_harness.py:1097:        url = f"{self.base_url}/api/reports/maestra/{self._pd_engagement_id}/message"
+/home/ilyac/code/nlq/tests/test_nlq_ground_truth.py:275:        resp = requests.get(f"{NLQ_URL}/api/reports/combining-is", params={"period": "2025-Q1"})
+/home/ilyac/code/nlq/tests/test_nlq_ground_truth.py:284:        resp = requests.get(f"{NLQ_URL}/api/reports/ebitda-bridge")
+/home/ilyac/code/nlq/tests/test_nlq_ground_truth.py:299:        resp = requests.get(f"{NLQ_URL}/api/reports/entity-overlap")
+/home/ilyac/code/nlq/tests/test_nlq_v2_client.py:213:        resp = dcl_client.get("/api/dcl/reports/v2/combining/income-statement", params={
+/home/ilyac/code/nlq/tests/test_nlq_full_surface.py:60:    resp = nlq.get(f"/api/reports/{path}", params=params)
+/home/ilyac/code/nlq/tests/test_nlq_full_surface.py:62:        f"Report GET /api/reports/{path} returned {resp.status_code}: {resp.text[:500]}"
+/home/ilyac/code/console/frontend/src/api/client.ts:240:  return fetchJSON('/api/proxy/dcl/api/dcl/reports/v2/cofa-adjustments')
+/home/ilyac/code/console/frontend/src/api/client.ts:246:  return fetchJSON(`/api/proxy/dcl/api/dcl/reports/v2/combining/income-statement?period=${period}`)
+/home/ilyac/code/console/frontend/src/api/client.ts:250:  return fetchJSON('/api/proxy/dcl/api/dcl/reports/v2/bridge')
+/home/ilyac/code/console/tests/test_proxy.py:48:    resp = client.get("/api/proxy/dcl/api/dcl/reports/v2/bridge?entity_id=meridian")
+
+=== ENGAGEMENT.PY FULL BLAST RADIUS ===
+./backend/engine/qoe.py:25:from backend.engine.engagement import get_active_engagement
+./backend/engine/qoe.py:222:    eng = get_active_engagement()
+./backend/engine/cross_sell.py:34:from backend.engine.engagement import get_active_engagement
+./backend/engine/cross_sell.py:529:    eng = get_active_engagement()
+./backend/engine/ebitda_bridge.py:21:from backend.engine.engagement import get_active_engagement
+./backend/engine/ebitda_bridge.py:327:    engagement = get_active_engagement()
+./backend/engine/engagement.py:86:def get_active_engagement() -> EngagementConfig:
+./backend/engine/ebitda_bridge_v2.py:15:from backend.engine.engagement import get_active_engagement
+./backend/engine/ebitda_bridge_v2.py:112:        eng = get_active_engagement()
+./backend/engine/dashboards.py:20:from backend.engine.engagement import get_active_engagement
+./backend/engine/dashboards.py:535:    eng = get_active_engagement()
+./backend/engine/entity_resolution.py:23:from backend.engine.engagement import get_active_engagement
+./backend/engine/entity_resolution.py:155:        eng = get_active_engagement()
+./backend/engine/query_resolver_v2.py:11:from backend.engine.engagement import get_active_engagement
+./backend/engine/query_resolver_v2.py:531:        eng = get_active_engagement()
+./backend/engine/what_if.py:15:from backend.engine.engagement import get_active_engagement
+./backend/engine/what_if.py:186:    eng = get_active_engagement()
+./backend/engine/what_if.py:274:            "entity": get_active_engagement().entity_a.id,
+./backend/engine/maestra.py:22:from backend.engine.engagement import get_active_engagement
+./backend/engine/maestra.py:201:    eng = get_active_engagement()
+./backend/engine/maestra.py:441:    eng = get_active_engagement()
+./backend/engine/maestra.py:464:    eng = get_active_engagement()
+./backend/engine/maestra.py:560:            f"All workstreams for {get_active_engagement().deal_name}:\n{lines}",
+./backend/engine/maestra.py:587:    eng = get_active_engagement()
+./backend/engine/maestra.py:620:        f"Synergy Tracker — {get_active_engagement().deal_name}\n"
+./backend/engine/maestra.py:648:    text = f"Upcoming Milestones — {get_active_engagement().deal_name}\n{lines}"
+./backend/engine/maestra.py:729:        f"Good morning. Here's the current status of the {get_active_engagement().deal_name} engagement.\n\n"
+./backend/engine/maestra.py:765:    eng = get_active_engagement()
+./backend/engine/maestra.py:820:        eng = get_active_engagement()
+./backend/engine/maestra.py:893:    eng = get_active_engagement()
+./backend/engine/maestra.py:959:    eng = get_active_engagement()
+./backend/engine/overlap_v2.py:11:from backend.engine.engagement import get_active_engagement
+./backend/engine/overlap_v2.py:61:        eng = get_active_engagement()
+./backend/api/routes/v2_helpers.py:38:    active = _get_active_engagement()
+./backend/api/routes/v2_helpers.py:102:def _get_active_engagement() -> dict | None:
+./backend/api/routes/triple_monitor.py:26:from backend.db.engagement_store import EngagementStore
+./backend/api/routes/triple_monitor.py:30:from backend.engine.engagement import get_active_engagement
+./backend/api/routes/triple_monitor.py:713:    eng = get_active_engagement()
+./backend/api/routes/merge_overview.py:157:        from backend.engine.engagement import get_active_engagement
+./backend/api/routes/merge_overview.py:158:        file_eng = get_active_engagement()
+./tests/test_s1_dcl.py:26:from backend.db.engagement_store import EngagementStore

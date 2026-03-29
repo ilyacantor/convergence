@@ -1,0 +1,34 @@
+{
+  "seed_date": "2026-03-26",
+  "run_id": "85611ded-4a14-5760-bdc5-12c8c9419e32",
+  "farm_run_id": "triples_651704fc8002",
+  "tenant_id": "d677a104-ffd1-59b8-9e3d-d8a71915e26a",
+  "entity_a_id": "meridian",
+  "entity_b_id": "cascadia",
+  "total_triples": 33527,
+  "concept_summary": {
+    "customer_service": 14208,
+    "gl": 8229,
+    "customer": 6022,
+    "cofa": 1176,
+    "vendor": 1064,
+    "revenue": 604,
+    "coa": 590,
+    "cash_flow": 336,
+    "ebitda_adjustment": 320,
+    "asset": 208,
+    "cogs": 204,
+    "pnl": 152,
+    "opex": 136,
+    "liability": 130,
+    "equity": 78,
+    "employee": 40,
+    "service": 30
+  },
+  "identity_checks": {
+    "bs_identity": "PASS",
+    "cf_identity": "PASS",
+    "pl_identity": "PASS",
+    "cash_continuity": "PASS"
+  }
+}

@@ -1,0 +1,3736 @@
+# DCL Enterprise Ontology — Single Source of Truth
+# 9 domains, expanding to ~107 concepts
+# Each concept: id, concept_id, name, description, domain, cluster,
+#   example_fields, aliases, expected_type, typical_source_systems, persona_relevance,
+#   recognition_basis, timing_semantics, scope_boundaries, calculation_methodology, comparability_rules
+
+concepts:
+  # ─── Finance ──────────────────────────────────────────────
+  - id: gl_account
+    concept_id: FIN-001
+    name: General Ledger Account
+    description: "Chart of accounts entry for financial tracking"
+    domain: finance
+    cluster: Finance
+    example_fields:
+      - gl_account
+      - account_code
+      - coa_entry
+      - ledger_account
+      - account_number
+      - account_name
+      - account_type
+      - parent_account
+    aliases:
+      - chart_of_accounts
+      - coa
+      - ledger_entry
+      - general_ledger
+    expected_type: string
+    typical_source_systems: [netsuite, sap, quickbooks, xero]
+    persona_relevance:
+      cfo: 1.0
+      coo: 0.4
+    recognition_basis: "Established when account is created in the chart of accounts. Active when transactions post against it."
+    timing_semantics: "Point-in-time reference entity. Account structure changes take effect at the start of a fiscal period."
+    scope_boundaries: "Includes all accounts in the chart of accounts hierarchy. Excludes statistical accounts and memo-only entries. Scoped to a single legal entity or consolidated reporting entity."
+    calculation_methodology: null
+    comparability_rules: "Comparable only within the same chart of accounts structure. Cross-entity comparison requires COA mapping. Different ERP systems may use different account numbering schemes (4-digit vs 6-digit)."
+
+  - id: invoice
+    concept_id: FIN-006
+    name: Invoice
+    description: "Billing document for goods or services"
+    domain: finance
+    cluster: Finance
+    example_fields:
+      - invoice_id
+      - invoice_number
+      - bill_id
+      - statement_id
+      - invoice_date
+      - due_date
+      - invoice_amount
+    aliases:
+      - bill
+      - billing_record
+      - statement
+      - inv
+    expected_type: string
+    typical_source_systems: [netsuite, stripe, bill_com, quickbooks]
+    persona_relevance:
+      cfo: 0.9
+      coo: 0.4
+    recognition_basis: "Created upon billing event — issuance of a demand for payment for goods delivered or services rendered."
+    timing_semantics: "Point-in-time event. Invoice date determines the billing period. Due date determines the collection timeline."
+    scope_boundaries: "Includes customer-facing invoices, credit memos, and debit memos. Excludes pro-forma invoices and internal chargebacks unless explicitly included."
+    calculation_methodology: null
+    comparability_rules: "Invoice amounts are comparable only when currency and tax treatment match. Gross vs net invoice amounts must be distinguished. Multi-currency invoices require FX rate alignment."
+
+  - id: revenue
+    concept_id: FIN-010
+    name: Revenue
+    description: "GAAP-recognized revenue from the sale of goods and delivery of services"
+    domain: finance
+    cluster: Finance
+    example_fields:
+      - amount
+      - revenue
+      - total
+      - value
+      - price
+      - mrr
+      - arr
+      - recognized_rev
+      - sales_revenue
+    aliases:
+      - income
+      - sales
+      - billing
+      - earnings
+      - rev
+      - recognized_revenue
+    expected_type: float
+    typical_source_systems: [netsuite, salesforce, zuora, stripe]
+    persona_relevance:
+      cfo: 1.0
+      cro: 0.9
+      coo: 0.5
+    recognition_basis: "GAAP-recognized at point of delivery or ratably over service period. Triggered by contractual performance obligation satisfaction under ASC 606."
+    timing_semantics: "Period-based, recognized in the period when performance obligations are satisfied. Revenue from multi-year contracts is allocated across delivery periods."
+    scope_boundaries: "Net of returns, allowances, and estimated credit losses. Excludes pass-through reimbursable expenses and intercompany transactions. Includes subscription, professional services, and usage-based revenue."
+    calculation_methodology: "Sum of all GL accounts in the 4xxx revenue range for the reporting entity. Subscription revenue recognized ratably; services revenue recognized on delivery milestones; usage revenue recognized on consumption."
+    comparability_rules: "Comparable only when recognition basis matches (both GAAP or both booked-at-close). CRM pipeline value is NOT comparable to ERP recognized revenue. Different fiscal year-ends require period alignment before comparison."
+
+  - id: cost
+    concept_id: FIN-011
+    name: Expense
+    description: "Cost incurred in business operations"
+    domain: finance
+    cluster: Finance
+    example_fields:
+      - cost
+      - spend
+      - expense
+      - price
+      - budget
+      - expenditure
+      - opex
+      - blended_cost
+      - unblended_cost
+    aliases:
+      - expense
+      - spending
+      - expenditure
+      - opex
+    expected_type: float
+    typical_source_systems: [expensify, concur, brex, ramp, netsuite]
+    persona_relevance:
+      cfo: 1.0
+      coo: 0.7
+      cto: 0.6
+    recognition_basis: "Recognized when the economic benefit is consumed or the obligation is incurred, per GAAP matching principle."
+    timing_semantics: "Period-based, matched to the period in which the related revenue is recognized or the cost is incurred."
+    scope_boundaries: "Includes operating expenses (OpEx), cost of goods sold (COGS), and SG&A. Excludes capital expenditures (CapEx) and depreciation/amortization unless specified. Scoped to a single legal entity."
+    calculation_methodology: "Sum of all GL accounts in the expense ranges (5xxx-9xxx) for the reporting entity, excluding contra-revenue and below-the-line items."
+    comparability_rules: "Comparable only when expense classification matches (e.g., both COGS or both OpEx). Capitalized vs expensed treatment must be aligned. Intercompany cost allocations distort cross-entity comparison."
+
+  - id: currency
+    concept_id: FIN-015
+    name: Currency
+    description: "Monetary denomination for transactions"
+    domain: finance
+    cluster: Finance
+    example_fields:
+      - currency
+      - currency_code
+      - ccy
+      - fx
+      - exchange_currency
+    aliases:
+      - fx
+      - exchange_rate
+      - monetary_unit
+    expected_type: string
+    typical_source_systems: [any_multi_currency_system, netsuite, sap]
+    persona_relevance:
+      cfo: 0.7
+    recognition_basis: "System-assigned at transaction entry based on the originating entity's functional currency or the transaction currency."
+    timing_semantics: "Point-in-time attribute. Exchange rate applied at transaction date or period-end rate for balance sheet items."
+    scope_boundaries: "Includes ISO 4217 currency codes. Covers functional currency, transaction currency, and reporting currency distinctions."
+    calculation_methodology: null
+    comparability_rules: "All monetary comparisons require currency normalization. Must specify whether spot rate, average rate, or period-end rate is used for conversion. Functional currency differences between entities invalidate direct comparison."
+
+  - id: journal_entry
+    concept_id: FIN-002
+    name: Journal Entry
+    description: "Double-entry accounting transaction record"
+    domain: finance
+    cluster: Finance
+    example_fields:
+      - entry_id
+      - debit_amount
+      - credit_amount
+      - posting_date
+      - memo
+      - journal_line
+    aliases:
+      - je
+      - journal_line
+      - accounting_entry
+      - gl_transaction
+    expected_type: string
+    typical_source_systems: [netsuite, sap, oracle_erp]
+    persona_relevance:
+      cfo: 0.9
+    recognition_basis: "Created when a financial transaction is recorded in the general ledger. Triggered by posting of debits and credits."
+    timing_semantics: "Point-in-time event. Posting date determines the fiscal period. Effective date may differ from entry date for accruals and adjustments."
+    scope_boundaries: "Includes standard journal entries, adjusting entries, closing entries, and reversing entries. Excludes recurring template entries until posted."
+    calculation_methodology: null
+    comparability_rules: "Comparable only within the same general ledger. Cross-system journal entries require account mapping. Auto-generated vs manual entries should be distinguished."
+
+  - id: cost_center
+    concept_id: FIN-003
+    name: Cost Center
+    description: "Organizational unit for cost allocation"
+    domain: finance
+    cluster: Finance
+    example_fields:
+      - cost_center
+      - center_id
+      - center_name
+      - manager
+      - budget_amount
+      - department_code
+    aliases:
+      - cc
+      - department_code
+      - profit_center
+    expected_type: string
+    typical_source_systems: [sap, workday, oracle]
+    persona_relevance:
+      cfo: 0.9
+      coo: 0.6
+    recognition_basis: "Established as part of organizational design. Active when expenses are allocated or posted against it."
+    timing_semantics: "Point-in-time reference entity. Cost center hierarchy changes take effect at reorganization events."
+    scope_boundaries: "Includes all organizational units designated for cost tracking. May overlap with departments but is not synonymous. Excludes profit centers and investment centers unless explicitly mapped."
+    calculation_methodology: null
+    comparability_rules: "Comparable only within the same organizational hierarchy. Cross-entity cost center comparison requires mapping tables. Different granularity levels (L1 vs L3) are not directly comparable."
+
+  - id: budget
+    concept_id: FIN-004
+    name: Budget
+    description: "Planned financial allocation for a period"
+    domain: finance
+    cluster: Finance
+    example_fields:
+      - budget_id
+      - budget
+      - period
+      - amount
+      - category
+      - budget_line
+      - planned_spend
+    aliases:
+      - budget_line
+      - planned_spend
+      - fiscal_plan
+    expected_type: float
+    typical_source_systems: [adaptive_insights, anaplan, vena]
+    persona_relevance:
+      cfo: 1.0
+      coo: 0.5
+    recognition_basis: "Established during annual or quarterly planning cycles. Approved by finance leadership before activation."
+    timing_semantics: "Period-based, scoped to a fiscal period (month, quarter, or year). Budget vs actual comparison requires matching periods."
+    scope_boundaries: "Includes approved operating budget allocations. Excludes capital budgets and contingency reserves unless explicitly included. Scoped to a cost center, department, or project."
+    calculation_methodology: "Sum of approved budget line items for the specified organizational unit and fiscal period. May be top-down allocated or bottom-up aggregated."
+    comparability_rules: "Comparable only when budget methodology matches (top-down vs bottom-up). Original budget vs revised budget vs forecast must be distinguished. Cross-year comparison requires inflation and headcount normalization."
+
+  - id: forecast
+    concept_id: FIN-005
+    name: Forecast
+    description: "Projected financial outcome"
+    domain: finance
+    cluster: Finance
+    example_fields:
+      - forecast_id
+      - forecast
+      - projection
+      - outlook
+      - estimated_revenue
+      - confidence
+    aliases:
+      - projection
+      - outlook
+      - estimated_revenue
+    expected_type: float
+    typical_source_systems: [clari, anaplan, pigment]
+    persona_relevance:
+      cfo: 0.9
+      cro: 0.7
+    recognition_basis: "Generated from financial models using historical data, pipeline assumptions, and management judgment."
+    timing_semantics: "Forward-looking, projected for future periods. Forecast vintage (when it was created) affects comparability."
+    scope_boundaries: "Includes revenue forecast, expense forecast, and cash flow projections. Excludes scenario analysis and stress tests unless explicitly included."
+    calculation_methodology: "Model-dependent: may use weighted pipeline, historical trend extrapolation, or bottoms-up build. Methodology must be documented for each forecast vintage."
+    comparability_rules: "Comparable only when forecast methodology and vintage match. Pipeline-based forecast is NOT comparable to trend-based forecast. Different confidence levels (commit vs best-case vs upside) must be distinguished."
+
+  - id: payment
+    concept_id: FIN-007
+    name: Payment
+    description: "Financial transaction settling an obligation"
+    domain: finance
+    cluster: Finance
+    example_fields:
+      - payment_id
+      - payment_amount
+      - payment_date
+      - payment_method
+      - remittance
+      - disbursement
+      - settlement
+    aliases:
+      - remittance
+      - pmt
+      - disbursement
+      - settlement
+    expected_type: string
+    typical_source_systems: [stripe, paypal, bill_com, banks]
+    persona_relevance:
+      cfo: 0.8
+    recognition_basis: "Recorded when funds are transferred or received. Settlement date determines the payment event."
+    timing_semantics: "Point-in-time event. Payment date may differ from invoice date and revenue recognition date."
+    scope_boundaries: "Includes all cash disbursements and receipts — ACH, wire, check, credit card. Excludes non-cash settlements and barter transactions."
+    calculation_methodology: null
+    comparability_rules: "Comparable only when payment method and currency match. Gross payment vs net-of-fees payment must be distinguished. Payment timing differences (net-30 vs net-60) affect cash flow comparison."
+
+  - id: payment_status
+    concept_id: FIN-PS1
+    name: Payment Status
+    description: "Payment or transaction status"
+    domain: finance
+    cluster: Finance
+    example_fields:
+      - payment_status
+      - status
+      - payment_state
+      - transaction_status
+    aliases:
+      - transaction_status
+      - billing_status
+    expected_type: string
+    typical_source_systems: [stripe, netsuite, bill_com]
+    persona_relevance:
+      cfo: 0.6
+    recognition_basis: "System-assigned based on payment lifecycle events — created, pending, completed, failed, refunded."
+    timing_semantics: "Point-in-time state. Status transitions are event-driven and timestamped."
+    scope_boundaries: "Covers the full payment lifecycle from initiation to settlement or failure. Includes partial payments and payment plans."
+    calculation_methodology: null
+    comparability_rules: "Comparable only when status taxonomy matches across systems. Different payment processors may use different status labels for equivalent states (e.g., 'settled' vs 'completed')."
+
+  - id: accounts_receivable
+    concept_id: FIN-008
+    name: Accounts Receivable
+    description: "Money owed to the organization"
+    domain: finance
+    cluster: Finance
+    example_fields:
+      - ar_id
+      - receivable
+      - outstanding_balance
+      - amt_due
+      - aging_bucket
+      - ar
+      - amount_due
+      - days_outstanding
+      - amount_paid
+    aliases:
+      - ar
+      - receivable
+      - outstanding_balance
+      - amt_due
+    expected_type: float
+    typical_source_systems: [netsuite, sap, quickbooks]
+    persona_relevance:
+      cfo: 0.9
+    recognition_basis: "Created when an invoice is issued. Reduced when payment is received or write-off is posted."
+    timing_semantics: "Point-in-time balance. AR aging is measured from invoice date. Period-end snapshots are used for reporting."
+    scope_boundaries: "Includes trade receivables from customer invoices. Excludes employee receivables, intercompany receivables, and non-trade receivables unless specified."
+    calculation_methodology: "Sum of outstanding invoice balances less payments received, credit memos, and allowance for doubtful accounts. Aging buckets: current, 30-day, 60-day, 90-day, 120+ day."
+    comparability_rules: "Comparable only at matching period-end dates. Gross AR vs net AR (after allowances) must be distinguished. Different aging bucket definitions invalidate direct comparison."
+
+  - id: accounts_payable
+    concept_id: FIN-009
+    name: Accounts Payable
+    description: "Money owed by the organization"
+    domain: finance
+    cluster: Finance
+    example_fields:
+      - ap_id
+      - payable
+      - vendor_balance
+      - amt_owed
+      - payment_terms
+      - ap
+    aliases:
+      - ap
+      - payable
+      - vendor_balance
+      - amt_owed
+    expected_type: float
+    typical_source_systems: [netsuite, sap, coupa]
+    persona_relevance:
+      cfo: 0.9
+      coo: 0.4
+    recognition_basis: "Created when a vendor invoice or purchase obligation is recorded. Reduced when payment is disbursed."
+    timing_semantics: "Point-in-time balance. AP aging is measured from invoice receipt date. Period-end snapshots are used for reporting."
+    scope_boundaries: "Includes trade payables to vendors and suppliers. Excludes accrued liabilities, intercompany payables, and non-trade payables unless specified."
+    calculation_methodology: "Sum of outstanding vendor invoice balances less payments made and early payment discounts taken. Aging buckets: current, 30-day, 60-day, 90-day, 120+ day."
+    comparability_rules: "Comparable only at matching period-end dates. Must distinguish between AP balance and accrued expenses. Different payment terms across vendors affect aging comparison."
+
+  - id: financial_period
+    concept_id: FIN-012
+    name: Financial Period
+    description: "Fiscal time boundary for reporting"
+    domain: finance
+    cluster: Finance
+    example_fields:
+      - fiscal_period
+      - quarter
+      - fy
+      - reporting_period
+      - period_id
+      - start_date
+      - end_date
+    aliases:
+      - fiscal_period
+      - quarter
+      - reporting_period
+      - fy
+    expected_type: string
+    typical_source_systems: [netsuite, sap, any_erp]
+    persona_relevance:
+      cfo: 0.8
+    recognition_basis: "Defined by the organization's fiscal calendar. Periods are established during annual calendar setup."
+    timing_semantics: "Defines the temporal boundary for financial reporting. Period open/close status controls transaction posting."
+    scope_boundaries: "Includes fiscal months, quarters, and years. May include adjustment periods (period 13) for year-end entries. Calendar year vs fiscal year distinction is critical."
+    calculation_methodology: null
+    comparability_rules: "Comparable only when fiscal calendar alignment is confirmed. January fiscal year-end vs June fiscal year-end makes Q1 refer to different calendar months. 4-4-5 vs calendar month periods are not directly comparable."
+
+  - id: tax
+    concept_id: FIN-013
+    name: Tax
+    description: "Tax obligation or credit"
+    domain: finance
+    cluster: Finance
+    example_fields:
+      - tax_id
+      - tax
+      - tax_line
+      - vat
+      - sales_tax
+      - withholding
+      - rate
+      - jurisdiction
+    aliases:
+      - vat
+      - sales_tax
+      - withholding
+      - tax_line
+    expected_type: float
+    typical_source_systems: [avalara, vertex, netsuite]
+    persona_relevance:
+      cfo: 0.8
+    recognition_basis: "Calculated at transaction time based on jurisdiction, product taxability, and customer exemptions."
+    timing_semantics: "Point-in-time calculation at transaction date. Tax liability accrues in the period of the transaction."
+    scope_boundaries: "Includes sales tax, use tax, VAT, GST, and withholding tax. Excludes income tax and property tax unless specified."
+    calculation_methodology: "Tax amount = taxable base x applicable tax rate for the jurisdiction. Multi-jurisdiction transactions require nexus determination."
+    comparability_rules: "Comparable only within the same tax jurisdiction and tax type. Gross-of-tax vs net-of-tax amounts must be distinguished. Tax-inclusive vs tax-exclusive pricing affects base amount comparison."
+
+  - id: fixed_asset
+    concept_id: FIN-014
+    name: Fixed Asset
+    description: "Capitalized long-term business asset"
+    domain: finance
+    cluster: Finance
+    example_fields:
+      - asset_id
+      - fixed_asset
+      - cost
+      - depreciation_method
+      - useful_life
+      - nbv
+      - capital_asset
+    aliases:
+      - fa
+      - capital_asset
+      - property
+      - fixed_asset
+    expected_type: string
+    typical_source_systems: [sap, oracle, netsuite]
+    persona_relevance:
+      cfo: 0.7
+    recognition_basis: "Capitalized when the asset is placed in service and meets the capitalization threshold. Subject to depreciation over useful life."
+    timing_semantics: "Point-in-time balance. Depreciation is period-based. Asset life events (acquisition, impairment, disposal) are timestamped."
+    scope_boundaries: "Includes tangible assets (PP&E) meeting capitalization thresholds. Excludes operating leases (unless ASC 842 right-of-use), intangible assets, and expense items below threshold."
+    calculation_methodology: null
+    comparability_rules: "Comparable only when depreciation method (straight-line vs accelerating) and useful life assumptions match. Different capitalization thresholds across entities affect asset counts. Net book value vs gross cost must be distinguished."
+
+  # ─── Sales & Revenue ─────────────────────────────────────
+  - id: account
+    concept_id: SAL-001
+    name: Account
+    description: "Business entity or customer organization"
+    domain: sales
+    cluster: Growth
+    example_fields:
+      - account_id
+      - account_name
+      - company
+      - customer_id
+      - customer
+      - client_id
+    aliases:
+      - customer
+      - client
+      - organization
+      - org
+      - company
+    expected_type: string
+    typical_source_systems: [salesforce, hubspot, dynamics]
+    persona_relevance:
+      cro: 1.0
+      cfo: 0.6
+      coo: 0.5
+    recognition_basis: "Created when a business relationship is established. CRM account creation triggers initial record; ERP account creation follows upon first financial transaction."
+    timing_semantics: "Point-in-time entity. Account status (active, inactive, churned) changes are event-driven."
+    scope_boundaries: "Includes customer accounts, prospect accounts, and partner accounts. Excludes individual contacts (those are separate entities). Parent-child account hierarchies must be resolved before aggregation."
+    calculation_methodology: null
+    comparability_rules: "Comparable only when account definition matches across systems. CRM accounts (any relationship) vs ERP accounts (billing entities) represent different populations. Duplicate accounts inflate counts if not deduplicated."
+
+  - id: opportunity
+    concept_id: SAL-002
+    name: Opportunity
+    description: "Potential revenue deal in pipeline"
+    domain: sales
+    cluster: Growth
+    example_fields:
+      - opportunity_id
+      - deal_id
+      - opportunity_name
+      - pipeline_id
+      - opp_id
+      - close_date
+      - probability
+    aliases:
+      - deal
+      - pipeline
+      - sales_opp
+      - opp
+      - prospect_deal
+    expected_type: string
+    typical_source_systems: [salesforce, hubspot, pipedrive]
+    persona_relevance:
+      cro: 1.0
+      cfo: 0.5
+    recognition_basis: "Created when a qualified sales prospect is identified. Lifecycle tracked through pipeline stages to close (won or lost)."
+    timing_semantics: "Point-in-time entity with stage transitions. Close date is the expected or actual deal completion date."
+    scope_boundaries: "Includes all active and historical sales opportunities. Excludes renewals handled as separate renewal objects. Scoped to a single sales team or territory unless rolled up."
+    calculation_methodology: null
+    comparability_rules: "Pipeline value is NOT comparable to recognized revenue. Weighted pipeline (amount x probability) vs unweighted pipeline must be distinguished. Different stage definitions across CRM instances invalidate direct comparison."
+
+  - id: subscription
+    concept_id: SAL-007
+    name: Subscription
+    description: "Recurring revenue arrangement"
+    domain: sales
+    cluster: Growth
+    example_fields:
+      - subscription_id
+      - plan_id
+      - plan_name
+      - subscription_status
+      - mrr
+      - billing_period
+      - renewal_date
+    aliases:
+      - plan
+      - recurring_billing
+      - membership
+      - sub
+      - recurring_plan
+      - license
+    expected_type: string
+    typical_source_systems: [zuora, chargebee, stripe]
+    persona_relevance:
+      cfo: 0.9
+      cro: 0.8
+    recognition_basis: "Created when a recurring billing arrangement is activated. Status tracked through active, paused, cancelled, and expired states."
+    timing_semantics: "Period-based entity with defined start and end dates. Billing period (monthly, annual) determines revenue recognition cadence."
+    scope_boundaries: "Includes SaaS subscriptions, recurring service agreements, and usage-based plans with minimum commitments. Excludes one-time purchases and professional services."
+    calculation_methodology: null
+    comparability_rules: "MRR vs ARR must use matching conversion (ARR = MRR x 12 only for monthly plans). Subscription value from billing system vs CRM may differ due to discounts, credits, or mid-term changes."
+
+  - id: pipeline_stage
+    concept_id: SAL-003
+    name: Pipeline Stage
+    description: "Phase in the sales process"
+    domain: sales
+    cluster: Growth
+    example_fields:
+      - stage
+      - deal_stage
+      - sales_stage
+      - opp_stage
+      - stage_id
+      - stage_name
+      - probability
+      - duration_avg
+    aliases:
+      - deal_stage
+      - sales_stage
+      - opp_stage
+    expected_type: string
+    typical_source_systems: [salesforce, hubspot]
+    persona_relevance:
+      cro: 0.9
+    recognition_basis: "Defined during CRM configuration. Stage assignment is event-driven based on sales process milestones."
+    timing_semantics: "Point-in-time state. Stage duration is measured from entry to exit. Historical stage progression is tracked for velocity analysis."
+    scope_boundaries: "Covers the full sales cycle from qualification to close. Stage definitions vary by sales process (enterprise vs SMB). Excludes post-close stages (implementation, renewal)."
+    calculation_methodology: null
+    comparability_rules: "Comparable only when stage definitions and exit criteria match. Different CRM instances may have different stage counts and definitions. Win probability percentages assigned to stages vary by organization."
+
+  - id: quote
+    concept_id: SAL-004
+    name: Quote
+    description: "Formal pricing proposal"
+    domain: sales
+    cluster: Growth
+    example_fields:
+      - quote_id
+      - quote
+      - proposal
+      - estimate
+      - quotation
+      - discount
+      - expiry_date
+    aliases:
+      - proposal
+      - estimate
+      - quotation
+      - cpq_quote
+    expected_type: string
+    typical_source_systems: [salesforce_cpq, dealhub, pandadoc]
+    persona_relevance:
+      cro: 0.8
+      cfo: 0.4
+    recognition_basis: "Created when a formal pricing proposal is generated for a prospect or customer."
+    timing_semantics: "Point-in-time document with expiration date. Quote-to-close cycle time is measured for sales efficiency."
+    scope_boundaries: "Includes binding and non-binding quotes, proposals, and estimates. Excludes informal verbal pricing and list prices."
+    calculation_methodology: null
+    comparability_rules: "Quote amount is NOT comparable to final contract value — discounts, negotiation, and scope changes occur between quote and close. List price vs net price must be distinguished."
+
+  - id: contract
+    concept_id: SAL-005
+    name: Contract
+    description: "Binding agreement with a customer"
+    domain: sales
+    cluster: Growth
+    example_fields:
+      - contract_id
+      - contract
+      - agreement
+      - msa
+      - order_form
+      - sow
+      - start_date
+      - end_date
+    aliases:
+      - agreement
+      - msa
+      - order_form
+      - sow
+    expected_type: string
+    typical_source_systems: [salesforce, ironclad, docusign_clm]
+    persona_relevance:
+      cro: 0.8
+      cfo: 0.6
+    recognition_basis: "Executed when both parties sign the agreement. Effective date may differ from signature date."
+    timing_semantics: "Period-based entity with defined start and end dates. Contract terms govern revenue recognition and obligation periods."
+    scope_boundaries: "Includes MSAs, order forms, SOWs, and amendments. Excludes verbal agreements and purchase orders unless they constitute binding contracts."
+    calculation_methodology: null
+    comparability_rules: "Total contract value (TCV) vs annual contract value (ACV) must be distinguished. Multi-year contracts require annualization for period comparison. Contract value from legal vs CRM may differ due to amendments."
+
+  - id: order
+    concept_id: SAL-006
+    name: Order
+    description: "Confirmed purchase request"
+    domain: sales
+    cluster: Growth
+    example_fields:
+      - order_id
+      - sales_order
+      - so
+      - purchase
+      - order_amount
+      - line_items
+    aliases:
+      - sales_order
+      - so
+      - purchase
+    expected_type: string
+    typical_source_systems: [salesforce, shopify, netsuite]
+    persona_relevance:
+      cro: 0.7
+      cfo: 0.5
+    recognition_basis: "Created when a customer confirms a purchase. Order acceptance triggers fulfillment workflow."
+    timing_semantics: "Point-in-time event. Order date determines the booking period. Fulfillment date may differ from order date."
+    scope_boundaries: "Includes sales orders and purchase confirmations. Excludes quotes, proposals, and cart abandonments. Partial orders and backorders are tracked separately."
+    calculation_methodology: null
+    comparability_rules: "Order value (bookings) is NOT comparable to recognized revenue. Gross orders vs net orders (after cancellations and returns) must be distinguished."
+
+  - id: renewal
+    concept_id: SAL-008
+    name: Renewal
+    description: "Subscription or contract renewal event"
+    domain: sales
+    cluster: Growth
+    example_fields:
+      - renewal_id
+      - renewal
+      - renewal_opp
+      - contract_renewal
+      - due_date
+      - likelihood
+    aliases:
+      - renewal_opp
+      - contract_renewal
+    expected_type: string
+    typical_source_systems: [salesforce, gainsight, zuora]
+    persona_relevance:
+      cro: 0.9
+      cfo: 0.6
+    recognition_basis: "Triggered when an existing subscription or contract approaches its expiration date. Tracked as a distinct sales event."
+    timing_semantics: "Event-based, tied to the original contract end date. Early renewals and auto-renewals follow different timelines."
+    scope_boundaries: "Includes subscription renewals, contract extensions, and upsell/cross-sell tied to renewal events. Excludes new business and expansion that is not renewal-linked."
+    calculation_methodology: null
+    comparability_rules: "Renewal rate calculation must specify whether it is logo-based (count) or dollar-based (ARR). Gross renewal rate vs net renewal rate (including expansion) are different metrics. Auto-renewals vs negotiated renewals should be distinguished."
+
+  - id: territory
+    concept_id: SAL-009
+    name: Territory
+    description: "Sales geographic or account grouping"
+    domain: sales
+    cluster: Growth
+    example_fields:
+      - territory_id
+      - territory
+      - region
+      - sales_region
+      - geo
+      - rep
+      - quota
+      - account_count
+    aliases:
+      - region
+      - sales_region
+      - geo
+    expected_type: string
+    typical_source_systems: [salesforce, anaplan]
+    persona_relevance:
+      cro: 0.8
+    recognition_basis: "Defined during sales planning. Assignment is based on geographic, industry, or account-based segmentation."
+    timing_semantics: "Point-in-time reference. Territory realignments occur during planning cycles and affect historical comparisons."
+    scope_boundaries: "Includes geographic territories, named account territories, and vertical/industry territories. Excludes overlay and specialist roles unless explicitly mapped."
+    calculation_methodology: null
+    comparability_rules: "Comparable only within the same territory model version. Territory realignments invalidate year-over-year comparison without re-mapping. Named account moves between territories affect both source and target metrics."
+
+  - id: quota
+    concept_id: SAL-010
+    name: Quota
+    description: "Sales target for a rep or team"
+    domain: sales
+    cluster: Growth
+    example_fields:
+      - quota_id
+      - quota
+      - target
+      - sales_goal
+      - attainment_target
+      - attainment_pct
+    aliases:
+      - target
+      - sales_goal
+      - attainment_target
+    expected_type: float
+    typical_source_systems: [salesforce, clari, xactly]
+    persona_relevance:
+      cro: 1.0
+      cfo: 0.5
+    recognition_basis: "Set during annual or quarterly sales planning. Approved by sales leadership and assigned to individual reps or teams."
+    timing_semantics: "Period-based target, scoped to a fiscal quarter or year. Quota changes mid-period require pro-ration."
+    scope_boundaries: "Includes individual rep quotas and team/territory roll-ups. Excludes stretch goals and management reserves unless specified."
+    calculation_methodology: "Sum of individual quota assignments for the specified territory, team, or organization. Attainment = actual bookings / quota target."
+    comparability_rules: "Comparable only when quota-setting methodology matches. Ramp quotas for new hires vs full quotas must be distinguished. Different quota types (bookings vs ARR vs revenue) are not directly comparable."
+
+  - id: commission
+    concept_id: SAL-011
+    name: Commission
+    description: "Variable compensation for sales"
+    domain: sales
+    cluster: Growth
+    example_fields:
+      - commission_id
+      - commission
+      - spiff
+      - variable_comp
+      - incentive
+      - payout_date
+    aliases:
+      - spiff
+      - variable_comp
+      - incentive
+    expected_type: float
+    typical_source_systems: [xactly, captivateiq, spiff]
+    persona_relevance:
+      cro: 0.8
+      cfo: 0.6
+      chro: 0.4
+    recognition_basis: "Earned when the triggering sales event occurs (booking, payment, or revenue recognition depending on plan). Payable per commission plan terms."
+    timing_semantics: "Event-triggered with payment on a defined schedule (monthly, quarterly). Clawback provisions may reverse previously earned commissions."
+    scope_boundaries: "Includes base commissions, accelerators, SPIFs, and bonuses tied to sales performance. Excludes salary, equity, and non-sales bonuses."
+    calculation_methodology: "Commission amount = eligible booking amount x commission rate x attainment multiplier. Rate and multiplier vary by plan tier and quota attainment level."
+    comparability_rules: "Comparable only when commission plan structure matches. Earned vs paid commissions represent different timing. ASC 606 commission capitalization (amortized) vs cash basis must be distinguished."
+
+  - id: contact
+    concept_id: SAL-012
+    name: Contact
+    description: "Individual person at a customer account"
+    domain: sales
+    cluster: Growth
+    example_fields:
+      - contact_id
+      - contact
+      - stakeholder
+      - buyer
+      - champion
+      - name
+      - title
+      - email
+    aliases:
+      - stakeholder
+      - buyer
+      - champion
+    expected_type: string
+    typical_source_systems: [salesforce, hubspot, outreach]
+    persona_relevance:
+      cro: 0.7
+    recognition_basis: "Created when an individual is identified at a customer or prospect account. May be sourced from CRM entry, marketing capture, or data enrichment."
+    timing_semantics: "Point-in-time entity. Contact role and engagement level change over time."
+    scope_boundaries: "Includes business contacts at customer and prospect organizations. Excludes internal employees and personal contacts."
+    calculation_methodology: null
+    comparability_rules: "Contact counts across systems are not directly comparable due to deduplication differences. CRM contacts vs marketing contacts vs support contacts may represent overlapping but distinct populations."
+
+  - id: sales_activity
+    concept_id: SAL-013
+    name: Activity
+    description: "Sales interaction or touchpoint"
+    domain: sales
+    cluster: Growth
+    example_fields:
+      - activity_id
+      - activity
+      - task
+      - call
+      - meeting
+      - email_touch
+      - outcome
+    aliases:
+      - task
+      - call
+      - meeting
+      - email_touch
+    expected_type: string
+    typical_source_systems: [salesforce, outreach, gong]
+    persona_relevance:
+      cro: 0.6
+    recognition_basis: "Logged when a sales interaction occurs — call, email, meeting, or demo. May be auto-captured or manually entered."
+    timing_semantics: "Point-in-time event with timestamp. Activity frequency is measured over rolling periods."
+    scope_boundaries: "Includes all sales-related touchpoints — calls, emails, meetings, demos, proposals sent. Excludes marketing-initiated touches and customer success interactions."
+    calculation_methodology: null
+    comparability_rules: "Comparable only when activity type definitions match. Auto-logged activities (email tracking) vs manually logged activities have different completeness. Activity counts from different CRM instances require normalization."
+
+  - id: win_loss
+    concept_id: SAL-014
+    name: Win/Loss
+    description: "Deal outcome classification"
+    domain: sales
+    cluster: Growth
+    example_fields:
+      - win_loss
+      - deal_result
+      - closed_reason
+      - outcome
+      - competitor
+      - result
+      - is_won
+      - is_closed
+    aliases:
+      - deal_result
+      - closed_reason
+      - outcome
+    expected_type: string
+    typical_source_systems: [salesforce, clari, gong]
+    persona_relevance:
+      cro: 0.9
+      cfo: 0.4
+    recognition_basis: "Recorded when an opportunity reaches a terminal stage — closed-won or closed-lost."
+    timing_semantics: "Point-in-time event. Close date determines the reporting period for win/loss analysis."
+    scope_boundaries: "Includes all opportunities that reached a closed state. Excludes opportunities still in pipeline, abandoned/deleted opportunities, and renewals unless specified."
+    calculation_methodology: null
+    comparability_rules: "Win rate calculation must specify denominator (all opportunities vs qualified opportunities only). Dollar-weighted win rate vs count-based win rate are different metrics. Competitive win rate requires consistent competitor tracking."
+
+  # ─── Human Resources ─────────────────────────────────────
+  - id: employee
+    concept_id: HR-001
+    name: Employee
+    description: "Individual working for the organization"
+    domain: hr
+    cluster: People
+    example_fields:
+      - worker_id
+      - employee_id
+      - employee_name
+      - position_id
+      - department
+      - hire_date
+      - worker_status
+      - is_active
+      - legal_name
+      - business_title
+      - management_level
+      - annual_base_pay
+    aliases:
+      - worker
+      - staff
+      - headcount
+      - team_member
+      - ee
+    expected_type: string
+    typical_source_systems: [workday, bamboohr, adp]
+    persona_relevance:
+      chro: 1.0
+      coo: 0.7
+      cfo: 0.5
+    recognition_basis: "Record created at hire date. Employment status tracked through active, leave, terminated states via HRIS."
+    timing_semantics: "Point-in-time entity. Employee attributes (title, department, compensation) change over time with effective dates."
+    scope_boundaries: "Includes full-time, part-time, and temporary employees on the company payroll. Excludes contractors, consultants, and contingent workers unless specified."
+    calculation_methodology: null
+    comparability_rules: "Employee counts are NOT comparable to headcount (approved positions) or FTE (full-time equivalents). Cross-entity employee counts require deduplication for shared services or dual employment. Active vs total (including terminated) must be distinguished."
+
+  - id: position
+    concept_id: HR-002
+    name: Position
+    description: "Defined role within org structure"
+    domain: hr
+    cluster: People
+    example_fields:
+      - position_id
+      - position
+      - role
+      - job
+      - job_req
+      - headcount_slot
+      - title
+      - level
+    aliases:
+      - role
+      - job
+      - job_req
+      - headcount_slot
+    expected_type: string
+    typical_source_systems: [workday, greenhouse, lever]
+    persona_relevance:
+      chro: 0.9
+      coo: 0.4
+    recognition_basis: "Created during workforce planning. Position exists independently of whether it is filled or vacant."
+    timing_semantics: "Point-in-time reference entity. Position attributes (level, compensation band) are versioned with effective dates."
+    scope_boundaries: "Includes all approved positions in the organizational structure — filled and vacant. Excludes contractor slots and temporary assignments."
+    calculation_methodology: null
+    comparability_rules: "Position counts vs headcount vs FTE are distinct metrics. Filled positions vs approved positions vs budgeted positions must be distinguished. Job architecture differences across entities make direct role comparison unreliable without mapping."
+
+  - id: department
+    concept_id: HR-003
+    name: Department
+    description: "Organizational grouping of employees"
+    domain: hr
+    cluster: People
+    example_fields:
+      - department
+      - dept
+      - dept_id
+      - dept_name
+      - team
+      - division
+      - business_unit
+      - head
+      - parent
+    aliases:
+      - dept
+      - team
+      - division
+      - business_unit
+    expected_type: string
+    typical_source_systems: [workday, bamboohr, any_hris]
+    persona_relevance:
+      chro: 0.8
+      coo: 0.6
+      cfo: 0.4
+    recognition_basis: "Established as part of organizational design. Active when employees or cost centers are assigned to it."
+    timing_semantics: "Point-in-time reference entity. Reorganizations change department structure and invalidate historical comparisons."
+    scope_boundaries: "Includes all organizational departments as defined in HRIS. May or may not align with cost centers. Excludes virtual teams and cross-functional working groups."
+    calculation_methodology: null
+    comparability_rules: "Comparable only within the same organizational hierarchy version. Different naming conventions (Engineering vs R&D vs Product Development) may refer to equivalent units. Reorgs invalidate year-over-year department-level trending."
+
+  - id: compensation
+    concept_id: HR-004
+    name: Compensation
+    description: "Employee pay structure"
+    domain: hr
+    cluster: People
+    example_fields:
+      - comp_id
+      - compensation
+      - salary
+      - pay
+      - total_comp
+      - base_pay
+      - bonus
+      - equity
+      - effective_date
+    aliases:
+      - salary
+      - pay
+      - total_comp
+      - base_pay
+    expected_type: float
+    typical_source_systems: [workday, pave, carta]
+    persona_relevance:
+      chro: 1.0
+      cfo: 0.7
+    recognition_basis: "Established at hire and updated at compensation review events (annual review, promotion, market adjustment)."
+    timing_semantics: "Period-based with effective dates. Annualized compensation vs actual paid-to-date may differ for mid-year changes."
+    scope_boundaries: "Includes base salary, bonus targets, equity grants, and sign-on payments. Excludes benefits cost, employer tax contributions, and one-time reimbursements."
+    calculation_methodology: "Total compensation = base salary + target bonus + annualized equity value. Actual total comp = base paid + bonus paid + equity vested."
+    comparability_rules: "Comparable only when compensation components match (base-only vs total comp). Different equity valuation methods (grant-date fair value vs current market value) produce different totals. Geographic cost-of-living adjustments distort cross-location comparison."
+
+  - id: benefit
+    concept_id: HR-005
+    name: Benefit
+    description: "Employee benefit enrollment"
+    domain: hr
+    cluster: People
+    example_fields:
+      - benefit_id
+      - benefit
+      - benefits_plan
+      - coverage
+      - enrollment
+      - plan_type
+      - provider
+      - coverage_level
+    aliases:
+      - benefits_plan
+      - coverage
+      - enrollment
+    expected_type: string
+    typical_source_systems: [workday, gusto, justworks]
+    persona_relevance:
+      chro: 0.9
+    recognition_basis: "Enrollment-triggered during open enrollment or qualifying life events. Active during the coverage period."
+    timing_semantics: "Period-based, aligned to plan year (typically calendar year). Coverage effective dates determine benefit periods."
+    scope_boundaries: "Includes health insurance, dental, vision, life insurance, 401(k)/retirement plans, and HSA/FSA. Excludes perks, stipends, and non-insurance benefits."
+    calculation_methodology: null
+    comparability_rules: "Benefit cost comparison requires distinguishing employer vs employee contribution. Plan richness (coverage level, deductibles) varies across providers. Cross-entity benefit comparison requires plan-level normalization."
+
+  - id: requisition
+    concept_id: HR-006
+    name: Requisition
+    description: "Open hiring request"
+    domain: hr
+    cluster: People
+    example_fields:
+      - req_id
+      - requisition
+      - req
+      - job_opening
+      - hiring_req
+      - title
+      - days_open
+    aliases:
+      - req
+      - job_opening
+      - hiring_req
+    expected_type: string
+    typical_source_systems: [greenhouse, lever, workday]
+    persona_relevance:
+      chro: 0.9
+    recognition_basis: "Created when a hiring manager submits a request for a new or backfill position. Approved by HR and finance before activation."
+    timing_semantics: "Point-in-time event with lifecycle states — draft, approved, open, filled, cancelled. Days-to-fill measured from approval to offer acceptance."
+    scope_boundaries: "Includes all approved hiring requests. Excludes internal transfers, promotions without backfill, and contingent worker requests."
+    calculation_methodology: null
+    comparability_rules: "Open requisition counts are comparable only at the same point in time. Time-to-fill benchmarks must control for role level, location, and department. Cancelled requisitions should be excluded from fill rate calculations."
+
+  - id: candidate
+    concept_id: HR-007
+    name: Candidate
+    description: "Job applicant in hiring pipeline"
+    domain: hr
+    cluster: People
+    example_fields:
+      - candidate_id
+      - candidate
+      - applicant
+      - prospect
+      - talent
+      - name
+      - stage
+      - source
+      - applied_date
+    aliases:
+      - applicant
+      - prospect
+      - talent
+    expected_type: string
+    typical_source_systems: [greenhouse, lever, icims]
+    persona_relevance:
+      chro: 0.8
+    recognition_basis: "Created when an applicant enters the recruiting pipeline — via application, sourcing, or referral."
+    timing_semantics: "Point-in-time entity with stage progression through the hiring funnel. Stage timestamps enable velocity analysis."
+    scope_boundaries: "Includes all applicants in the ATS pipeline — applied, screened, interviewed, offered, and rejected. Excludes passive talent not yet engaged."
+    calculation_methodology: null
+    comparability_rules: "Candidate counts across ATS systems require deduplication (same person applying to multiple roles). Funnel conversion rates must use consistent stage definitions. Source attribution (referral vs direct vs agency) affects quality comparison."
+
+  - id: performance_review
+    concept_id: HR-008
+    name: Performance Review
+    description: "Employee performance evaluation"
+    domain: hr
+    cluster: People
+    example_fields:
+      - review_id
+      - review
+      - perf_review
+      - evaluation
+      - appraisal
+      - rating
+      - period
+      - reviewer
+    aliases:
+      - perf_review
+      - evaluation
+      - appraisal
+    expected_type: string
+    typical_source_systems: [lattice, culture_amp, fifteen_five]
+    persona_relevance:
+      chro: 0.9
+    recognition_basis: "Initiated during the performance review cycle (annual, semi-annual, or quarterly). Completed when reviewer submits final rating."
+    timing_semantics: "Period-based, covering a defined review period. Review cycle timing affects comparability across organizations."
+    scope_boundaries: "Includes formal performance evaluations with structured ratings. Excludes informal check-ins, 1:1 notes, and pulse surveys."
+    calculation_methodology: null
+    comparability_rules: "Rating scales must match for comparison (1-5 vs 1-3 vs percentile). Calibrated vs uncalibrated ratings represent different quality levels. Forced distribution vs free-form rating systems produce different score distributions."
+
+  - id: goal
+    concept_id: HR-009
+    name: Goal
+    description: "Employee or team objective"
+    domain: hr
+    cluster: People
+    example_fields:
+      - goal_id
+      - goal
+      - okr
+      - objective
+      - kpi_target
+      - description
+      - owner
+      - due_date
+    aliases:
+      - okr
+      - objective
+      - kpi_target
+    expected_type: string
+    typical_source_systems: [lattice, betterworks, workday]
+    persona_relevance:
+      chro: 0.7
+      coo: 0.4
+    recognition_basis: "Created during goal-setting cycle (beginning of quarter or year). Progress tracked through completion percentage."
+    timing_semantics: "Period-based, scoped to a goal period (quarter or year). Cascade timing from company to individual goals matters."
+    scope_boundaries: "Includes formal OKRs, KPIs, and structured goals. Excludes informal aspirations and development plans."
+    calculation_methodology: null
+    comparability_rules: "Goal attainment rates are comparable only when goal-setting rigor is equivalent. Stretch goals vs achievable targets affect attainment distributions. OKR scoring (0.0-1.0 with 0.7 as target) vs binary pass/fail are different systems."
+
+  - id: time_off
+    concept_id: HR-010
+    name: Time Off
+    description: "Employee leave or absence"
+    domain: hr
+    cluster: People
+    example_fields:
+      - leave_id
+      - time_off
+      - pto
+      - leave
+      - absence
+      - vacation
+      - type
+      - start_date
+      - end_date
+    aliases:
+      - pto
+      - leave
+      - absence
+      - vacation
+    expected_type: string
+    typical_source_systems: [workday, bamboohr, gusto]
+    persona_relevance:
+      chro: 0.7
+      coo: 0.3
+    recognition_basis: "Requested by employee, approved by manager. Accrual-based or unlimited PTO policies define the recognition method."
+    timing_semantics: "Period-based event with start and end dates. Accrual balances are point-in-time snapshots."
+    scope_boundaries: "Includes vacation, sick leave, personal days, parental leave, and bereavement. Excludes holidays, company shutdowns, and unpaid leave unless specified."
+    calculation_methodology: null
+    comparability_rules: "Comparable only when leave type definitions match. Unlimited PTO vs accrued PTO have fundamentally different usage patterns. Regional statutory leave requirements affect cross-location comparison."
+
+  - id: training
+    concept_id: HR-011
+    name: Training
+    description: "Learning and development activity"
+    domain: hr
+    cluster: People
+    example_fields:
+      - training_id
+      - training
+      - course
+      - certification
+      - learning
+      - title
+      - completion_date
+      - type
+    aliases:
+      - course
+      - certification
+      - learning
+    expected_type: string
+    typical_source_systems: [cornerstone, udemy_business, workday]
+    persona_relevance:
+      chro: 0.7
+    recognition_basis: "Created when an employee enrolls in or is assigned a learning activity. Completed upon course/certification completion."
+    timing_semantics: "Point-in-time event. Completion date determines the reporting period. Certification expiry dates affect ongoing compliance."
+    scope_boundaries: "Includes formal training courses, certifications, and mandatory compliance training. Excludes informal mentoring, on-the-job training, and self-directed learning."
+    calculation_methodology: null
+    comparability_rules: "Training hours vs completion counts are different metrics. Mandatory compliance training should be separated from optional development. Cross-platform course completions require deduplication."
+
+  - id: org_unit
+    concept_id: HR-012
+    name: Org Unit
+    description: "Hierarchical organizational structure node"
+    domain: hr
+    cluster: People
+    example_fields:
+      - unit_id
+      - org_unit
+      - org_node
+      - reporting_unit
+      - org_level
+      - name
+      - type
+      - parent_id
+      - level
+      - leader
+    aliases:
+      - org_node
+      - reporting_unit
+      - org_level
+    expected_type: string
+    typical_source_systems: [workday, sap_successfactors]
+    persona_relevance:
+      chro: 0.8
+      coo: 0.5
+    recognition_basis: "Established as part of organizational design. Represents a node in the reporting hierarchy."
+    timing_semantics: "Point-in-time reference entity. Restructuring events change the hierarchy and affect historical roll-ups."
+    scope_boundaries: "Includes all organizational nodes — company, division, business unit, department, team. Excludes project-based virtual organizations."
+    calculation_methodology: null
+    comparability_rules: "Comparable only within the same hierarchy version. Different hierarchy depth (3-level vs 5-level) makes cross-entity comparison unreliable. Org unit roll-ups must use the same aggregation level."
+
+  - id: headcount
+    concept_id: HR-013
+    name: Headcount
+    description: "Authorized staffing level"
+    domain: hr
+    cluster: People
+    example_fields:
+      - hc_id
+      - headcount
+      - hc
+      - fte
+      - staffing_plan
+      - capacity
+      - approved
+      - filled
+      - open
+    aliases:
+      - hc
+      - fte
+      - staffing_plan
+      - capacity
+    expected_type: float
+    typical_source_systems: [workday, any_hris]
+    persona_relevance:
+      chro: 1.0
+      cfo: 0.6
+      coo: 0.5
+    recognition_basis: "Count of individual workers with active employment status in HRIS as of the measurement date. One person = one headcount regardless of hours worked."
+    timing_semantics: "Point-in-time snapshot, typically measured at period-end (month-end, quarter-end). Intra-period hires and terminations affect the count."
+    scope_boundaries: "Includes all active employees on company payroll — full-time and part-time. Excludes contractors, temps, and contingent workers. Headcount is NOT FTE — a part-time employee counts as 1 headcount but less than 1 FTE."
+    calculation_methodology: "COUNT(DISTINCT worker_id) WHERE employment_status = 'Active' AND worker_type IN ('Full-Time', 'Part-Time') as of the measurement date."
+    comparability_rules: "Comparable only when measurement date and inclusion criteria match. Headcount is NOT FTE — direct comparison is invalid. HRIS headcount vs badge-count vs payroll-count may differ. Entities counting contractors in headcount inflate their numbers relative to those that exclude them."
+
+  # ─── Customer Success ────────────────────────────────────
+  - id: ticket
+    concept_id: CS-001
+    name: Support Ticket
+    description: "Customer support request"
+    domain: customer_success
+    cluster: Ops
+    example_fields:
+      - ticket_id
+      - subject
+      - priority
+      - status
+      - assignee
+      - satisfaction_rating
+      - csat
+    aliases:
+      - case
+      - support_request
+      - issue
+      - inquiry
+      - help_request
+      - sr
+    expected_type: string
+    typical_source_systems: [zendesk, freshdesk, servicenow]
+    persona_relevance:
+      coo: 0.8
+      cro: 0.5
+    recognition_basis: "Created when a customer submits a support request through any channel — email, chat, phone, portal."
+    timing_semantics: "Point-in-time event. Created timestamp, first response time, and resolution time are measured."
+    scope_boundaries: "Includes all customer-initiated support requests. Excludes internal IT tickets, feature requests (unless routed through support), and proactive outreach."
+    calculation_methodology: null
+    comparability_rules: "Ticket volume comparison requires matching channel scope and auto-creation rules. Different severity/priority taxonomies must be mapped. Resolution time benchmarks must control for ticket complexity and tier."
+
+  - id: incident
+    concept_id: CS-002
+    name: Incident
+    description: "Service disruption or issue"
+    domain: customer_success
+    cluster: Infra
+    example_fields:
+      - incident_id
+      - severity
+      - slo_id
+      - slo_name
+      - target
+      - current_value
+      - mttr
+      - resolution_time
+      - mttr_minutes
+      - resolved_at
+      - started_at
+    aliases:
+      - alert
+      - outage
+      - slo
+      - service_level
+      - sev
+      - production_issue
+    expected_type: string
+    typical_source_systems: [pagerduty, servicenow, opsgenie]
+    persona_relevance:
+      cto: 0.9
+      coo: 0.6
+    recognition_basis: "Declared when a service disruption or degradation is detected, either by monitoring or user report."
+    timing_semantics: "Point-in-time event with duration. MTTR (mean time to resolution) is measured from detection to resolution."
+    scope_boundaries: "Includes production incidents affecting customer-facing services. Excludes planned maintenance, internal-only issues, and near-misses unless they trigger the incident process."
+    calculation_methodology: null
+    comparability_rules: "Incident severity definitions must match for comparison (Sev1 at one company may equal Sev2 at another). MTTR calculation must specify start point (detection vs acknowledgment). Incident count comparison requires consistent declaration thresholds."
+
+  - id: health
+    concept_id: CS-004
+    name: Health Score
+    description: "Customer health or risk indicator"
+    domain: customer_success
+    cluster: Ops
+    example_fields:
+      - health_score
+      - status
+      - health
+      - score
+      - rating
+      - customer_health
+      - risk_score
+    aliases:
+      - wellness
+      - status_score
+      - health_metric
+      - chs
+    expected_type: float
+    typical_source_systems: [gainsight, totango, churnzero]
+    persona_relevance:
+      cro: 0.7
+      coo: 0.6
+    recognition_basis: "Calculated by the customer success platform using engagement, usage, support, and financial signals."
+    timing_semantics: "Point-in-time score, recalculated on a defined cadence (daily, weekly). Score changes are tracked over time."
+    scope_boundaries: "Includes product usage, support ticket trends, NPS/CSAT, contract status, and engagement signals. Excludes financial metrics unless explicitly included in the scoring model."
+    calculation_methodology: "Weighted composite of input signals: usage score (0-100) x weight + support score (0-100) x weight + engagement score (0-100) x weight. Weights are configured per customer segment."
+    comparability_rules: "Comparable only within the same health score model version. Different CS platforms use different scoring algorithms. Score thresholds (red/yellow/green) are organization-specific. Model changes invalidate historical trend comparisons."
+
+  - id: sla
+    concept_id: CS-003
+    name: SLA
+    description: "Service level agreement or target"
+    domain: customer_success
+    cluster: Ops
+    example_fields:
+      - sla_id
+      - sla
+      - service_level
+      - response_target
+      - resolution_target
+      - metric
+      - target_value
+      - actual_value
+      - compliance
+    aliases:
+      - service_level
+      - response_target
+      - resolution_target
+    expected_type: string
+    typical_source_systems: [zendesk, servicenow, freshdesk]
+    persona_relevance:
+      coo: 0.8
+      cto: 0.5
+    recognition_basis: "Defined in the customer contract or service agreement. Compliance is measured against defined targets."
+    timing_semantics: "Period-based measurement, typically monthly or quarterly. SLA compliance is calculated at period-end."
+    scope_boundaries: "Includes response time SLAs, resolution time SLAs, and uptime SLAs. Excludes informal commitments and best-effort targets."
+    calculation_methodology: null
+    comparability_rules: "Comparable only when SLA metric definitions match (response time vs resolution time). Different calculation methods (business hours vs calendar hours) produce different results. Exclusion windows (planned maintenance) affect uptime calculations."
+
+  - id: nps_score
+    concept_id: CS-005
+    name: NPS Score
+    description: "Net promoter or satisfaction measure"
+    domain: customer_success
+    cluster: Ops
+    example_fields:
+      - nps
+      - csat
+      - satisfaction
+      - ces
+      - survey_score
+      - survey_id
+      - response_date
+      - segment
+    aliases:
+      - csat
+      - satisfaction
+      - ces
+      - survey_score
+    expected_type: float
+    typical_source_systems: [delighted, qualtrics, gainsight]
+    persona_relevance:
+      cro: 0.7
+      coo: 0.6
+    recognition_basis: "Collected via customer survey. Score calculated from promoter/detractor classification of responses."
+    timing_semantics: "Point-in-time measurement at survey collection. Relationship NPS (periodic) vs transactional NPS (event-triggered) have different cadences."
+    scope_boundaries: "Includes structured survey responses with the standard NPS question. Excludes informal feedback, CSAT scores, and CES scores (they are related but distinct metrics)."
+    calculation_methodology: "NPS = % Promoters (9-10) - % Detractors (0-6). Score range: -100 to +100. Passives (7-8) are excluded from the calculation."
+    comparability_rules: "Comparable only when survey methodology matches (same question wording, same scale). Response rate affects statistical significance. Relationship NPS vs transactional NPS are not directly comparable. Industry benchmarks require matched sample criteria."
+
+  - id: customer_segment
+    concept_id: CS-006
+    name: Customer Segment
+    description: "Grouping of customers by attributes"
+    domain: customer_success
+    cluster: Ops
+    example_fields:
+      - segment_id
+      - segment
+      - tier
+      - cohort
+      - customer_group
+      - criteria
+      - customer_count
+    aliases:
+      - tier
+      - cohort
+      - customer_group
+    expected_type: string
+    typical_source_systems: [gainsight, salesforce, any_crm]
+    persona_relevance:
+      cro: 0.8
+      coo: 0.5
+    recognition_basis: "Defined by business rules or algorithmic clustering based on firmographic, behavioral, or financial attributes."
+    timing_semantics: "Point-in-time classification. Segment assignment may change as customer attributes evolve."
+    scope_boundaries: "Includes all customer segmentation schemes — by size (SMB/mid-market/enterprise), by industry, by geography, by product usage tier."
+    calculation_methodology: null
+    comparability_rules: "Comparable only within the same segmentation model. Different organizations define 'enterprise' differently (by revenue, employee count, or contract size). Segment boundary thresholds must match for comparison."
+
+  - id: lifecycle_stage
+    concept_id: CS-007
+    name: Lifecycle Stage
+    description: "Customer journey phase"
+    domain: customer_success
+    cluster: Ops
+    example_fields:
+      - lifecycle
+      - stage
+      - journey_stage
+      - maturity
+      - stage_id
+      - name
+      - order
+      - criteria
+    aliases:
+      - journey_stage
+      - maturity
+    expected_type: string
+    typical_source_systems: [gainsight, totango, hubspot]
+    persona_relevance:
+      cro: 0.6
+      coo: 0.5
+    recognition_basis: "Assigned based on customer journey milestones — onboarding, adopted, expanding, renewing, at-risk, churned."
+    timing_semantics: "Point-in-time state. Stage transitions are event-driven and tracked for velocity analysis."
+    scope_boundaries: "Covers the post-sale customer journey. Excludes pre-sale stages (those are pipeline stages). Stage definitions vary by organization."
+    calculation_methodology: null
+    comparability_rules: "Comparable only when lifecycle stage definitions and transition criteria match. Number of stages and their definitions vary across CS platforms. Time-in-stage benchmarks require matched customer segments."
+
+  - id: churn_event
+    concept_id: CS-008
+    name: Churn Event
+    description: "Customer departure or downgrade"
+    domain: customer_success
+    cluster: Ops
+    example_fields:
+      - churn_id
+      - churn
+      - cancellation
+      - downgrade
+      - lost_customer
+      - churn_date
+      - reason
+      - arr_impact
+    aliases:
+      - cancellation
+      - downgrade
+      - lost_customer
+    expected_type: string
+    typical_source_systems: [zuora, salesforce, gainsight]
+    persona_relevance:
+      cro: 0.9
+      cfo: 0.6
+    recognition_basis: "Recorded when a customer cancels, does not renew, or downgrades below a defined threshold. Voluntary churn (customer-initiated) is distinguished from involuntary churn (payment failure)."
+    timing_semantics: "Point-in-time event. Churn date is the effective date of cancellation or contract expiration. Reporting period is determined by churn effective date, not notification date."
+    scope_boundaries: "Includes full cancellations and downgrades below a defined ARR threshold. Excludes temporary pauses, seasonal suspensions, and migrations to different products within the same entity. Logo churn (count of customers lost) vs revenue churn (ARR lost) are distinct measures."
+    calculation_methodology: "Churn rate = churned ARR / beginning-of-period ARR. Logo churn rate = churned customer count / beginning-of-period customer count. Gross churn excludes expansion; net churn includes expansion offset."
+    comparability_rules: "Comparable only when churn definition matches — logo vs revenue, gross vs net, voluntary vs total. Different measurement periods (monthly vs annual) produce different rates. Downgrade-included vs cancellation-only churn rates are not comparable. Cohort-based churn vs period-based churn use different denominators."
+
+  - id: engagement
+    concept_id: CS-009
+    name: Engagement
+    description: "Customer interaction or product usage signal"
+    domain: customer_success
+    cluster: Ops
+    example_fields:
+      - event_id
+      - engagement
+      - usage
+      - adoption
+      - login_activity
+      - type
+      - timestamp
+      - value
+    aliases:
+      - adoption
+      - login_activity
+    expected_type: float
+    typical_source_systems: [pendo, amplitude, gainsight]
+    persona_relevance:
+      cro: 0.6
+      coo: 0.5
+      cto: 0.4
+    recognition_basis: "Captured from product telemetry, interaction tracking, or platform usage signals."
+    timing_semantics: "Event-based with timestamp. Aggregated to daily/weekly/monthly active usage metrics."
+    scope_boundaries: "Includes product logins, feature usage, API calls, and in-app interactions. Excludes marketing engagement (email opens, ad clicks) and support interactions."
+    calculation_methodology: null
+    comparability_rules: "Comparable only when engagement metric definitions match (DAU vs WAU vs MAU). Different product architectures (single-page app vs multi-service) affect event counting. User-level vs account-level engagement must be distinguished."
+
+  - id: feedback
+    concept_id: CS-010
+    name: Feedback
+    description: "Qualitative customer input"
+    domain: customer_success
+    cluster: Ops
+    example_fields:
+      - feedback_id
+      - feedback
+      - comment
+      - review
+      - feature_request
+      - text
+      - sentiment
+      - category
+    aliases:
+      - comment
+      - review
+      - feature_request
+    expected_type: string
+    typical_source_systems: [productboard, canny, zendesk]
+    persona_relevance:
+      cro: 0.5
+      cto: 0.4
+    recognition_basis: "Captured when a customer provides qualitative input through surveys, support interactions, or feedback tools."
+    timing_semantics: "Point-in-time event at submission. Sentiment and categorization may be applied retroactively."
+    scope_boundaries: "Includes structured survey responses, free-text feedback, feature requests, and product reviews. Excludes internal feedback and employee-submitted ideas."
+    calculation_methodology: null
+    comparability_rules: "Qualitative feedback is not directly comparable across sources without normalization. Sentiment scores from different NLP models are not directly comparable. Solicited vs unsolicited feedback have different sampling biases."
+
+  - id: escalation
+    concept_id: CS-011
+    name: Escalation
+    description: "Elevated support or success issue"
+    domain: customer_success
+    cluster: Ops
+    example_fields:
+      - esc_id
+      - escalation
+      - esc
+      - executive_escalation
+      - p0
+      - ticket_id
+      - severity
+      - owner
+      - sla_at_risk
+    aliases:
+      - esc
+      - executive_escalation
+      - p0
+    expected_type: string
+    typical_source_systems: [zendesk, gainsight, servicenow]
+    persona_relevance:
+      coo: 0.8
+      cro: 0.6
+    recognition_basis: "Triggered when a support issue or customer situation exceeds normal handling thresholds — severity, duration, or customer tier."
+    timing_semantics: "Point-in-time event. Escalation timestamp and resolution timestamp define the escalation duration."
+    scope_boundaries: "Includes executive escalations, severity upgrades, and SLA-breach escalations. Excludes routine transfers between support tiers."
+    calculation_methodology: null
+    comparability_rules: "Comparable only when escalation criteria match. Different organizations have different escalation thresholds. Escalation rate benchmarks must control for customer segment and ticket volume."
+
+  # ─── Product & Engineering ───────────────────────────────
+  - id: product
+    concept_id: PRD-001
+    name: Product
+    description: "Software product or SKU"
+    domain: product_eng
+    cluster: Product
+    example_fields:
+      - product_id
+      - product
+      - sku
+      - offering
+      - platform
+      - service_line
+      - product_name
+      - version
+    aliases:
+      - sku
+      - offering
+      - platform
+      - service_line
+    expected_type: string
+    typical_source_systems: [shopify, salesforce, internal]
+    persona_relevance:
+      cto: 0.8
+      cro: 0.6
+    recognition_basis: "Defined in the product catalog. Exists as a distinct offering with its own pricing, packaging, and delivery model."
+    timing_semantics: "Point-in-time entity with lifecycle states — active, deprecated, sunset, end-of-life."
+    scope_boundaries: "Includes all commercially available products, SKUs, and service offerings. Excludes internal tools, beta features, and proof-of-concept deliverables."
+    calculation_methodology: null
+    comparability_rules: "Product definitions vary across systems (CRM product vs billing SKU vs support product). Product bundles complicate unit-level comparison. Version/edition differences (Standard vs Enterprise) represent distinct products."
+
+  - id: feature
+    concept_id: PRD-002
+    name: Feature
+    description: "Product capability or function"
+    domain: product_eng
+    cluster: Product
+    example_fields:
+      - feature_id
+      - feature
+      - capability
+      - module
+      - feature_flag
+      - name
+      - status
+      - adoption_rate
+    aliases:
+      - capability
+      - module
+      - feature_flag
+    expected_type: string
+    typical_source_systems: [launchdarkly, productboard, jira]
+    persona_relevance:
+      cto: 0.9
+      cro: 0.4
+    recognition_basis: "Defined in the product roadmap or feature management system. Released when deployed to production."
+    timing_semantics: "Point-in-time entity with lifecycle — planned, in development, released, deprecated. Release date determines availability."
+    scope_boundaries: "Includes product capabilities, modules, and feature flags. Excludes bug fixes, infrastructure improvements, and internal tooling."
+    calculation_methodology: null
+    comparability_rules: "Feature counts across products are not directly comparable without scope normalization. Feature flag status (enabled/disabled) affects availability. Adoption rate comparison requires matched time-since-release."
+
+  - id: release
+    concept_id: PRD-003
+    name: Release
+    description: "Software version deployment"
+    domain: product_eng
+    cluster: Product
+    example_fields:
+      - release_id
+      - release
+      - deploy
+      - version
+      - build
+      - release_date
+      - type
+      - changelog
+    aliases:
+      - deploy
+      - version
+      - build
+      - shipment
+    expected_type: string
+    typical_source_systems: [github, jira, jenkins]
+    persona_relevance:
+      cto: 0.9
+    recognition_basis: "Created when a version of the software is packaged and deployed to production or made available to customers."
+    timing_semantics: "Point-in-time event. Release cadence (weekly, biweekly, monthly) is a team-level metric."
+    scope_boundaries: "Includes production deployments, hotfixes, and customer-facing releases. Excludes staging/QA deployments and internal tool updates."
+    calculation_methodology: null
+    comparability_rules: "Release frequency comparison requires matching release scope (microservice vs monolith). Hotfixes vs planned releases should be counted separately. DORA metrics require consistent deployment and release definitions."
+
+  - id: bug
+    concept_id: PRD-004
+    name: Bug
+    description: "Software defect"
+    domain: product_eng
+    cluster: Product
+    example_fields:
+      - bug_id
+      - bug
+      - defect
+      - error
+      - regression
+      - severity
+      - status
+      - reporter
+      - assignee
+      - component
+    aliases:
+      - defect
+      - error
+      - regression
+    expected_type: string
+    typical_source_systems: [jira, linear, github_issues]
+    persona_relevance:
+      cto: 0.9
+    recognition_basis: "Filed when a software defect is identified through testing, customer report, or monitoring."
+    timing_semantics: "Point-in-time event. Bug age is measured from creation to resolution. Open bug count is a point-in-time snapshot."
+    scope_boundaries: "Includes confirmed software defects in production and staging. Excludes feature requests, enhancements, and design issues."
+    calculation_methodology: null
+    comparability_rules: "Bug severity definitions must match for comparison (P0/P1/P2 thresholds vary). Bug count depends on detection methods — more testing finds more bugs. Escape rate (bugs found in production vs pre-release) is more meaningful than raw count."
+
+  - id: engineering_work
+    concept_id: PRD-005
+    name: Sprint
+    description: "Development iteration cycle and engineering work items"
+    domain: product_eng
+    cluster: Product
+    example_fields:
+      - issue_key
+      - issue_id
+      - sprint_id
+      - sprint_name
+      - story_points
+      - issue_type
+      - priority
+      - velocity
+      - goal
+    aliases:
+      - issue
+      - story
+      - sprint
+      - iteration
+      - dev_sprint
+      - cycle
+    expected_type: string
+    typical_source_systems: [jira, linear, shortcut]
+    persona_relevance:
+      cto: 1.0
+      coo: 0.4
+    recognition_basis: "Created when work is planned in the project management tool. Completed when the work item reaches 'Done' status."
+    timing_semantics: "Period-based, scoped to a sprint/iteration (typically 1-2 weeks). Velocity is measured per sprint."
+    scope_boundaries: "Includes stories, tasks, bugs, and technical debt items within a sprint. Excludes backlog items not committed to a sprint."
+    calculation_methodology: null
+    comparability_rules: "Story point estimation scales vary across teams — 5 points on Team A may not equal 5 points on Team B. Velocity comparison across teams is invalid without calibration. Sprint length must match for velocity comparison."
+
+  - id: repository
+    concept_id: PRD-006
+    name: Repository
+    description: "Code repository or project"
+    domain: product_eng
+    cluster: Product
+    example_fields:
+      - repo_id
+      - repo
+      - repository
+      - codebase
+      - project_repo
+      - name
+      - language
+      - owner
+      - last_commit
+    aliases:
+      - codebase
+      - project_repo
+    expected_type: string
+    typical_source_systems: [github, gitlab, bitbucket]
+    persona_relevance:
+      cto: 0.7
+    recognition_basis: "Created when a new codebase or project is initialized in the version control system."
+    timing_semantics: "Point-in-time entity. Activity metrics (commits, PRs) are measured over time periods."
+    scope_boundaries: "Includes all source code repositories — application code, infrastructure-as-code, and documentation repos. Excludes archived/abandoned repositories unless specified."
+    calculation_methodology: null
+    comparability_rules: "Repository counts depend on architectural style (monorepo vs polyrepo). Commit frequency varies by team size and development methodology. Lines of code is a poor comparison metric across languages."
+
+  - id: pull_request
+    concept_id: PRD-007
+    name: Pull Request
+    description: "Code change review unit"
+    domain: product_eng
+    cluster: Product
+    example_fields:
+      - pr_id
+      - pr
+      - pull_request
+      - merge_request
+      - cr
+      - code_review
+      - title
+      - author
+      - review_time
+    aliases:
+      - merge_request
+      - cr
+      - code_review
+    expected_type: string
+    typical_source_systems: [github, gitlab, bitbucket]
+    persona_relevance:
+      cto: 0.8
+    recognition_basis: "Created when a developer submits code changes for review. Merged or closed upon completion."
+    timing_semantics: "Point-in-time event. PR cycle time (open to merge) is a DORA-aligned metric. Review time is measured separately."
+    scope_boundaries: "Includes all code change submissions for review. Excludes direct commits to main branch and automated dependency updates unless specified."
+    calculation_methodology: null
+    comparability_rules: "PR size (lines changed) varies by team conventions. PR cycle time comparison requires controlling for PR size and reviewer availability. Auto-merge PRs (bots, dependency updates) should be excluded from human productivity metrics."
+
+  - id: usage
+    concept_id: PRD-008
+    name: Usage Metric
+    description: "Product usage telemetry"
+    domain: product_eng
+    cluster: Product
+    example_fields:
+      - usage
+      - consumption
+      - utilization
+      - activity
+      - volume
+      - dau
+      - telemetry
+    aliases:
+      - consumption
+      - activity
+      - throughput
+      - product_event
+      - telemetry
+    expected_type: float
+    typical_source_systems: [amplitude, mixpanel, pendo]
+    persona_relevance:
+      cto: 0.8
+      cro: 0.5
+      coo: 0.6
+    recognition_basis: "Captured from product telemetry, API metering, or session tracking."
+    timing_semantics: "Event-based, aggregated to daily/weekly/monthly metrics. Usage spikes and trends are analyzed over rolling periods."
+    scope_boundaries: "Includes all product interaction events — page views, API calls, feature activations, compute consumption. Excludes bot traffic and internal testing usage."
+    calculation_methodology: "Aggregation depends on metric: DAU = distinct users per day, API calls = count of authenticated requests, consumption = sum of resource units consumed."
+    comparability_rules: "Comparable only when usage metric definitions match. Different product architectures produce different event volumes. User-level vs account-level aggregation must be specified. Free-tier usage should be separated from paid-tier usage for business analysis."
+
+  - id: roadmap_item
+    concept_id: PRD-009
+    name: Roadmap Item
+    description: "Planned product initiative"
+    domain: product_eng
+    cluster: Product
+    example_fields:
+      - item_id
+      - roadmap
+      - initiative
+      - epic
+      - theme
+      - planned_feature
+      - title
+      - priority
+      - target_quarter
+    aliases:
+      - initiative
+      - epic
+      - theme
+      - planned_feature
+    expected_type: string
+    typical_source_systems: [productboard, aha, jira]
+    persona_relevance:
+      cto: 0.8
+      cro: 0.4
+    recognition_basis: "Created during product planning. Prioritized based on strategic alignment, customer demand, and resource availability."
+    timing_semantics: "Forward-looking entity with target delivery date. Status tracked through planned, in-progress, shipped, deprioritized."
+    scope_boundaries: "Includes strategic initiatives, epics, and themes on the product roadmap. Excludes operational work, bug fixes, and technical debt items."
+    calculation_methodology: null
+    comparability_rules: "Roadmap completion rates are comparable only when scope definition matches (strategic items only vs all initiatives). Target date accuracy depends on estimation methodology. Cross-team roadmap comparison requires normalized sizing."
+
+  - id: entitlement
+    concept_id: PRD-010
+    name: Entitlement
+    description: "Customer access or license right"
+    domain: product_eng
+    cluster: Product
+    example_fields:
+      - entitlement_id
+      - entitlement
+      - license
+      - access_right
+      - plan_feature
+      - customer_id
+      - tier
+      - expiry
+    aliases:
+      - license
+      - access_right
+      - plan_feature
+    expected_type: string
+    typical_source_systems: [salesforce, zuora, internal]
+    persona_relevance:
+      cto: 0.6
+      cro: 0.5
+    recognition_basis: "Granted upon subscription activation or contract execution. Defined by the product tier and licensing terms."
+    timing_semantics: "Period-based with defined start and end dates tied to the subscription or contract term."
+    scope_boundaries: "Includes feature access rights, usage limits, and support tier entitlements. Excludes trial access and promotional entitlements unless explicitly tracked."
+    calculation_methodology: null
+    comparability_rules: "Entitlement definitions vary across product tiers and editions. Named-user vs concurrent-user licensing produces different utilization metrics. Overage handling (hard cap vs soft cap vs usage-based billing) affects comparison."
+
+  # ─── IT & Infrastructure ─────────────────────────────────
+  - id: it_asset
+    concept_id: IT-001
+    name: IT Asset
+    description: "Hardware or software resource"
+    domain: it_infra
+    cluster: Infra
+    example_fields:
+      - asset_id
+      - asset
+      - device
+      - endpoint
+      - hardware
+      - ci
+      - type
+      - serial
+      - owner
+      - location
+    aliases:
+      - device
+      - endpoint
+      - hardware
+      - ci
+    expected_type: string
+    typical_source_systems: [servicenow, intune, jamf]
+    persona_relevance:
+      cto: 0.8
+      coo: 0.4
+    recognition_basis: "Created when a hardware or software asset is procured and registered in the asset management system."
+    timing_semantics: "Point-in-time entity with lifecycle states — ordered, deployed, active, retired, disposed."
+    scope_boundaries: "Includes laptops, servers, network equipment, and licensed software. Excludes SaaS subscriptions (those are subscriptions) and cloud infrastructure (those are cloud resources)."
+    calculation_methodology: null
+    comparability_rules: "Asset counts vary by classification scope (hardware-only vs hardware+software). Depreciation schedules differ across organizations. ITAM tool coverage gaps affect total count accuracy."
+
+  - id: configuration_item
+    concept_id: IT-002
+    name: Configuration Item
+    description: "Managed infrastructure component"
+    domain: it_infra
+    cluster: Infra
+    example_fields:
+      - ci_id
+      - ci
+      - config_item
+      - cmdb_item
+      - infra_component
+      - type
+      - environment
+      - dependencies
+    aliases:
+      - config_item
+      - cmdb_item
+      - infra_component
+    expected_type: string
+    typical_source_systems: [servicenow_cmdb, device42]
+    persona_relevance:
+      cto: 0.8
+    recognition_basis: "Registered in the CMDB when an infrastructure component is deployed and managed."
+    timing_semantics: "Point-in-time entity. Configuration changes are versioned and tracked. Relationships between CIs are maintained in the CMDB."
+    scope_boundaries: "Includes all managed infrastructure components — servers, databases, applications, network devices. Excludes end-user devices and shadow IT."
+    calculation_methodology: null
+    comparability_rules: "CI counts depend on CMDB granularity (individual VMs vs clusters vs services). CI classification taxonomies vary across ITSM implementations. CMDB completeness and accuracy affect reliability of counts."
+
+  - id: it_service
+    concept_id: IT-003
+    name: Service
+    description: "IT service offered to the organization"
+    domain: it_infra
+    cluster: Infra
+    example_fields:
+      - service_id
+      - service
+      - it_service
+      - application
+      - system
+      - name
+      - tier
+      - owner
+      - sla
+    aliases:
+      - it_service
+      - application
+      - system
+    expected_type: string
+    typical_source_systems: [servicenow, backstage]
+    persona_relevance:
+      cto: 0.7
+      coo: 0.4
+    recognition_basis: "Defined in the service catalog. Active when the service is available to consumers (internal users or customers)."
+    timing_semantics: "Point-in-time entity. Service availability and performance are measured continuously. SLA compliance is reported periodically."
+    scope_boundaries: "Includes business services and technical services in the service catalog. Excludes infrastructure components (those are CIs) and project-specific services."
+    calculation_methodology: null
+    comparability_rules: "Service definitions and boundaries vary across organizations. Availability calculations depend on monitoring scope and measurement method. Service tier definitions (gold/silver/bronze) are organization-specific."
+
+  - id: change_request
+    concept_id: IT-004
+    name: Change Request
+    description: "Proposed infrastructure or system change"
+    domain: it_infra
+    cluster: Infra
+    example_fields:
+      - cr_id
+      - change_request
+      - cr
+      - rfc
+      - change_ticket
+      - type
+      - risk
+      - status
+      - approver
+      - schedule
+    aliases:
+      - rfc
+      - change_ticket
+    expected_type: string
+    typical_source_systems: [servicenow, jira]
+    persona_relevance:
+      cto: 0.7
+      coo: 0.4
+    recognition_basis: "Created when a proposed change to production infrastructure or applications is submitted for approval."
+    timing_semantics: "Point-in-time event with lifecycle — submitted, approved, scheduled, implemented, reviewed. Lead time from request to implementation is measured."
+    scope_boundaries: "Includes standard, normal, and emergency changes. Excludes routine operational tasks and automated changes (unless they follow the change process)."
+    calculation_methodology: null
+    comparability_rules: "Change volume comparison requires matching change type scope. Change failure rate calculation must use consistent success/failure criteria. CAB approval rates depend on change risk classification methodology."
+
+  - id: deployment
+    concept_id: IT-005
+    name: Deployment
+    description: "Infrastructure or application deployment"
+    domain: it_infra
+    cluster: Infra
+    example_fields:
+      - deploy_id
+      - deployment
+      - deploy
+      - rollout
+      - release_deploy
+      - environment
+      - version
+      - date
+    aliases:
+      - rollout
+      - release_deploy
+    expected_type: string
+    typical_source_systems: [argocd, jenkins, aws_codedeploy]
+    persona_relevance:
+      cto: 0.8
+    recognition_basis: "Triggered when code or infrastructure changes are promoted to a target environment (staging, production)."
+    timing_semantics: "Point-in-time event. Deployment frequency is a DORA metric measured per team or service. Rollback events are tracked separately."
+    scope_boundaries: "Includes application deployments, infrastructure updates, and configuration changes pushed to production. Excludes local development and non-production deployments."
+    calculation_methodology: null
+    comparability_rules: "Deployment frequency depends on architectural style (microservices deploy more frequently). Deployment scope (single service vs full platform) must be matched. DORA deployment frequency requires consistent counting methodology."
+
+  - id: user_account
+    concept_id: IT-006
+    name: User Account
+    description: "Identity and access record"
+    domain: it_infra
+    cluster: Infra
+    example_fields:
+      - user_id
+      - user
+      - identity
+      - iam_user
+      - ad_account
+      - sso_user
+      - email
+      - role
+      - last_login
+      - mfa_status
+    aliases:
+      - identity
+      - iam_user
+      - ad_account
+      - sso_user
+    expected_type: string
+    typical_source_systems: [okta, azure_ad, onelogin]
+    persona_relevance:
+      cto: 0.7
+      chro: 0.3
+    recognition_basis: "Created when a user identity is provisioned in the identity management system."
+    timing_semantics: "Point-in-time entity. Account status (active, suspended, deprovisioned) changes are event-driven."
+    scope_boundaries: "Includes all user identities — employees, contractors, service accounts, and external collaborators. Excludes machine-to-machine credentials and API keys."
+    calculation_methodology: null
+    comparability_rules: "User counts from different IdP systems require deduplication (users may have accounts in multiple systems). Active vs provisioned vs licensed users are different populations. Service accounts should be separated from human accounts."
+
+  - id: permission
+    concept_id: IT-007
+    name: Permission
+    description: "Access control entry"
+    domain: it_infra
+    cluster: Infra
+    example_fields:
+      - perm_id
+      - permission
+      - role
+      - access
+      - rbac_entry
+      - policy
+      - user_id
+      - resource
+      - level
+      - granted_date
+    aliases:
+      - role
+      - access
+      - rbac_entry
+    expected_type: string
+    typical_source_systems: [okta, aws_iam, azure_ad]
+    persona_relevance:
+      cto: 0.7
+    recognition_basis: "Granted through role assignment, group membership, or direct permission grant in the access management system."
+    timing_semantics: "Point-in-time state. Permission grants and revocations are event-driven and audited."
+    scope_boundaries: "Includes RBAC roles, group memberships, and direct permission grants. Excludes implicit permissions inherited from system defaults."
+    calculation_methodology: null
+    comparability_rules: "Permission counts depend on granularity (role-level vs permission-level). RBAC vs ABAC models produce different permission structures. Cross-system permission comparison requires mapping to a common access model."
+
+  - id: aws_resource
+    concept_id: IT-008
+    name: Cloud Resource
+    description: "Cloud infrastructure component"
+    domain: it_infra
+    cluster: Infra
+    example_fields:
+      - resource_id
+      - instance_id
+      - resource_type
+      - arn
+      - ec2_id
+      - lambda
+      - s3_bucket
+      - vm
+      - region
+      - tags
+    aliases:
+      - cloud_resource
+      - infrastructure
+      - instance
+      - resource
+    expected_type: string
+    typical_source_systems: [aws, azure, gcp]
+    persona_relevance:
+      cto: 1.0
+      cfo: 0.4
+    recognition_basis: "Created when a cloud resource is provisioned through console, CLI, IaC, or API."
+    timing_semantics: "Point-in-time entity. Resource lifecycle (running, stopped, terminated) is tracked continuously. Cost is metered per usage period."
+    scope_boundaries: "Includes all cloud provider resources — compute, storage, networking, managed services. Covers AWS, Azure, GCP, and other IaaS/PaaS providers. Excludes SaaS applications."
+    calculation_methodology: null
+    comparability_rules: "Resource counts across cloud providers require type normalization (EC2 instance vs Azure VM vs GCE instance). Pricing models (on-demand vs reserved vs spot) affect cost comparison. Resource tagging completeness affects attribution accuracy."
+
+  - id: alert
+    concept_id: IT-009
+    name: Alert
+    description: "Infrastructure or application alert"
+    domain: it_infra
+    cluster: Infra
+    example_fields:
+      - alert_id
+      - alert
+      - alarm
+      - notification
+      - monitor_alert
+      - source
+      - severity
+      - status
+      - triggered_at
+    aliases:
+      - alarm
+      - notification
+      - monitor_alert
+    expected_type: string
+    typical_source_systems: [datadog, pagerduty, splunk]
+    persona_relevance:
+      cto: 0.8
+    recognition_basis: "Triggered when a monitoring threshold is breached or an anomaly is detected."
+    timing_semantics: "Point-in-time event. Alert-to-acknowledgment and alert-to-resolution times are tracked."
+    scope_boundaries: "Includes infrastructure alerts, application alerts, and security alerts. Excludes informational notifications and scheduled reports."
+    calculation_methodology: null
+    comparability_rules: "Alert volume depends on threshold sensitivity and monitoring coverage. Different monitoring tools may generate duplicate alerts for the same event. Alert fatigue analysis requires distinguishing actionable vs noise alerts."
+
+  - id: integration
+    concept_id: IT-010
+    name: Integration
+    description: "System-to-system connection"
+    domain: it_infra
+    cluster: Infra
+    example_fields:
+      - integration_id
+      - integration
+      - connector
+      - api_connection
+      - sync
+      - source
+      - target
+      - status
+      - last_sync
+    aliases:
+      - connector
+      - api_connection
+      - sync
+    expected_type: string
+    typical_source_systems: [workato, mulesoft, fivetran]
+    persona_relevance:
+      cto: 0.7
+      coo: 0.4
+    recognition_basis: "Established when a system-to-system data connection is configured and activated."
+    timing_semantics: "Point-in-time entity. Sync frequency (real-time, hourly, daily) and last sync timestamp are tracked."
+    scope_boundaries: "Includes API integrations, file-based transfers, database replication, and webhook connections. Excludes manual data entry and spreadsheet uploads."
+    calculation_methodology: null
+    comparability_rules: "Integration counts depend on definition granularity (connection-level vs flow-level vs endpoint-level). Sync success rates must control for data volume and complexity. Real-time vs batch integrations have different reliability profiles."
+
+  # ─── Operations & Supply Chain ─────────────────────────────
+  - id: project
+    concept_id: OPS-001
+    name: Project
+    description: "Planned initiative with defined scope"
+    domain: operations
+    cluster: Ops
+    example_fields:
+      - project_id
+      - project
+      - initiative
+      - program
+      - workstream
+      - name
+      - status
+      - owner
+      - start_date
+      - end_date
+    aliases:
+      - initiative
+      - program
+      - workstream
+    expected_type: string
+    typical_source_systems: [asana, monday_com, smartsheet]
+    persona_relevance:
+      coo: 0.9
+      cto: 0.5
+    recognition_basis: "Created when a planned initiative is formally approved and resourced."
+    timing_semantics: "Period-based entity with start and end dates. Status (planning, active, completed, on-hold) is tracked."
+    scope_boundaries: "Includes all formally managed projects with defined scope, timeline, and budget. Excludes ad-hoc tasks, ongoing operational work, and BAU activities."
+    calculation_methodology: null
+    comparability_rules: "Project count and completion rate comparison requires matching project size thresholds. Different PMO methodologies (waterfall vs agile) affect milestone definitions. Portfolio-level comparisons require normalized project sizing."
+
+  - id: ops_task
+    concept_id: OPS-002
+    name: Task
+    description: "Individual work item"
+    domain: operations
+    cluster: Ops
+    example_fields:
+      - task_id
+      - task
+      - to_do
+      - action_item
+      - work_item
+      - title
+      - assignee
+      - status
+      - due_date
+      - priority
+    aliases:
+      - to_do
+      - action_item
+      - work_item
+    expected_type: string
+    typical_source_systems: [asana, jira, monday_com]
+    persona_relevance:
+      coo: 0.7
+    recognition_basis: "Created when a discrete work item is identified and assigned."
+    timing_semantics: "Point-in-time entity with lifecycle — created, in-progress, completed, cancelled. Task duration is measured from assignment to completion."
+    scope_boundaries: "Includes all tracked work items — tasks, subtasks, action items, and to-dos. Excludes calendar events, meetings, and untracked work."
+    calculation_methodology: null
+    comparability_rules: "Task counts depend on granularity conventions (one task per team member vs one task for the whole effort). Completion rate comparison requires matching task complexity. Cross-tool task counts require deduplication for tasks tracked in multiple systems."
+
+  - id: vendor
+    concept_id: OPS-003
+    name: Vendor
+    description: "External supplier or partner"
+    domain: operations
+    cluster: Ops
+    example_fields:
+      - vendor_id
+      - vendor_name
+      - supplier_id
+      - supplier_name
+      - merchant_id
+      - payee
+    aliases:
+      - supplier
+      - merchant
+      - payee
+      - seller
+      - partner
+      - third_party
+    expected_type: string
+    typical_source_systems: [coupa, sap_ariba, netsuite]
+    persona_relevance:
+      coo: 0.8
+      cfo: 0.6
+    recognition_basis: "Created when a supplier relationship is established. Approved through vendor onboarding and compliance review."
+    timing_semantics: "Point-in-time entity. Vendor status (approved, suspended, terminated) changes are event-driven."
+    scope_boundaries: "Includes all external suppliers, contractors, and partners with a commercial relationship. Excludes internal cost centers and intercompany entities."
+    calculation_methodology: null
+    comparability_rules: "Vendor counts depend on definition scope (active suppliers vs all registered vendors). Parent-subsidiary vendor relationships may inflate counts. Cross-entity vendor comparison requires deduplication for shared suppliers."
+
+  - id: purchase_order
+    concept_id: OPS-004
+    name: Purchase Order
+    description: "Formal buying request"
+    domain: operations
+    cluster: Ops
+    example_fields:
+      - po_id
+      - po
+      - purchase_order
+      - procurement_order
+      - vendor
+      - amount
+      - status
+      - delivery_date
+    aliases:
+      - po
+      - procurement_order
+    expected_type: string
+    typical_source_systems: [coupa, sap, netsuite]
+    persona_relevance:
+      coo: 0.9
+      cfo: 0.6
+    recognition_basis: "Created when a procurement request is approved and issued to a vendor."
+    timing_semantics: "Point-in-time event. PO lifecycle — issued, acknowledged, partially received, fully received, closed."
+    scope_boundaries: "Includes all formal purchase orders for goods and services. Excludes blanket POs (framework agreements) from individual transaction counts. Corporate card purchases and P-card transactions are typically excluded."
+    calculation_methodology: null
+    comparability_rules: "PO value comparison requires matching currency and tax treatment. Blanket PO vs individual PO aggregation methods differ. PO compliance rate (spend under PO vs total spend) requires consistent spend classification."
+
+  - id: inventory
+    concept_id: OPS-005
+    name: Inventory
+    description: "Stock or supply level"
+    domain: operations
+    cluster: Ops
+    example_fields:
+      - item_id
+      - inventory
+      - stock
+      - warehouse_qty
+      - on_hand
+      - location
+      - quantity
+      - reorder_point
+      - value
+    aliases:
+      - stock
+      - warehouse_qty
+      - on_hand
+    expected_type: float
+    typical_source_systems: [netsuite, sap, cin7]
+    persona_relevance:
+      coo: 0.9
+      cfo: 0.4
+    recognition_basis: "Recorded when goods are received, produced, or consumed. Valuation method (FIFO, LIFO, weighted average) affects the carrying amount."
+    timing_semantics: "Point-in-time balance. Inventory levels fluctuate continuously. Period-end snapshots are used for reporting."
+    scope_boundaries: "Includes raw materials, work-in-progress, and finished goods. Excludes consignment inventory held at customer sites and goods in transit unless FOB terms assign ownership."
+    calculation_methodology: "Inventory value = quantity on hand x unit cost (per valuation method). Turns = COGS / average inventory. Days on hand = average inventory / (COGS / 365)."
+    comparability_rules: "Comparable only when valuation method matches (FIFO vs weighted average). Physical count vs perpetual system may differ. Different location scoping (single warehouse vs all locations) affects totals."
+
+  - id: workflow
+    concept_id: OPS-006
+    name: Workflow
+    description: "Automated or manual process flow"
+    domain: operations
+    cluster: Ops
+    example_fields:
+      - workflow_id
+      - workflow
+      - process
+      - automation
+      - flow
+      - name
+      - trigger
+      - steps
+      - sla
+    aliases:
+      - process
+      - automation
+      - flow
+    expected_type: string
+    typical_source_systems: [zapier, workato, servicenow]
+    persona_relevance:
+      coo: 0.7
+      cto: 0.4
+    recognition_basis: "Defined when a repeatable process is formalized and configured in a workflow system."
+    timing_semantics: "Instance-based with start and end timestamps. Workflow cycle time and throughput are measured over periods."
+    scope_boundaries: "Includes automated workflows, approval flows, and manual process sequences. Excludes ad-hoc activities and one-time procedures."
+    calculation_methodology: null
+    comparability_rules: "Workflow throughput comparison requires matching process scope. Automated vs semi-automated vs manual workflows have different cycle time profiles. Cross-platform workflow metrics require normalized step definitions."
+
+  - id: quality_metric
+    concept_id: OPS-007
+    name: Quality Metric
+    description: "Operational quality measurement"
+    domain: operations
+    cluster: Ops
+    example_fields:
+      - metric_id
+      - quality
+      - defect_rate
+      - yield
+      - sla_metric
+      - name
+      - value
+      - target
+      - period
+    aliases:
+      - defect_rate
+      - yield
+      - sla_metric
+    expected_type: float
+    typical_source_systems: [various_domain_specific]
+    persona_relevance:
+      coo: 0.8
+    recognition_basis: "Measured through systematic quality assurance processes — inspections, testing, or monitoring."
+    timing_semantics: "Period-based measurement. Quality metrics are tracked over time for trend analysis."
+    scope_boundaries: "Includes defect rates, yield percentages, SLA compliance, and process adherence metrics. Excludes subjective quality assessments and customer satisfaction scores (those are separate concepts)."
+    calculation_methodology: "Depends on specific metric: defect rate = defects / units produced; yield = conforming units / total units; SLA compliance = in-target / total."
+    comparability_rules: "Comparable only when quality metric definitions match. Different measurement methods (sampling vs 100% inspection) affect accuracy. Industry-specific quality standards (ISO, Six Sigma) define different benchmarks."
+
+  - id: capacity
+    concept_id: OPS-008
+    name: Capacity
+    description: "Resource availability or utilization"
+    domain: operations
+    cluster: Ops
+    example_fields:
+      - capacity_id
+      - capacity
+      - utilization
+      - bandwidth
+      - resource_load
+      - resource
+      - available
+      - used
+      - period
+    aliases:
+      - utilization
+      - bandwidth
+      - resource_load
+    expected_type: float
+    typical_source_systems: [resource_planning, psa]
+    persona_relevance:
+      coo: 0.8
+      cto: 0.4
+    recognition_basis: "Determined by resource availability analysis — people, infrastructure, or equipment capacity."
+    timing_semantics: "Point-in-time snapshot or period-based average. Capacity planning looks forward; utilization looks backward."
+    scope_boundaries: "Includes human resource capacity (available hours), infrastructure capacity (compute, storage), and facility capacity. Excludes theoretical maximum — uses practical or demonstrated capacity."
+    calculation_methodology: "Utilization = used capacity / available capacity. Available capacity = total resources - planned downtime - non-productive time."
+    comparability_rules: "Comparable only when capacity type matches (people vs infrastructure vs facility). Theoretical vs practical capacity produces different utilization rates. Billable capacity (client-facing) vs total capacity (including internal work) must be distinguished."
+
+  - id: facility
+    concept_id: OPS-009
+    name: Facility
+    description: "Physical location or site"
+    domain: operations
+    cluster: Ops
+    example_fields:
+      - facility_id
+      - facility
+      - office
+      - site
+      - location
+      - warehouse
+      - name
+      - address
+      - type
+    aliases:
+      - office
+      - site
+      - location
+      - warehouse
+    expected_type: string
+    typical_source_systems: [iwms, servicenow, internal]
+    persona_relevance:
+      coo: 0.7
+    recognition_basis: "Registered when a physical location is established and operational."
+    timing_semantics: "Point-in-time entity. Facility status (active, under construction, closed) is tracked."
+    scope_boundaries: "Includes offices, warehouses, data centers, and manufacturing plants. Excludes remote work locations and co-working drop-in spaces."
+    calculation_methodology: null
+    comparability_rules: "Facility counts depend on definition (individual floors vs entire buildings). Square footage comparison requires specifying usable vs gross area. Leased vs owned facilities have different cost structures for comparison."
+
+  - id: shipment
+    concept_id: OPS-010
+    name: Shipment
+    description: "Physical goods in transit"
+    domain: operations
+    cluster: Ops
+    example_fields:
+      - shipment_id
+      - shipment
+      - delivery
+      - freight
+      - package
+      - consignment
+      - origin
+      - destination
+      - status
+      - carrier
+      - eta
+    aliases:
+      - delivery
+      - freight
+      - package
+      - consignment
+    expected_type: string
+    typical_source_systems: [shipbob, fedex, ups, sap_tm]
+    persona_relevance:
+      coo: 0.8
+    recognition_basis: "Created when goods are dispatched from a location. Tracking initiated at carrier handoff."
+    timing_semantics: "Point-in-time event with duration. Ship date, estimated delivery, and actual delivery are tracked."
+    scope_boundaries: "Includes all physical goods shipments — outbound to customers and inbound from suppliers. Excludes digital deliveries and document transfers."
+    calculation_methodology: null
+    comparability_rules: "Delivery time comparison requires matching carrier and service level. FOB terms (origin vs destination) affect when ownership and risk transfer. Partial shipments vs complete shipments should be counted separately."
+
+  # ─── Marketing ───────────────────────────────────────────
+  - id: campaign
+    concept_id: MKT-001
+    name: Campaign
+    description: "Organized marketing initiative"
+    domain: marketing
+    cluster: Marketing
+    example_fields:
+      - campaign_id
+      - campaign
+      - promo
+      - initiative
+      - blast
+      - push
+      - name
+      - channel
+      - budget
+      - start_date
+    aliases:
+      - promo
+      - blast
+      - push
+    expected_type: string
+    typical_source_systems: [marketo, hubspot, pardot]
+    persona_relevance:
+      cro: 0.8
+      cfo: 0.4
+    recognition_basis: "Created when a marketing initiative is planned and launched. Active during the campaign run period."
+    timing_semantics: "Period-based entity with start and end dates. Campaign performance is measured during and after the run period with attribution windows."
+    scope_boundaries: "Includes all organized marketing initiatives — digital, events, content, ABM. Excludes always-on brand activities and organic social."
+    calculation_methodology: null
+    comparability_rules: "Campaign performance comparison requires matching channel type and target audience. Multi-touch attribution models produce different ROI figures than single-touch. Campaign cost must include both media spend and production cost for fair comparison."
+
+  - id: lead
+    concept_id: MKT-002
+    name: Lead
+    description: "Potential customer or buyer"
+    domain: marketing
+    cluster: Marketing
+    example_fields:
+      - lead_id
+      - lead
+      - prospect
+      - mql
+      - inquiry
+      - inbound
+      - name
+      - source
+      - status
+      - score
+      - owner
+    aliases:
+      - prospect
+      - mql
+      - inquiry
+      - inbound
+    expected_type: string
+    typical_source_systems: [salesforce, hubspot, marketo]
+    persona_relevance:
+      cro: 0.9
+      cfo: 0.3
+    recognition_basis: "Created when a potential buyer is identified through inbound (form fill, content download) or outbound (prospecting, enrichment) activities."
+    timing_semantics: "Point-in-time entity with lifecycle stages — new, MQL, SQL, SAL, converted, disqualified."
+    scope_boundaries: "Includes all individuals identified as potential buyers. Excludes existing customers (those are contacts on accounts) and partners."
+    calculation_methodology: null
+    comparability_rules: "Lead counts depend on MQL scoring thresholds — different thresholds produce different volumes. Lead-to-opportunity conversion rates must use consistent stage definitions. Deduplicated leads vs raw leads (including duplicates) are different populations."
+
+  - id: channel
+    concept_id: MKT-003
+    name: Channel
+    description: "Marketing distribution medium"
+    domain: marketing
+    cluster: Marketing
+    example_fields:
+      - channel_id
+      - channel
+      - source
+      - medium
+      - utm_source
+      - platform
+      - name
+      - type
+      - conversion_rate
+    aliases:
+      - medium
+      - utm_source
+      - platform
+    expected_type: string
+    typical_source_systems: [google_analytics, any_attribution]
+    persona_relevance:
+      cro: 0.7
+    recognition_basis: "Defined as a marketing distribution medium used to reach target audiences."
+    timing_semantics: "Point-in-time reference entity. Channel performance is measured over periods (monthly, quarterly)."
+    scope_boundaries: "Includes all marketing channels — paid search, organic search, social, email, events, direct, referral. Excludes sales channels and distribution partner channels."
+    calculation_methodology: null
+    comparability_rules: "Channel attribution depends on the attribution model used (first-touch, last-touch, multi-touch, time-decay). UTM taxonomy must be consistent for channel comparison. Paid vs organic channel performance requires different benchmarks."
+
+  - id: content
+    concept_id: MKT-004
+    name: Content
+    description: "Marketing content asset"
+    domain: marketing
+    cluster: Marketing
+    example_fields:
+      - content_id
+      - content
+      - asset
+      - blog
+      - whitepaper
+      - collateral
+      - title
+      - type
+      - publish_date
+      - views
+    aliases:
+      - asset
+      - blog
+      - whitepaper
+      - collateral
+    expected_type: string
+    typical_source_systems: [cms, wordpress, contentful]
+    persona_relevance:
+      cro: 0.5
+    recognition_basis: "Created when a marketing asset is produced and published for audience consumption."
+    timing_semantics: "Point-in-time entity. Content performance (views, downloads, engagement) is measured over time from publish date."
+    scope_boundaries: "Includes blog posts, whitepapers, case studies, videos, and webinar recordings. Excludes internal documentation, product help docs, and sales collateral."
+    calculation_methodology: null
+    comparability_rules: "Content performance comparison requires matching content type and distribution channel. Time-since-publication affects cumulative metrics (older content has more total views). Gated vs ungated content has different volume and conversion profiles."
+
+  - id: conversion
+    concept_id: MKT-005
+    name: Conversion
+    description: "Goal completion event"
+    domain: marketing
+    cluster: Marketing
+    example_fields:
+      - conversion_id
+      - conversion
+      - signup
+      - demo_request
+      - trial_start
+      - type
+      - source
+      - date
+      - value
+      - attribution
+    aliases:
+      - signup
+      - demo_request
+      - trial_start
+    expected_type: string
+    typical_source_systems: [google_analytics, marketo, hubspot]
+    persona_relevance:
+      cro: 0.8
+    recognition_basis: "Recorded when a defined goal completion event occurs — form submission, trial start, demo booking, purchase."
+    timing_semantics: "Point-in-time event. Conversion attribution window (7-day, 30-day, 90-day) affects which touchpoints get credit."
+    scope_boundaries: "Includes all defined conversion events in the marketing funnel. Excludes post-sale events (those are customer success milestones)."
+    calculation_methodology: null
+    comparability_rules: "Conversion rate denominators must match (visitors vs impressions vs MQLs). Different attribution windows produce different conversion counts. Micro-conversions (content download) vs macro-conversions (purchase) should not be compared directly."
+
+  - id: attribution
+    concept_id: MKT-006
+    name: Attribution
+    description: "Revenue credit to marketing touch"
+    domain: marketing
+    cluster: Marketing
+    example_fields:
+      - attribution_id
+      - attribution
+      - touch
+      - touchpoint
+      - influenced_rev
+      - model
+      - channel
+      - deal_id
+      - weight
+    aliases:
+      - touch
+      - touchpoint
+      - influenced_rev
+    expected_type: string
+    typical_source_systems: [bizible, hubspot, dreamdata]
+    persona_relevance:
+      cro: 0.7
+      cfo: 0.4
+    recognition_basis: "Assigned by the attribution model when a conversion event is linked to marketing touchpoints."
+    timing_semantics: "Point-in-time calculation at conversion. Attribution lookback window determines which touches receive credit."
+    scope_boundaries: "Includes all marketing touchpoints within the attribution window. Excludes sales activities and customer success touches."
+    calculation_methodology: "Model-dependent: first-touch assigns 100% to first interaction; last-touch assigns 100% to final interaction; linear distributes equally; time-decay weights recent touches more heavily; algorithmic/data-driven uses ML."
+    comparability_rules: "Comparable ONLY within the same attribution model. First-touch vs last-touch vs multi-touch produce fundamentally different revenue credit allocations. Attribution window length (30-day vs 90-day) dramatically affects results."
+
+  - id: audience
+    concept_id: MKT-007
+    name: Audience
+    description: "Target group or segment"
+    domain: marketing
+    cluster: Marketing
+    example_fields:
+      - audience_id
+      - audience
+      - segment
+      - list
+      - cohort
+      - persona
+      - name
+      - size
+      - criteria
+    aliases:
+      - segment
+      - list
+      - cohort
+    expected_type: string
+    typical_source_systems: [sixsense, demandbase, hubspot]
+    persona_relevance:
+      cro: 0.6
+    recognition_basis: "Defined by segmentation criteria — firmographic, behavioral, intent-based, or account-list-based."
+    timing_semantics: "Point-in-time entity. Audience composition changes as members enter/exit based on criteria. Size is a snapshot metric."
+    scope_boundaries: "Includes marketing target segments, ABM account lists, and lookalike audiences. Excludes customer segments managed by customer success (those are separate concepts)."
+    calculation_methodology: null
+    comparability_rules: "Audience sizes are comparable only within the same platform and criteria set. Cross-platform audience counts include overlap. Total addressable market (TAM) vs targetable audience vs reachable audience are different measures."
+
+  - id: ad
+    concept_id: MKT-008
+    name: Ad
+    description: "Paid advertising unit"
+    domain: marketing
+    cluster: Marketing
+    example_fields:
+      - ad_id
+      - ad
+      - creative
+      - placement
+      - sponsored
+      - promoted
+      - campaign_id
+      - platform
+      - spend
+      - impressions
+      - clicks
+    aliases:
+      - creative
+      - placement
+      - sponsored
+      - promoted
+    expected_type: string
+    typical_source_systems: [google_ads, linkedin, meta]
+    persona_relevance:
+      cro: 0.6
+      cfo: 0.3
+    recognition_basis: "Created when a paid advertising unit is designed and launched on a media platform."
+    timing_semantics: "Period-based, active during the flight dates. Performance metrics (impressions, clicks, conversions) are measured during the run."
+    scope_boundaries: "Includes all paid advertising — search ads, display, social ads, programmatic, sponsored content. Excludes organic social posts and earned media."
+    calculation_methodology: null
+    comparability_rules: "Ad performance comparison requires matching platform and ad format. CPM vs CPC vs CPA metrics are not directly comparable. Cross-platform ROAS comparison requires consistent conversion tracking and attribution."
+
+  - id: marketing_email
+    concept_id: MKT-009
+    name: Email
+    description: "Marketing email communication"
+    domain: marketing
+    cluster: Marketing
+    example_fields:
+      - email_id
+      - email
+      - nurture
+      - drip
+      - newsletter
+      - outreach
+      - subject
+      - sent
+      - opens
+      - clicks
+      - bounces
+    aliases:
+      - nurture
+      - drip
+      - newsletter
+    expected_type: string
+    typical_source_systems: [marketo, hubspot, pardot]
+    persona_relevance:
+      cro: 0.6
+    recognition_basis: "Created and sent when a marketing email is dispatched to a recipient list."
+    timing_semantics: "Point-in-time event at send. Open, click, and conversion metrics are tracked over a measurement window (24h, 48h, 7d)."
+    scope_boundaries: "Includes marketing emails — newsletters, nurture sequences, promotional blasts, and event invitations. Excludes transactional emails (receipts, password resets) and 1:1 sales emails."
+    calculation_methodology: null
+    comparability_rules: "Email metrics comparison requires matching list quality and hygiene standards. Open rates are unreliable due to privacy protection (Apple MPP). Click rate is more reliable than open rate for engagement comparison."
+
+  - id: marketing_event
+    concept_id: MKT-010
+    name: Event
+    description: "Marketing event or webinar"
+    domain: marketing
+    cluster: Marketing
+    example_fields:
+      - event_id
+      - event
+      - webinar
+      - conference
+      - meetup
+      - field_event
+      - name
+      - date
+      - type
+      - registrants
+      - attendees
+    aliases:
+      - webinar
+      - conference
+      - meetup
+      - field_event
+    expected_type: string
+    typical_source_systems: [splash, cvent, zoom_events]
+    persona_relevance:
+      cro: 0.6
+      cfo: 0.3
+    recognition_basis: "Created when a marketing event is planned and scheduled. Tracked through planning, live, and post-event analysis phases."
+    timing_semantics: "Point-in-time event with defined date and duration. Post-event follow-up and attribution extend the measurement window."
+    scope_boundaries: "Includes webinars, conferences, trade shows, field events, and virtual events. Excludes internal company events and sales-only events."
+    calculation_methodology: null
+    comparability_rules: "Event ROI comparison requires matching event type and scale. Registrant vs attendee counts represent different engagement levels. Virtual vs in-person events have different cost structures and engagement benchmarks."
+
+  # ─── Compliance & Risk ───────────────────────────────────
+  - id: audit_trail
+    concept_id: CMP-001
+    name: Audit Trail
+    description: "Record of system or user actions"
+    domain: compliance
+    cluster: Compliance
+    example_fields:
+      - log_id
+      - audit_log
+      - activity_log
+      - changelog
+      - event_log
+      - actor
+      - action
+      - resource
+      - timestamp
+      - ip
+    aliases:
+      - activity_log
+      - changelog
+      - event_log
+    expected_type: string
+    typical_source_systems: [vanta, drata, splunk]
+    persona_relevance:
+      cfo: 0.6
+      cto: 0.7
+    recognition_basis: "Automatically captured when system or user actions occur. Immutable log entries created at event time."
+    timing_semantics: "Point-in-time event log. Entries are timestamped and append-only. Retention period is policy-driven."
+    scope_boundaries: "Includes all auditable events — logins, data modifications, permission changes, and configuration changes. Excludes read-only access events unless required by compliance framework."
+    calculation_methodology: null
+    comparability_rules: "Audit log volume depends on logging scope and verbosity configuration. Different systems log different event types. Cross-system audit trail comparison requires normalized event taxonomy."
+
+  - id: control
+    concept_id: CMP-002
+    name: Control
+    description: "Security or compliance control"
+    domain: compliance
+    cluster: Compliance
+    example_fields:
+      - control_id
+      - control
+      - safeguard
+      - countermeasure
+      - policy_control
+      - framework
+      - status
+      - owner
+      - evidence_date
+    aliases:
+      - safeguard
+      - countermeasure
+      - policy_control
+    expected_type: string
+    typical_source_systems: [vanta, drata, hyperproof]
+    persona_relevance:
+      cto: 0.8
+      cfo: 0.5
+    recognition_basis: "Defined during compliance framework implementation. Active when the control is operationalized and evidence is collected."
+    timing_semantics: "Point-in-time state. Control effectiveness is assessed periodically (quarterly, annually). Evidence freshness determines compliance status."
+    scope_boundaries: "Includes preventive, detective, and corrective controls across IT and business processes. Excludes compensating controls and risk acceptances unless specified."
+    calculation_methodology: null
+    comparability_rules: "Control counts depend on framework granularity (SOC 2 vs ISO 27001 have different control structures). Automated vs manual controls have different assurance levels. Control effectiveness ratings require consistent assessment criteria."
+
+  - id: risk
+    concept_id: CMP-003
+    name: Risk
+    description: "Identified business or operational risk"
+    domain: compliance
+    cluster: Compliance
+    example_fields:
+      - risk_id
+      - risk
+      - threat
+      - exposure
+      - vulnerability
+      - category
+      - likelihood
+      - impact
+      - status
+      - owner
+    aliases:
+      - threat
+      - exposure
+      - vulnerability
+    expected_type: string
+    typical_source_systems: [logicgate, archer, servicenow_grc]
+    persona_relevance:
+      cfo: 0.7
+      cto: 0.6
+    recognition_basis: "Identified through risk assessment processes — threat analysis, vulnerability scanning, or control gap identification."
+    timing_semantics: "Point-in-time assessment. Risk rating may change as threats evolve and controls are implemented. Risk register is a living document."
+    scope_boundaries: "Includes operational, financial, compliance, strategic, and cybersecurity risks. Excludes speculative risks and opportunities."
+    calculation_methodology: null
+    comparability_rules: "Risk ratings are comparable only within the same risk assessment framework. Likelihood x impact scoring scales vary across organizations. Inherent risk vs residual risk (after controls) must be distinguished."
+
+  - id: policy
+    concept_id: CMP-004
+    name: Policy
+    description: "Organizational governance rule"
+    domain: compliance
+    cluster: Compliance
+    example_fields:
+      - policy_id
+      - policy
+      - rule
+      - standard
+      - guideline
+      - procedure
+      - title
+      - version
+      - effective_date
+      - owner
+    aliases:
+      - rule
+      - standard
+      - guideline
+      - procedure
+    expected_type: string
+    typical_source_systems: [onetrust, drata, sharepoint]
+    persona_relevance:
+      cfo: 0.5
+      cto: 0.5
+    recognition_basis: "Established when an organizational governance rule is approved by leadership and published."
+    timing_semantics: "Versioned entity with effective dates. Policy review cycles (annual, biennial) determine currency."
+    scope_boundaries: "Includes formal organizational policies, standards, and procedures. Excludes informal guidelines, best practices, and operational runbooks."
+    calculation_methodology: null
+    comparability_rules: "Policy counts depend on granularity (one broad policy vs many specific sub-policies). Policy compliance rates require consistent measurement methodology. Cross-framework policy mapping is needed for multi-standard environments."
+
+  - id: violation
+    concept_id: CMP-005
+    name: Violation
+    description: "Policy or compliance breach"
+    domain: compliance
+    cluster: Compliance
+    example_fields:
+      - violation_id
+      - violation
+      - non_compliance
+      - finding
+      - exception
+      - policy_id
+      - severity
+      - date
+      - remediation
+    aliases:
+      - non_compliance
+      - finding
+      - exception
+    expected_type: string
+    typical_source_systems: [vanta, drata, grc_tools]
+    persona_relevance:
+      cfo: 0.7
+      cto: 0.6
+    recognition_basis: "Recorded when a policy or compliance breach is detected through audit, monitoring, or reporting."
+    timing_semantics: "Point-in-time event. Detection date, reporting date, and remediation date are tracked."
+    scope_boundaries: "Includes policy violations, compliance findings, audit exceptions, and regulatory non-compliance. Excludes self-identified issues corrected before detection."
+    calculation_methodology: null
+    comparability_rules: "Violation counts depend on detection capabilities — more monitoring finds more violations. Severity classifications must match for comparison. Remediation time benchmarks must control for violation complexity."
+
+  - id: framework
+    concept_id: CMP-006
+    name: Framework
+    description: "Compliance or regulatory framework"
+    domain: compliance
+    cluster: Compliance
+    example_fields:
+      - framework_id
+      - framework
+      - regulation
+      - standard
+      - certification
+      - name
+      - version
+      - scope
+      - status
+    aliases:
+      - regulation
+      - certification
+    expected_type: string
+    typical_source_systems: [vanta, drata, hyperproof]
+    persona_relevance:
+      cfo: 0.6
+      cto: 0.6
+    recognition_basis: "Adopted when the organization commits to compliance with a regulatory or industry standard."
+    timing_semantics: "Point-in-time entity. Certification/attestation dates and renewal cycles are tracked."
+    scope_boundaries: "Includes regulatory frameworks (SOX, GDPR, HIPAA), industry standards (SOC 2, ISO 27001), and internal frameworks. Excludes aspirational or planned frameworks not yet adopted."
+    calculation_methodology: null
+    comparability_rules: "Framework coverage comparison requires specifying scope (full vs partial adoption). Different framework versions (ISO 27001:2013 vs 2022) are not equivalent. Cross-framework control mapping is approximate, not exact."
+
+  - id: evidence
+    concept_id: CMP-007
+    name: Evidence
+    description: "Proof of compliance or control"
+    domain: compliance
+    cluster: Compliance
+    example_fields:
+      - evidence_id
+      - evidence
+      - artifact
+      - proof
+      - attestation
+      - screenshot
+      - control_id
+      - type
+      - collected_date
+    aliases:
+      - artifact
+      - proof
+      - attestation
+    expected_type: string
+    typical_source_systems: [vanta, drata, hyperproof]
+    persona_relevance:
+      cto: 0.6
+    recognition_basis: "Collected when proof of control effectiveness is gathered — screenshots, configurations, reports, attestations."
+    timing_semantics: "Point-in-time artifact. Evidence freshness (collection date vs current date) determines its validity for audit purposes."
+    scope_boundaries: "Includes all documented proof of compliance — automated evidence (system configs, logs) and manual evidence (attestations, screenshots). Excludes draft evidence and unverified artifacts."
+    calculation_methodology: null
+    comparability_rules: "Evidence completeness comparison requires matching framework requirements. Automated evidence collection is more reliable than manual. Evidence age affects audit readiness — stale evidence may not satisfy auditor requirements."
+
+  - id: data_classification
+    concept_id: CMP-008
+    name: Data Classification
+    description: "Sensitivity label for data"
+    domain: compliance
+    cluster: Compliance
+    example_fields:
+      - class_id
+      - classification
+      - sensitivity
+      - data_label
+      - pii_flag
+      - level
+      - description
+      - handling_rules
+    aliases:
+      - sensitivity
+      - data_label
+      - pii_flag
+    expected_type: string
+    typical_source_systems: [onetrust, bigid, varonis]
+    persona_relevance:
+      cto: 0.7
+      cfo: 0.4
+    recognition_basis: "Assigned when data is labeled according to sensitivity level — public, internal, confidential, restricted."
+    timing_semantics: "Point-in-time label. Classification may change based on data lifecycle events or regulatory changes."
+    scope_boundaries: "Includes all structured and unstructured data assets. Covers PII, PHI, financial data, and intellectual property. Excludes transient data in processing pipelines unless it contains sensitive content."
+    calculation_methodology: null
+    comparability_rules: "Classification taxonomies vary across organizations (3-level vs 4-level vs 5-level). PII definitions differ by jurisdiction (GDPR vs CCPA). Automated classification vs manual classification have different accuracy profiles."
+
+  - id: consent
+    concept_id: CMP-009
+    name: Consent
+    description: "User or customer data consent record"
+    domain: compliance
+    cluster: Compliance
+    example_fields:
+      - consent_id
+      - consent
+      - opt_in
+      - preference
+      - gdpr_consent
+      - user_id
+      - type
+      - status
+      - granted_date
+    aliases:
+      - opt_in
+      - preference
+      - gdpr_consent
+    expected_type: string
+    typical_source_systems: [onetrust, trustarc, cookiebot]
+    persona_relevance:
+      cto: 0.5
+    recognition_basis: "Captured when a user or customer provides explicit permission for data processing activities."
+    timing_semantics: "Point-in-time event. Consent grants and withdrawals are timestamped. Consent validity periods vary by regulation."
+    scope_boundaries: "Includes marketing consent, data processing consent, and cookie consent. Excludes contractual necessity and legitimate interest bases (those are separate legal bases under GDPR)."
+    calculation_methodology: null
+    comparability_rules: "Consent rates depend on collection mechanism (opt-in vs opt-out default). Different jurisdictions have different consent requirements (GDPR vs CCPA). Granular consent (per purpose) vs blanket consent produces different compliance profiles."
+
+  - id: vendor_risk
+    concept_id: CMP-010
+    name: Vendor Risk
+    description: "Third-party risk assessment"
+    domain: compliance
+    cluster: Compliance
+    example_fields:
+      - assessment_id
+      - vendor_risk
+      - third_party_risk
+      - tprm
+      - vendor_assessment
+      - vendor_id
+      - score
+      - tier
+      - review_date
+    aliases:
+      - third_party_risk
+      - tprm
+      - vendor_assessment
+    expected_type: string
+    typical_source_systems: [securityscorecard, prevalent, vanta]
+    persona_relevance:
+      coo: 0.6
+      cto: 0.5
+      cfo: 0.4
+    recognition_basis: "Assessed when a third-party vendor relationship is evaluated for security, compliance, and operational risk."
+    timing_semantics: "Point-in-time assessment. Reassessment cadence depends on vendor risk tier (annual for critical, biennial for low-risk)."
+    scope_boundaries: "Includes security questionnaire responses, SOC 2 reports, penetration test results, and business continuity assessments. Excludes financial risk assessment and credit scoring."
+    calculation_methodology: null
+    comparability_rules: "Vendor risk scores are comparable only within the same assessment framework. Different TPRM platforms use different scoring algorithms. Vendor tier definitions (critical, high, medium, low) are organization-specific."
+
+  - id: access_review
+    concept_id: CMP-011
+    name: Access Review
+    description: "Periodic access certification"
+    domain: compliance
+    cluster: Compliance
+    example_fields:
+      - review_id
+      - access_review
+      - recertification
+      - entitlement_review
+      - user_id
+      - resource
+      - decision
+      - reviewer
+    aliases:
+      - recertification
+      - entitlement_review
+    expected_type: string
+    typical_source_systems: [sailpoint, okta, conductorone]
+    persona_relevance:
+      cto: 0.6
+    recognition_basis: "Initiated during periodic access certification campaigns. Completed when all access decisions are submitted."
+    timing_semantics: "Period-based campaign with defined start and end dates. Review frequency is typically quarterly or semi-annually."
+    scope_boundaries: "Includes user access entitlements for in-scope applications and resources. Excludes system/service accounts unless explicitly in scope."
+    calculation_methodology: null
+    comparability_rules: "Access review completion rates are comparable only when scope matches. Different applications have different review complexity. Certification rate (approved vs revoked) depends on organization's access provisioning practices."
+
+  - id: retention_policy
+    concept_id: CMP-012
+    name: Retention Policy
+    description: "Data retention and disposal rule"
+    domain: compliance
+    cluster: Compliance
+    example_fields:
+      - policy_id
+      - retention
+      - archival
+      - disposal
+      - data_lifecycle
+      - data_type
+      - retention_period
+      - action
+      - status
+    aliases:
+      - archival
+      - disposal
+      - data_lifecycle
+    expected_type: string
+    typical_source_systems: [onetrust, egnyte, m365]
+    persona_relevance:
+      cto: 0.5
+      cfo: 0.4
+    recognition_basis: "Defined when data retention and disposal rules are established for a data category."
+    timing_semantics: "Policy entity with effective dates. Retention periods define the time boundary for data disposal."
+    scope_boundaries: "Includes retention rules for all regulated and business-critical data categories. Excludes ad-hoc data cleanup and storage optimization activities."
+    calculation_methodology: null
+    comparability_rules: "Retention period comparison requires matching data category. Regulatory minimums differ by jurisdiction and data type. Policy compliance rate depends on enforcement mechanism (automated vs manual)."
+
+  # ─── Semantic Triple Store Concepts ─────────────────────
+  - id: cofa
+    concept_id: FIN-029
+    name: COFA Adjustment
+    description: "Cost of Fulfillment Adjustment — reclassification entries that move costs between categories for accurate profitability measurement"
+    domain: finance
+    cluster: Finance
+    example_fields:
+      - cofa_amount
+      - cofa_adjustment
+      - fulfillment_adjustment
+      - cost_reclassification
+    aliases:
+      - cost_of_fulfillment
+      - fulfillment_cost
+      - cofa
+    expected_type: float
+    typical_source_systems: [netsuite, sap]
+    persona_relevance:
+      cfo: 1.0
+      coo: 0.7
+    recognition_basis: "Created when cost reclassification entries are posted to adjust fulfillment costs between reporting periods or cost categories."
+    timing_semantics: "Period-based adjustment. Applied at month or quarter close. Retroactive adjustments reference the original period."
+    scope_boundaries: "Includes all cost reclassification entries related to service fulfillment. Excludes revenue adjustments and non-operating reclassifications."
+    calculation_methodology: "Sum of reclassification journal entries tagged as COFA within the period."
+    comparability_rules: "Comparable across periods only when COFA classification rules are consistent. Changes in cost allocation methodology break period-over-period comparability."
+
+  - id: cofa_mapping
+    name: COFA Mapping
+    domain: cofa
+    description: "Chart of accounts mapping between entities produced by Maestra"
+    data_type: text
+    comparable: false
+
+  - id: cofa_conflict
+    name: COFA Conflict
+    domain: cofa
+    description: "Identified accounting policy conflicts between entities"
+    data_type: text
+    comparable: false
+
+  - id: cofa_unified
+    name: COFA Unified Account
+    domain: cofa
+    description: "Unified chart of accounts structure for combined entity"
+    data_type: text
+    comparable: false
+
+  - id: ebitda_adjustment
+    concept_id: FIN-030
+    name: EBITDA Adjustment
+    description: "Normalization adjustments applied to EBITDA for M&A, valuation, or management reporting"
+    domain: finance
+    cluster: Finance
+    example_fields:
+      - ebitda_adj
+      - normalization_amount
+      - ebitda_addback
+      - one_time_adjustment
+    aliases:
+      - ebitda_addback
+      - ebitda_normalization
+      - adjusted_ebitda_item
+    expected_type: float
+    typical_source_systems: [netsuite, sap, excel]
+    persona_relevance:
+      cfo: 1.0
+      coo: 0.5
+    recognition_basis: "Created when management or advisors identify non-recurring, non-operational, or owner-related expenses to normalize earnings."
+    timing_semantics: "Period-based. Applied during quarterly or annual financial review. May be retroactively applied during due diligence."
+    scope_boundaries: "Includes one-time charges, owner compensation adjustments, non-recurring legal/professional fees, and other normalization items. Excludes standard operating expenses."
+    calculation_methodology: "Individual adjustment line items summed by category. Adjusted EBITDA = Reported EBITDA + sum of addbacks - sum of deductions."
+    comparability_rules: "EBITDA adjustments are subjective and vary by preparer. Comparable only when adjustment categories and criteria are consistently defined."
+
+  - id: service
+    concept_id: OPS-010
+    name: Service
+    description: "Service catalog entry representing a deliverable service offering"
+    domain: operations
+    cluster: Ops
+    example_fields:
+      - service_id
+      - service_name
+      - service_type
+      - service_category
+      - offering_name
+    aliases:
+      - service_offering
+      - service_line
+      - deliverable
+      - engagement_type
+    expected_type: string
+    typical_source_systems: [servicenow, salesforce, netsuite]
+    persona_relevance:
+      coo: 0.9
+      cfo: 0.6
+      cro: 0.7
+    recognition_basis: "Created when a service offering is defined in the service catalog. Active when associated with customer engagements or revenue recognition."
+    timing_semantics: "Point-in-time entity. Service definition changes are versioned. Service delivery has temporal scope (start/end dates)."
+    scope_boundaries: "Includes all defined service offerings whether active or retired. Excludes internal-only support functions not sold to customers."
+    calculation_methodology: null
+    comparability_rules: "Service comparison requires matching service taxonomy. Different organizations may define service granularity differently (managed services vs individual service components)."
+
+  - id: cash_flow
+    concept_id: FIN-031
+    name: Cash Flow
+    description: "Cash flow statement line item — operating, investing, or financing activity"
+    domain: finance
+    cluster: Finance
+    example_fields:
+      - cash_flow_amount
+      - operating_cash_flow
+      - investing_cash_flow
+      - financing_cash_flow
+      - free_cash_flow
+      - net_cash
+    aliases:
+      - cash_movement
+      - funds_flow
+      - cash_activity
+    expected_type: float
+    typical_source_systems: [netsuite, sap, quickbooks]
+    persona_relevance:
+      cfo: 1.0
+      coo: 0.5
+    recognition_basis: "Derived from changes in balance sheet accounts and income statement items between periods. Classified by activity type (operating/investing/financing)."
+    timing_semantics: "Period-based flow metric. Represents cash movement during a defined period. Not a point-in-time balance."
+    scope_boundaries: "Includes all cash and cash equivalent movements. Non-cash transactions (depreciation, stock comp) appear as adjustments in operating activities."
+    calculation_methodology: "Direct method: sum of cash receipts and payments. Indirect method: net income adjusted for non-cash items and working capital changes."
+    comparability_rules: "Cash flow comparison requires consistent classification methodology (direct vs indirect). Currency conversion timing affects cross-entity comparability."
+
+  - id: asset
+    concept_id: FIN-032
+    name: Asset
+    description: "Balance sheet asset — current or non-current resource owned or controlled by the entity"
+    domain: finance
+    cluster: Finance
+    example_fields:
+      - asset_value
+      - total_assets
+      - current_assets
+      - fixed_assets
+      - intangible_assets
+    aliases:
+      - balance_sheet_asset
+      - resource
+      - owned_asset
+    expected_type: float
+    typical_source_systems: [netsuite, sap, quickbooks]
+    persona_relevance:
+      cfo: 1.0
+      coo: 0.4
+    recognition_basis: "Recognized when an entity obtains control of a resource with future economic benefit. Measured at cost, fair value, or amortized cost depending on classification."
+    timing_semantics: "Point-in-time balance. Reported as of a specific date. Changes between periods reflect acquisitions, disposals, depreciation, and impairment."
+    scope_boundaries: "Includes all assets on the balance sheet — cash, receivables, inventory, PP&E, intangibles, goodwill. Excludes off-balance-sheet items unless consolidation rules apply."
+    calculation_methodology: "Sum of all asset accounts in the chart of accounts classified as assets."
+    comparability_rules: "Asset comparison requires consistent valuation methodology (historical cost vs fair value). Different depreciation methods affect comparability of fixed asset balances."
+
+  - id: liability
+    concept_id: FIN-033
+    name: Liability
+    description: "Balance sheet liability — current or non-current obligation of the entity"
+    domain: finance
+    cluster: Finance
+    example_fields:
+      - liability_amount
+      - total_liabilities
+      - current_liabilities
+      - long_term_debt
+      - accounts_payable_balance
+    aliases:
+      - obligation
+      - debt
+      - payable
+    expected_type: float
+    typical_source_systems: [netsuite, sap, quickbooks]
+    persona_relevance:
+      cfo: 1.0
+      coo: 0.3
+    recognition_basis: "Recognized when the entity has a present obligation arising from a past event, the settlement of which is expected to result in an outflow of resources."
+    timing_semantics: "Point-in-time balance. Reported as of a specific date. Changes reflect new obligations, payments, and reclassifications."
+    scope_boundaries: "Includes all liabilities on the balance sheet — payables, accruals, debt, deferred revenue, lease obligations. Excludes contingent liabilities unless probable and estimable."
+    calculation_methodology: "Sum of all liability accounts in the chart of accounts classified as liabilities."
+    comparability_rules: "Liability comparison requires consistent recognition criteria. Lease accounting standards (ASC 842 vs old rules) significantly affect comparability."
+
+  - id: equity
+    concept_id: FIN-034
+    name: Equity
+    description: "Balance sheet equity — residual interest in assets after deducting liabilities"
+    domain: finance
+    cluster: Finance
+    example_fields:
+      - equity_amount
+      - total_equity
+      - retained_earnings
+      - shareholders_equity
+      - common_stock
+    aliases:
+      - shareholders_equity
+      - net_assets
+      - owners_equity
+      - book_value
+    expected_type: float
+    typical_source_systems: [netsuite, sap, quickbooks]
+    persona_relevance:
+      cfo: 1.0
+    recognition_basis: "Residual: Total Assets minus Total Liabilities. Components include contributed capital, retained earnings, and accumulated other comprehensive income."
+    timing_semantics: "Point-in-time balance. Changes reflect net income, dividends, share issuance/buyback, and OCI items."
+    scope_boundaries: "Includes all equity accounts — common stock, additional paid-in capital, retained earnings, treasury stock, AOCI. Excludes minority interest in separate line items for consolidated entities."
+    calculation_methodology: "Total Assets - Total Liabilities = Total Equity. Or sum of all equity component accounts."
+    comparability_rules: "Equity comparison requires consistent consolidation scope. Share buybacks, dividend policies, and AOCI items affect period-over-period comparability."
+
+  - id: cogs
+    concept_id: FIN-035
+    name: Cost of Goods Sold
+    description: "Direct costs attributable to production of goods or delivery of services sold by the entity"
+    domain: finance
+    cluster: Finance
+    example_fields:
+      - cogs
+      - cost_of_revenue
+      - cost_of_sales
+      - direct_cost
+      - cost_of_goods_sold
+    aliases:
+      - cost_of_revenue
+      - cost_of_sales
+      - direct_costs
+      - cos
+    expected_type: float
+    typical_source_systems: [netsuite, sap, quickbooks]
+    persona_relevance:
+      cfo: 1.0
+      coo: 0.8
+    recognition_basis: "Recognized in the same period as the related revenue under the matching principle. Includes direct labor, direct materials, and allocated overhead."
+    timing_semantics: "Period-based, matched to revenue recognition period. Cumulative for the reporting period."
+    scope_boundaries: "Includes direct costs of production or service delivery — labor, materials, subcontractor costs, allocated overhead. Excludes SG&A, R&D, and other operating expenses."
+    calculation_methodology: "Sum of all GL accounts classified as cost of goods sold or cost of revenue for the reporting entity."
+    comparability_rules: "Comparable only when cost allocation methodology is consistent. Different overhead allocation methods (activity-based vs traditional) affect comparability."
+
+  - id: opex
+    concept_id: FIN-036
+    name: Operating Expenses
+    description: "Expenses incurred through normal business operations — SG&A, R&D, and other operating costs excluding COGS"
+    domain: finance
+    cluster: Finance
+    example_fields:
+      - opex
+      - operating_expenses
+      - sga
+      - selling_general_admin
+      - research_development
+    aliases:
+      - operating_expenses
+      - sga
+      - overhead
+      - operating_costs
+    expected_type: float
+    typical_source_systems: [netsuite, sap, workday]
+    persona_relevance:
+      cfo: 1.0
+      coo: 0.9
+    recognition_basis: "Recognized as incurred in the period. Includes all operating costs not classified as COGS — sales, marketing, G&A, R&D."
+    timing_semantics: "Period-based. Recognized in the period incurred regardless of cash payment timing."
+    scope_boundaries: "Includes SG&A, R&D, depreciation & amortization of operating assets, and other operating expenses. Excludes COGS, interest expense, and income taxes."
+    calculation_methodology: "Sum of all GL accounts classified as operating expenses for the reporting entity, excluding COGS."
+    comparability_rules: "Comparable when expense classification rules match. R&D capitalization policies and stock-based compensation treatment affect comparability."
+
+  - id: pnl
+    concept_id: FIN-037
+    name: Profit and Loss
+    description: "Income statement summary metrics — EBITDA, operating income, net income, and derived P&L aggregates"
+    domain: finance
+    cluster: Finance
+    example_fields:
+      - ebitda
+      - operating_income
+      - net_income
+      - gross_profit
+      - gross_margin
+    aliases:
+      - income_statement
+      - profit_loss
+      - earnings
+      - p_and_l
+    expected_type: float
+    typical_source_systems: [netsuite, sap, quickbooks]
+    persona_relevance:
+      cfo: 1.0
+      cro: 0.7
+      coo: 0.8
+    recognition_basis: "Derived from revenue, COGS, and operating expense recognition. EBITDA = Revenue - COGS - OpEx. Period-based aggregate."
+    timing_semantics: "Period-based summary. Represents cumulative results for the reporting period."
+    scope_boundaries: "Covers the full P&L from revenue through net income. Individual line items (EBITDA, gross profit, etc.) are sub-concepts."
+    calculation_methodology: "EBITDA = Revenue - COGS - OpEx. Gross Profit = Revenue - COGS. Operating Income = Gross Profit - OpEx."
+    comparability_rules: "P&L comparisons require consistent revenue recognition, cost classification, and expense categorization. EBITDA adjustments must be disclosed."
+
+  - id: gl
+    concept_id: FIN-038
+    name: General Ledger Entry
+    description: "Monthly general ledger entries — atomic double-entry data layer with debit, credit, and ending_balance per account per period"
+    domain: finance
+    cluster: Finance
+    example_fields:
+      - debit
+      - credit
+      - ending_balance
+      - transaction_count
+    aliases:
+      - general_ledger_entry
+      - gl_entry
+    expected_type: float
+    typical_source_systems: [netsuite, sap, quickbooks, xero]
+    persona_relevance:
+      cfo: 1.0
+      coo: 0.4
+    recognition_basis: "Recorded when journal entries are posted. Each entry has balanced debits and credits."
+    timing_semantics: "Monthly period granularity. Ending balances are cumulative for BS accounts, periodic for IS accounts."
+    scope_boundaries: "Covers all GL account entries. Sub-concepts keyed by account number: gl.{account_number}."
+    calculation_methodology: "Debit and credit per account per period. DR=CR enforced per period. Cash as plug account."
+    comparability_rules: "Comparable across periods when chart of accounts structure is stable."
+
+  - id: coa
+    concept_id: FIN-039
+    name: Chart of Accounts
+    description: "Chart of accounts metadata — atemporal account definitions with hierarchy, type, and accounting policy properties"
+    domain: finance
+    cluster: Finance
+    example_fields:
+      - account_name
+      - account_number
+      - account_type
+      - hierarchy_parent
+      - hierarchy_level
+      - department
+    aliases:
+      - chart_of_accounts_entry
+      - coa_definition
+    expected_type: string
+    typical_source_systems: [netsuite, sap, quickbooks, xero]
+    persona_relevance:
+      cfo: 0.8
+      coo: 0.3
+    recognition_basis: "Established when account is defined in the chart of accounts. Atemporal — no period dimension."
+    timing_semantics: "Atemporal reference data. No period field. One set per entity."
+    scope_boundaries: "Account definitions only. Sub-concepts keyed by account number: coa.{account_number}."
+    calculation_methodology: "N/A — categorical metadata, not numeric."
+    comparability_rules: "Comparable across entities when using a unified chart of accounts (COFA)."
+
+  - id: customer
+    concept_id: SALES-014
+    name: Customer
+    description: "Customer entity — a business or individual that purchases goods or services"
+    domain: sales
+    cluster: Sales
+    example_fields:
+      - customer_id
+      - customer_name
+      - client_id
+      - client_name
+      - account_name
+      - buyer_id
+    aliases:
+      - client
+      - buyer
+      - account
+      - purchaser
+    expected_type: string
+    typical_source_systems: [salesforce, netsuite, hubspot]
+    persona_relevance:
+      cro: 1.0
+      cfo: 0.7
+      coo: 0.6
+    recognition_basis: "Created when a prospect converts to a paying customer or when a customer record is established in the CRM/ERP."
+    timing_semantics: "Point-in-time entity. Customer status (active, churned, prospect) changes are event-driven."
+    scope_boundaries: "Includes all entities with a commercial relationship. Excludes prospects that have not converted and internal entities."
+    calculation_methodology: null
+    comparability_rules: "Customer counts depend on definition scope (active vs all-time). Parent-subsidiary relationships may inflate counts. Cross-entity comparison requires deduplication."
+
+  - id: customer_service
+    concept_id: SALES-015
+    name: Customer Service Engagement
+    description: "Links a customer to a specific service they purchase from an entity, with engagement details (revenue, contract type, satisfaction)"
+    domain: sales
+    cluster: Sales
+    example_fields:
+      - customer_id
+      - service_id
+      - engagement_revenue
+      - contract_type
+      - satisfaction_score
+      - engagement_start_year
+    aliases:
+      - customer_engagement
+      - service_engagement
+      - customer_service_link
+    expected_type: string
+    typical_source_systems: [salesforce, netsuite, hubspot]
+    persona_relevance:
+      cro: 1.0
+      cfo: 0.8
+      coo: 0.7
+    recognition_basis: "Created when a customer is linked to a specific service engagement with measurable revenue and contract terms."
+    timing_semantics: "Engagement-level granularity. Start year and contract type define the temporal scope."
+    scope_boundaries: "Each triple represents one customer-service pair per entity. Concept format: customer_service.{customer}.{service}."
+    calculation_methodology: null
+    comparability_rules: "Cross-entity comparison enables upsell gap analysis — services one entity provides to a shared customer that the other does not."
+
+  - id: bench
+    concept_id: OPS-011
+    name: Bench Utilization
+    description: "Bench time and utilization metrics — employees available but not assigned to billable engagements"
+    domain: operations
+    cluster: Ops
+    example_fields:
+      - bench_hours
+      - bench_count
+      - bench_rate
+      - utilization_rate
+      - idle_time
+      - available_capacity
+    aliases:
+      - idle_capacity
+      - available_bench
+      - unassigned_resources
+      - bench_strength
+    expected_type: float
+    typical_source_systems: [workday, netsuite, custom_psa]
+    persona_relevance:
+      coo: 1.0
+      cfo: 0.8
+      chro: 0.6
+    recognition_basis: "Measured when billable employees are not assigned to revenue-generating engagements. Calculated from timesheet and project assignment data."
+    timing_semantics: "Period-based metric. Measured weekly or monthly. Point-in-time snapshots represent current bench state."
+    scope_boundaries: "Includes all billable/client-facing employees. Excludes support staff, management, and employees on PTO. Definition of 'bench' varies by firm."
+    calculation_methodology: "Bench Rate = (Available Hours - Billable Hours) / Available Hours. Bench Count = employees with 0 billable hours in period."
+    comparability_rules: "Bench comparison requires consistent definition of billable vs non-billable roles. Different firms include/exclude different role categories."
+
+  # ─── Cross-cutting ───────────────────────────────────────
+  - id: date
+    concept_id: SYS-001
+    name: Date/Timestamp
+    description: "Date or timestamp field"
+    domain: finance
+    cluster: Finance
+    example_fields:
+      - date
+      - timestamp
+      - created_at
+      - updated_at
+      - time
+      - close_date
+      - tran_date
+      - posting_period
+      - billing_period
+      - started_at
+      - ended_at
+    aliases:
+      - timestamp
+      - datetime
+      - time
+    expected_type: datetime
+    typical_source_systems: []
+    persona_relevance:
+      cfo: 0.5
+      cro: 0.5
+      coo: 0.5
+      cto: 0.5
+      chro: 0.5
+    recognition_basis: "System-generated or user-entered temporal value. Semantics depend on context — transaction date, effective date, created date, modified date."
+    timing_semantics: "Point-in-time value. Timezone handling (UTC vs local) affects cross-system comparison. Date precision (date vs datetime vs timestamp) varies."
+    scope_boundaries: "Universal field present in virtually every system. Context determines meaning — close_date (sales), posting_date (finance), hire_date (HR)."
+    calculation_methodology: null
+    comparability_rules: "Date comparison requires timezone alignment. Different date semantics (transaction date vs posting date vs effective date) are not interchangeable. Fiscal calendar dates vs calendar dates require mapping when fiscal year-end differs from December."
+
