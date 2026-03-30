@@ -118,7 +118,7 @@ def _build_mapping_triples(data: dict) -> list[dict]:
                 "source_table": None,
                 "source_field": "cofa_unification",
                 "pipe_id": None,
-                "run_id": run_id,
+                "run_id": run_id,  # DB column
                 "confidence_score": confidence,
                 "confidence_tier": tier,
                 "canonical_id": canonical,
@@ -141,7 +141,7 @@ def _build_mapping_triples(data: dict) -> list[dict]:
                 "source_table": None,
                 "source_field": "cofa_unification",
                 "pipe_id": None,
-                "run_id": run_id,
+                "run_id": run_id,  # DB column
                 "confidence_score": confidence,
                 "confidence_tier": tier,
                 "canonical_id": canonical,
@@ -186,7 +186,7 @@ def _build_conflict_triples(data: dict) -> list[dict]:
                 "source_table": None,
                 "source_field": "cofa_unification",
                 "pipe_id": None,
-                "run_id": run_id,
+                "run_id": run_id,  # DB column
                 "confidence_score": 1.0,
                 "confidence_tier": "exact",
                 "canonical_id": None,
@@ -229,7 +229,7 @@ def _build_unified_account_triples(data: dict) -> list[dict]:
                 "source_table": None,
                 "source_field": "cofa_unification",
                 "pipe_id": None,
-                "run_id": run_id,
+                "run_id": run_id,  # DB column
                 "confidence_score": 1.0,
                 "confidence_tier": "exact",
                 "canonical_id": None,

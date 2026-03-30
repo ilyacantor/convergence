@@ -288,7 +288,7 @@ def ingest_triples(
             "source_table": t.source_table,
             "source_field": t.source_field,
             "pipe_id": t.pipe_id,
-            "run_id": req.pipeline_run_id,
+            "run_id": req.pipeline_run_id,  # DB column
             "source_run_tag": req.source_run_tag,
             "confidence_score": t.confidence_score,
             "confidence_tier": t.confidence_tier,
