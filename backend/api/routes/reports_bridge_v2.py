@@ -1,5 +1,5 @@
 """
-V2 EBITDA bridge + QoE routes — data from semantic_triples.
+V2 EBITDA bridge + QoE routes — data from convergence_triples.
 
 Mounts at /api/convergence/reports/v2/bridge:
   GET /api/convergence/reports/v2/bridge?entity_id=meridian
@@ -14,7 +14,7 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 
-from backend.api.routes.v2_helpers import resolve_tenant_and_run
+from backend.api.routes.v2_helpers import resolve_tenant_and_run, build_identity_context
 from backend.core.db import PoolExhausted
 from backend.engine.ebitda_bridge_v2 import EBITDABridgeV2
 from backend.engine.qoe_v2 import QualityOfEarningsV2
@@ -29,13 +29,17 @@ router = APIRouter(prefix="/api/convergence/reports/v2", tags=["Reports V2 - Bri
 async def get_bridge(
     entity_id: Optional[str] = None,
     tenant_id: Optional[str] = Query(None),
-    run_id: Optional[str] = Query(None),
+    pipeline_run_id: Optional[str] = Query(None),
 ):
     """EBITDA bridge for one entity or combined (entity_id=None)."""
-    tid, rid = resolve_tenant_and_run(tenant_id, run_id, domain_hint="financial")
+    tid, rid = resolve_tenant_and_run(tenant_id, pipeline_run_id)
+    identity = build_identity_context(tid, rid)
+    if entity_id:
+        identity["entity_id"] = entity_id
     try:
         engine = EBITDABridgeV2(tid, rid)
-        return engine.get_bridge(entity_id)
+        result = engine.get_bridge(entity_id)
+        return {**identity, **result}
     except ValueError as e:
         raise HTTPException(status_code=422, detail={"error": "data_incomplete", "detail": str(e)})
     except PoolExhausted as e:
@@ -50,13 +54,15 @@ async def get_bridge(
 @router.get("/bridge/comparison")
 async def get_bridge_comparison(
     tenant_id: Optional[str] = Query(None),
-    run_id: Optional[str] = Query(None),
+    pipeline_run_id: Optional[str] = Query(None),
 ):
     """Side-by-side bridge for both entities + combined."""
-    tid, rid = resolve_tenant_and_run(tenant_id, run_id, domain_hint="financial")
+    tid, rid = resolve_tenant_and_run(tenant_id, pipeline_run_id)
+    identity = build_identity_context(tid, rid)
     try:
         engine = EBITDABridgeV2(tid, rid)
-        return engine.get_bridge_comparison()
+        result = engine.get_bridge_comparison()
+        return {**identity, **result}
     except ValueError as e:
         raise HTTPException(status_code=422, detail={"error": "data_incomplete", "detail": str(e)})
     except PoolExhausted as e:
@@ -72,13 +78,15 @@ async def get_bridge_comparison(
 async def get_adjustment_detail(
     concept: str,
     tenant_id: Optional[str] = Query(None),
-    run_id: Optional[str] = Query(None),
+    pipeline_run_id: Optional[str] = Query(None),
 ):
     """Detailed view of one adjustment concept."""
-    tid, rid = resolve_tenant_and_run(tenant_id, run_id, domain_hint="financial")
+    tid, rid = resolve_tenant_and_run(tenant_id, pipeline_run_id)
+    identity = build_identity_context(tid, rid)
     try:
         engine = EBITDABridgeV2(tid, rid)
-        return engine.get_adjustment_detail(concept)
+        result = engine.get_adjustment_detail(concept)
+        return {**identity, **result}
     except ValueError as e:
         raise HTTPException(status_code=422, detail={"error": "data_incomplete", "detail": str(e)})
     except PoolExhausted as e:
@@ -93,13 +101,15 @@ async def get_adjustment_detail(
 @router.get("/bridge/sensitivity")
 async def get_sensitivity_matrix(
     tenant_id: Optional[str] = Query(None),
-    run_id: Optional[str] = Query(None),
+    pipeline_run_id: Optional[str] = Query(None),
 ):
     """Sensitivity matrix showing base/low/high scenarios."""
-    tid, rid = resolve_tenant_and_run(tenant_id, run_id, domain_hint="financial")
+    tid, rid = resolve_tenant_and_run(tenant_id, pipeline_run_id)
+    identity = build_identity_context(tid, rid)
     try:
         engine = EBITDABridgeV2(tid, rid)
-        return engine.get_sensitivity_matrix()
+        result = engine.get_sensitivity_matrix()
+        return {**identity, **result}
     except ValueError as e:
         raise HTTPException(status_code=422, detail={"error": "data_incomplete", "detail": str(e)})
     except PoolExhausted as e:
@@ -115,13 +125,15 @@ async def get_sensitivity_matrix(
 async def get_qoe_summary(
     entity_id: str = Query(..., description="Entity ID (e.g. the entity name from the engagement)"),
     tenant_id: Optional[str] = Query(None),
-    run_id: Optional[str] = Query(None),
+    pipeline_run_id: Optional[str] = Query(None),
 ):
     """QoE summary for one entity."""
-    tid, rid = resolve_tenant_and_run(tenant_id, run_id, domain_hint="financial")
+    tid, rid = resolve_tenant_and_run(tenant_id, pipeline_run_id)
+    identity = build_identity_context(tid, rid)
     try:
         engine = QualityOfEarningsV2(tid, rid)
-        return engine.get_qoe_summary(entity_id)
+        result = engine.get_qoe_summary(entity_id)
+        return {**identity, "entity_id": entity_id, **result}
     except ValueError as e:
         raise HTTPException(status_code=422, detail={"error": "data_incomplete", "detail": str(e)})
     except PoolExhausted as e:
@@ -136,13 +148,15 @@ async def get_qoe_summary(
 @router.get("/qoe/combined")
 async def get_combined_qoe(
     tenant_id: Optional[str] = Query(None),
-    run_id: Optional[str] = Query(None),
+    pipeline_run_id: Optional[str] = Query(None),
 ):
     """Combined QoE for both entities."""
-    tid, rid = resolve_tenant_and_run(tenant_id, run_id, domain_hint="financial")
+    tid, rid = resolve_tenant_and_run(tenant_id, pipeline_run_id)
+    identity = build_identity_context(tid, rid)
     try:
         engine = QualityOfEarningsV2(tid, rid)
-        return engine.get_combined_qoe()
+        result = engine.get_combined_qoe()
+        return {**identity, **result}
     except ValueError as e:
         raise HTTPException(status_code=422, detail={"error": "data_incomplete", "detail": str(e)})
     except PoolExhausted as e:

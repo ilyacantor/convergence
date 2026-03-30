@@ -67,6 +67,17 @@ class EngagementConfig:
         """Direction label: 'entity_b → entity_a'."""
         return f"{self.entity_b.display_name} → {self.entity_a.display_name}"
 
+    @property
+    def short_name(self) -> str:
+        """ME engagement short name — first 3 chars of each entity display name.
+
+        Example: Meridian Partners + Cascadia Solutions -> MerCas
+        Used in run_name generation per I5.
+        """
+        a_prefix = self.entity_a.display_name[:3]
+        b_prefix = self.entity_b.display_name[:3]
+        return f"{a_prefix}{b_prefix}"
+
 
 # Module-level singleton — loaded once, reused.
 _cached_config: EngagementConfig | None = None

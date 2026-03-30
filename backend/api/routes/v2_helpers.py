@@ -1,194 +1,76 @@
 """
-Shared helpers for v2 route files — tenant_id and run_id resolution.
+Shared helpers for v2 route files — tenant_id and pipeline_run_id validation.
 
-Every v2 endpoint that needs a tenant_id or run_id must use these helpers.
-No hardcoded UUIDs anywhere in route handlers.
+Every v2 endpoint that needs a tenant_id or pipeline_run_id must use these
+helpers. No hardcoded UUIDs anywhere in route handlers.
 
-Resolution order:
-1. Explicit query parameter (?tenant_id=...)
-2. Active engagement from engagement_state table
-3. Most recent active tenant from semantic_triples
-4. HTTP 400 with actionable error message
+Pattern: explicit param required -> 422 if missing.
+No silent fallback. No engagement_state guessing. No "most recent" lookup.
 """
 
 from fastapi import HTTPException
 
-from backend.core.db import get_connection
+from backend.engine.engagement import get_active_engagement
 from backend.utils.log_utils import get_logger
 
 logger = get_logger(__name__)
 
-# Concept prefixes that identify financial statement data.  Used by
-# domain_hint='financial' to prefer runs containing P&L / BS / CF triples
-# over non-financial runs (e.g. HR workforce data).
-_FINANCIAL_PREFIXES = [
-    "revenue.%", "cogs.%", "opex.%", "pnl.%",
-    "asset.%", "liability.%", "equity.%",
-]
-
 
 def resolve_tenant_id(tenant_id: str | None) -> str:
-    """Resolve tenant_id from explicit param or active engagement.
-
-    Never returns a hardcoded default. Raises HTTP 400 if unresolvable.
-    """
+    """Validate tenant_id is explicitly provided. 422 if missing."""
     if tenant_id:
         return tenant_id
-
-    active = _get_active_engagement()
-    if active and active.get("tenant_id"):
-        eng_tid = str(active["tenant_id"])
-        # Validate the engagement's tenant actually has active triples.
-        # Stale engagements may reference a tenant_id with no data.
-        if _tenant_has_active_triples(eng_tid):
-            return eng_tid
-        logger.warning(
-            f"[v2_helpers] engagement {active.get('engagement_id')} references "
-            f"tenant_id={eng_tid} which has no active triples — falling through "
-            f"to latest tenant from semantic_triples"
-        )
-
-    latest = _get_latest_tenant()
-    if latest:
-        return latest
-
     raise HTTPException(
-        status_code=400,
-        detail=(
-            "No tenant_id provided, no active engagement, and no tenants found "
-            "in semantic_triples. Ingest data first or pass ?tenant_id= explicitly."
-        ),
+        status_code=422,
+        detail={
+            "error": "MISSING_REQUIRED_FIELD",
+            "field": "tenant_id",
+            "message": (
+                "tenant_id is required. Pass ?tenant_id=<UUID> explicitly. "
+                "No implicit resolution — the caller must know which tenant."
+            ),
+        },
     )
 
 
-def resolve_run_id(
-    run_id: str | None, tenant_id: str, domain_hint: str | None = None,
-) -> str:
-    """Resolve run_id from explicit param or most recent active run.
-
-    Never returns a hardcoded default. Raises HTTP 400 if unresolvable.
-    """
-    if run_id:
-        return run_id
-
-    latest = _get_latest_run(tenant_id, domain_hint=domain_hint)
-    if latest:
-        return latest
-
+def resolve_pipeline_run_id(pipeline_run_id: str | None) -> str:
+    """Validate pipeline_run_id is explicitly provided. 422 if missing."""
+    if pipeline_run_id:
+        return pipeline_run_id
     raise HTTPException(
-        status_code=400,
-        detail=(
-            f"No run_id provided and no active runs found for tenant_id='{tenant_id}' "
-            f"in semantic_triples. Ingest data first or pass ?run_id= explicitly."
-        ),
+        status_code=422,
+        detail={
+            "error": "MISSING_REQUIRED_FIELD",
+            "field": "pipeline_run_id",
+            "message": (
+                "pipeline_run_id is required. Pass ?pipeline_run_id=<UUID> explicitly. "
+                "No implicit resolution — the caller must specify which pipeline run to query."
+            ),
+        },
     )
 
 
 def resolve_tenant_and_run(
     tenant_id: str | None,
-    run_id: str | None,
-    domain_hint: str | None = None,
+    pipeline_run_id: str | None,
 ) -> tuple[str, str]:
-    """Resolve both tenant_id and run_id. Convenience wrapper.
-
-    Pass domain_hint='financial' from financial report endpoints so run
-    resolution prefers runs containing P&L/BS/CF triples.
-    """
+    """Validate both tenant_id and pipeline_run_id. 422 if either missing."""
     tid = resolve_tenant_id(tenant_id)
-    rid = resolve_run_id(run_id, tid, domain_hint=domain_hint)
+    rid = resolve_pipeline_run_id(pipeline_run_id)
     return tid, rid
 
 
-def _get_active_engagement() -> dict | None:
-    """Query engagement_state for the most recent active engagement."""
-    sql = (
-        "SELECT tenant_id, engagement_id, entity_a_id, entity_b_id "
-        "FROM engagement_state WHERE status = 'active' "
-        "ORDER BY created_at DESC LIMIT 1"
-    )
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(sql)
-            row = cur.fetchone()
-            if row is None:
-                return None
-            columns = [desc[0] for desc in cur.description]
-            return dict(zip(columns, row))
+def build_identity_context(tenant_id: str, pipeline_run_id: str) -> dict:
+    """Build the identity context dict required on every API response (I2).
 
-
-def _tenant_has_active_triples(tenant_id: str) -> bool:
-    """Check whether a tenant_id has at least one active triple."""
-    sql = (
-        "SELECT 1 FROM semantic_triples "
-        "WHERE tenant_id = %s AND is_active = true "
-        "AND run_id = (SELECT current_run_id FROM tenant_runs WHERE tenant_id = %s) LIMIT 1"
-    )
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(sql, (tenant_id, tenant_id))
-            return cur.fetchone() is not None
-
-
-def _get_latest_tenant() -> str | None:
-    """Get the most recent tenant_id from semantic_triples."""
-    sql = """
-        SELECT tenant_id
-        FROM semantic_triples
-        WHERE is_active = true
-        ORDER BY created_at DESC
-        LIMIT 1
+    Returns tenant_id, pipeline_run_id, engagement_id, entity_pair, run_name.
     """
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(sql)
-            row = cur.fetchone()
-            if row is None:
-                return None
-            return str(row[0])
-
-
-def _get_latest_run(
-    tenant_id: str, domain_hint: str | None = None,
-) -> str | None:
-    """Get the primary run_id for a tenant from semantic_triples.
-
-    Picks the run_id with the most active triples, not just the newest
-    created_at. This prevents small supplementary runs (COFA conflicts,
-    HR imports) from shadowing the main financial ingest run.
-
-    When domain_hint='financial', only counts triples whose concept
-    matches financial domain prefixes (revenue.%, cogs.%, etc.).  This
-    prevents non-financial runs (e.g. 124K HR triples) from being
-    selected when a financial report endpoint needs the financial run.
-    """
-    if domain_hint == "financial":
-        sql = """
-            SELECT run_id
-            FROM semantic_triples
-            WHERE tenant_id = %s AND is_active = true
-              AND run_id = (SELECT current_run_id FROM tenant_runs WHERE tenant_id = %s)
-              AND concept LIKE ANY(%s)
-            GROUP BY run_id
-            ORDER BY COUNT(*) DESC
-            LIMIT 1
-        """
-        params: list = [tenant_id, tenant_id, _FINANCIAL_PREFIXES]
-    else:
-        sql = """
-            SELECT run_id
-            FROM semantic_triples
-            WHERE tenant_id = %s AND is_active = true
-              AND run_id = (SELECT current_run_id FROM tenant_runs WHERE tenant_id = %s)
-            GROUP BY run_id
-            ORDER BY COUNT(*) DESC
-            LIMIT 1
-        """
-        params = [tenant_id, tenant_id]
-
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(sql, params)
-            row = cur.fetchone()
-            if row is None:
-                return None
-            return str(row[0])
+    eng = get_active_engagement()
+    run_name = f"{eng.short_name}-{pipeline_run_id[:4]}"
+    return {
+        "tenant_id": tenant_id,
+        "pipeline_run_id": pipeline_run_id,
+        "engagement_id": eng.engagement_id,
+        "entity_pair": [eng.entity_a.id, eng.entity_b.id],
+        "run_name": run_name,
+    }

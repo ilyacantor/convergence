@@ -1,5 +1,5 @@
 """
-RevenueBridgeV2 — revenue bridge analysis from semantic_triples.
+RevenueBridgeV2 — revenue bridge analysis from convergence_triples.
 
 Period-over-period and entity comparison revenue walks.
 All data sourced from PG via TripleQueryResolver.
@@ -14,13 +14,13 @@ logger = get_logger(__name__)
 class RevenueBridgeV2:
     """
     Revenue bridge analysis: period-over-period and entity comparison.
-    All data from semantic_triples.
+    All data from convergence_triples.
     """
 
-    def __init__(self, tenant_id: str, run_id: str):
+    def __init__(self, tenant_id: str, pipeline_run_id: str):
         self.tenant_id = tenant_id
-        self.run_id = run_id
-        self._resolver = TripleQueryResolver(tenant_id, run_id)
+        self.pipeline_run_id = pipeline_run_id
+        self._resolver = TripleQueryResolver(tenant_id, pipeline_run_id)
 
     def get_revenue_bridge(self, entity_id: str,
                            period_from: str, period_to: str) -> dict:
@@ -51,14 +51,14 @@ class RevenueBridgeV2:
         if from_total is None:
             raise ValueError(
                 f"Revenue bridge: revenue.total not found for entity_id='{entity_id}', "
-                f"period='{period_from}' in semantic_triples for "
-                f"tenant_id='{self.tenant_id}', run_id='{self.run_id}'"
+                f"period='{period_from}' in convergence_triples for "
+                f"tenant_id='{self.tenant_id}', run_id='{self.pipeline_run_id}'"
             )
         if to_total is None:
             raise ValueError(
                 f"Revenue bridge: revenue.total not found for entity_id='{entity_id}', "
-                f"period='{period_to}' in semantic_triples for "
-                f"tenant_id='{self.tenant_id}', run_id='{self.run_id}'"
+                f"period='{period_to}' in convergence_triples for "
+                f"tenant_id='{self.tenant_id}', run_id='{self.pipeline_run_id}'"
             )
 
         total_change = round(to_total - from_total, 2)
@@ -109,7 +109,7 @@ class RevenueBridgeV2:
             raise ValueError(
                 f"Combined revenue bridge requires at least 2 entities, "
                 f"found {len(entities)}: {entities} for "
-                f"tenant_id='{self.tenant_id}', run_id='{self.run_id}'"
+                f"tenant_id='{self.tenant_id}', run_id='{self.pipeline_run_id}'"
             )
 
         bridge_a = self.get_revenue_bridge(entities[0], period_from, period_to)

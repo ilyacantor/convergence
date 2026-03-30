@@ -1,11 +1,11 @@
 -- Migration 003: What-if scenarios table
--- Formalizes the table auto-created by WhatIfEngineV2._ensure_scenarios_table()
+-- Uses UUID for id, tenant_id, run_id — consistent with all other tables.
 -- Idempotent: safe to re-run.
 
 CREATE TABLE IF NOT EXISTS whatif_scenarios (
-    id TEXT PRIMARY KEY,
-    tenant_id TEXT NOT NULL,
-    run_id TEXT NOT NULL,
+    id UUID PRIMARY KEY,
+    tenant_id UUID NOT NULL,
+    run_id UUID NOT NULL,
     name TEXT NOT NULL,
     entity_id TEXT NOT NULL,
     period TEXT NOT NULL,

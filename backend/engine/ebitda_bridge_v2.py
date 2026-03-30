@@ -8,7 +8,7 @@ Reported EBITDA (Entity A + Entity B)
 + Synergies (facility_consolidation, headcount_synergies, run_rate_cost_savings, technology_consolidation)
 = Adjusted Pro Forma EBITDA
 
-All data sourced from semantic_triples in PG — no JSON files.
+All data sourced from convergence_triples in PG — no JSON files.
 """
 
 from backend.core.db import get_connection
@@ -95,9 +95,9 @@ class EBITDABridgeV2:
     = Adjusted Pro Forma EBITDA
     """
 
-    def __init__(self, tenant_id: str, run_id: str):
+    def __init__(self, tenant_id: str, pipeline_run_id: str):
         self.tenant_id = tenant_id
-        self.run_id = run_id
+        self.pipeline_run_id = pipeline_run_id
 
     def _query(self, sql: str, params: list) -> list[dict]:
         """Execute a parameterized query and return rows as dicts."""
@@ -118,21 +118,21 @@ class EBITDABridgeV2:
         sql = f"""
             SELECT DISTINCT ON (entity_id, concept, period)
                    period, value
-            FROM semantic_triples
+            FROM convergence_triples
             WHERE tenant_id = %s AND run_id = %s
               AND concept = 'pnl.ebitda' AND entity_id = %s
               AND property = 'amount'
               AND period IN ({placeholders})
             ORDER BY entity_id, concept, period, created_at DESC
         """
-        params = [self.tenant_id, self.run_id, entity_id] + _ANNUAL_PERIODS
+        params = [self.tenant_id, self.pipeline_run_id, entity_id] + _ANNUAL_PERIODS
         rows = self._query(sql, params)
 
         if not rows:
             raise ValueError(
                 f"No pnl.ebitda triples found for entity_id='{entity_id}' "
                 f"in periods {_ANNUAL_PERIODS} — "
-                f"tenant_id='{self.tenant_id}', run_id='{self.run_id}'"
+                f"tenant_id='{self.tenant_id}', run_id='{self.pipeline_run_id}'"
             )
 
         if len(rows) != len(_ANNUAL_PERIODS):
@@ -162,18 +162,18 @@ class EBITDABridgeV2:
         sql = """
             SELECT DISTINCT ON (entity_id, concept, property)
                    concept, property, value, period
-            FROM semantic_triples
+            FROM convergence_triples
             WHERE tenant_id = %s AND run_id = %s
               AND concept LIKE 'ebitda_adjustment.%%'
               AND entity_id = %s
             ORDER BY entity_id, concept, property, created_at DESC
         """
-        rows = self._query(sql, [self.tenant_id, self.run_id, entity_id])
+        rows = self._query(sql, [self.tenant_id, self.pipeline_run_id, entity_id])
 
         if not rows:
             raise ValueError(
                 f"No ebitda_adjustment triples found for entity_id='{entity_id}' — "
-                f"tenant_id='{self.tenant_id}', run_id='{self.run_id}'. "
+                f"tenant_id='{self.tenant_id}', run_id='{self.pipeline_run_id}'. "
                 f"EBITDA adjustment triples must be seeded before bridge can be produced."
             )
 
@@ -424,19 +424,19 @@ class EBITDABridgeV2:
         sql = """
             SELECT DISTINCT ON (entity_id, concept, property)
                    entity_id, concept, property, value
-            FROM semantic_triples
+            FROM convergence_triples
             WHERE tenant_id = %s AND run_id = %s
               AND (concept = %s OR concept LIKE %s)
               AND entity_id != 'combined'
             ORDER BY entity_id, concept, property, created_at DESC
         """
         like_pattern = adjustment_concept + ".%"
-        rows = self._query(sql, [self.tenant_id, self.run_id, adjustment_concept, like_pattern])
+        rows = self._query(sql, [self.tenant_id, self.pipeline_run_id, adjustment_concept, like_pattern])
 
         if not rows:
             raise ValueError(
                 f"No triples found for adjustment concept '{adjustment_concept}' — "
-                f"tenant_id='{self.tenant_id}', run_id='{self.run_id}'"
+                f"tenant_id='{self.tenant_id}', run_id='{self.pipeline_run_id}'"
             )
 
         # Group by entity -> stage -> {property: value}

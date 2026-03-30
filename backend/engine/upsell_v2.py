@@ -1,5 +1,5 @@
 """
-UpsellEngineV2 — upsell opportunity scoring from semantic_triples.
+UpsellEngineV2 — upsell opportunity scoring from convergence_triples.
 
 Identifies shared customers (served by both entities), maps their
 service portfolios from customer_service.* triples, finds service gaps,
@@ -11,7 +11,7 @@ Scoring model (100-point, 4 components):
   - revenue_potential (0-25): typical_acv from service.* triples
   - contract_recency (0-20): engagement_start_year freshness
 
-All data sourced from PG semantic_triples — no JSON files.
+All data sourced from PG convergence_triples — no JSON files.
 """
 
 from datetime import datetime
@@ -52,10 +52,10 @@ class UpsellEngineV2:
     opportunity based on engagement quality and service fit.
     """
 
-    def __init__(self, tenant_id: str, run_id: str):
+    def __init__(self, tenant_id: str, pipeline_run_id: str):
         self.tenant_id = tenant_id
-        self.run_id = run_id
-        self._overlap_engine = OverlapEngineV2(tenant_id, run_id)
+        self.pipeline_run_id = pipeline_run_id
+        self._overlap_engine = OverlapEngineV2(tenant_id, pipeline_run_id)
 
     def _query(self, sql: str, params: list) -> list[dict]:
         """Execute a parameterized query and return rows as dicts."""
@@ -78,13 +78,13 @@ class UpsellEngineV2:
         sql = """
             SELECT DISTINCT ON (concept, property)
                    concept, property, value
-            FROM semantic_triples
+            FROM convergence_triples
             WHERE tenant_id = %s AND run_id = %s
               AND concept LIKE 'service.%%'
               AND entity_id = %s
             ORDER BY concept, property, created_at DESC
         """
-        rows = self._query(sql, [self.tenant_id, self.run_id, entity_id])
+        rows = self._query(sql, [self.tenant_id, self.pipeline_run_id, entity_id])
 
         services: dict[str, dict] = {}
         for row in rows:
@@ -121,13 +121,13 @@ class UpsellEngineV2:
         sql = """
             SELECT DISTINCT ON (concept, property)
                    concept, property, value
-            FROM semantic_triples
+            FROM convergence_triples
             WHERE tenant_id = %s AND run_id = %s
               AND concept LIKE 'customer_service.%%'
               AND entity_id = %s
             ORDER BY concept, property, created_at DESC
         """
-        rows = self._query(sql, [self.tenant_id, self.run_id, entity_id])
+        rows = self._query(sql, [self.tenant_id, self.pipeline_run_id, entity_id])
 
         # Group by concept then split into customer/service
         raw: dict[str, dict] = {}
@@ -420,14 +420,14 @@ class UpsellEngineV2:
         sql = """
             SELECT DISTINCT ON (concept, property)
                    concept, property, value
-            FROM semantic_triples
+            FROM convergence_triples
             WHERE tenant_id = %s AND run_id = %s
               AND concept LIKE 'customer.%%'
               AND concept NOT LIKE 'customer.%%.%%'
               AND entity_id = %s
             ORDER BY concept, property, created_at DESC
         """
-        rows = self._query(sql, [self.tenant_id, self.run_id, entity_id])
+        rows = self._query(sql, [self.tenant_id, self.pipeline_run_id, entity_id])
 
         customers: dict[str, dict] = {}
         for row in rows:

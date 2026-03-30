@@ -1,5 +1,5 @@
 """
-V2 overlap, cross-sell, and upsell routes — data from semantic_triples.
+V2 overlap, cross-sell, and upsell routes — data from convergence_triples.
 
 Mounts at /api/convergence/reports/v2:
   GET /api/convergence/reports/v2/overlap/summary
@@ -15,7 +15,7 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 
-from backend.api.routes.v2_helpers import resolve_tenant_and_run
+from backend.api.routes.v2_helpers import resolve_tenant_and_run, build_identity_context
 from backend.core.db import PoolExhausted
 from backend.engine.cross_sell_v2 import CrossSellEngineV2
 from backend.engine.overlap_v2 import OverlapEngineV2
@@ -30,13 +30,15 @@ router = APIRouter(prefix="/api/convergence/reports/v2", tags=["Reports V2 Overl
 @router.get("/overlap/summary")
 async def get_overlap_summary(
     tenant_id: Optional[str] = Query(None),
-    run_id: Optional[str] = Query(None),
+    pipeline_run_id: Optional[str] = Query(None),
 ):
     """Overlap summary across customer/vendor/employee domains."""
-    tid, rid = resolve_tenant_and_run(tenant_id, run_id)
+    tid, rid = resolve_tenant_and_run(tenant_id, pipeline_run_id)
+    identity = build_identity_context(tid, rid)
     try:
         engine = OverlapEngineV2(tid, rid)
-        return engine.get_overlap_summary()
+        result = engine.get_overlap_summary()
+        return {**identity, **result}
     except ValueError as e:
         raise HTTPException(status_code=422, detail={"error": "data_incomplete", "detail": str(e)})
     except PoolExhausted as e:
@@ -52,14 +54,15 @@ async def get_overlap_summary(
 async def get_overlap_domain(
     domain: str,
     tenant_id: Optional[str] = Query(None),
-    run_id: Optional[str] = Query(None),
+    pipeline_run_id: Optional[str] = Query(None),
 ):
     """Overlapping concepts with detail for a specific domain."""
-    tid, rid = resolve_tenant_and_run(tenant_id, run_id)
+    tid, rid = resolve_tenant_and_run(tenant_id, pipeline_run_id)
+    identity = build_identity_context(tid, rid)
     try:
         engine = OverlapEngineV2(tid, rid)
         concepts = engine.get_overlapping_concepts(domain)
-        return {"domain": domain, "overlap_count": len(concepts), "concepts": concepts}
+        return {**identity, "domain": domain, "overlap_count": len(concepts), "concepts": concepts}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except PoolExhausted as e:
@@ -76,14 +79,15 @@ async def get_entity_only(
     domain: str,
     entity_id: str,
     tenant_id: Optional[str] = Query(None),
-    run_id: Optional[str] = Query(None),
+    pipeline_run_id: Optional[str] = Query(None),
 ):
     """Concepts in a domain that appear ONLY under the given entity."""
-    tid, rid = resolve_tenant_and_run(tenant_id, run_id)
+    tid, rid = resolve_tenant_and_run(tenant_id, pipeline_run_id)
+    identity = build_identity_context(tid, rid)
     try:
         engine = OverlapEngineV2(tid, rid)
         only = engine.get_entity_only_concepts(domain, entity_id)
-        return {"domain": domain, "entity_id": entity_id, "count": len(only), "concepts": only}
+        return {**identity, "entity_id": entity_id, "domain": domain, "count": len(only), "concepts": only}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except PoolExhausted as e:
@@ -98,14 +102,15 @@ async def get_entity_only(
 @router.get("/cross-sell")
 async def get_cross_sell(
     tenant_id: Optional[str] = Query(None),
-    run_id: Optional[str] = Query(None),
+    pipeline_run_id: Optional[str] = Query(None),
 ):
     """Cross-sell opportunities from overlapping customers and service portfolios."""
-    tid, rid = resolve_tenant_and_run(tenant_id, run_id)
+    tid, rid = resolve_tenant_and_run(tenant_id, pipeline_run_id)
+    identity = build_identity_context(tid, rid)
     try:
         engine = CrossSellEngineV2(tid, rid)
         opportunities = engine.get_cross_sell_opportunities()
-        return {"total": len(opportunities), "opportunities": opportunities}
+        return {**identity, "total": len(opportunities), "opportunities": opportunities}
     except ValueError as e:
         raise HTTPException(status_code=422, detail={"error": "data_incomplete", "detail": str(e)})
     except PoolExhausted as e:
@@ -120,13 +125,15 @@ async def get_cross_sell(
 @router.get("/cross-sell/summary")
 async def get_cross_sell_summary(
     tenant_id: Optional[str] = Query(None),
-    run_id: Optional[str] = Query(None),
+    pipeline_run_id: Optional[str] = Query(None),
 ):
     """Summary of cross-sell opportunities with ACV totals and breakdowns."""
-    tid, rid = resolve_tenant_and_run(tenant_id, run_id)
+    tid, rid = resolve_tenant_and_run(tenant_id, pipeline_run_id)
+    identity = build_identity_context(tid, rid)
     try:
         engine = CrossSellEngineV2(tid, rid)
-        return engine.get_cross_sell_summary()
+        result = engine.get_cross_sell_summary()
+        return {**identity, **result}
     except ValueError as e:
         raise HTTPException(status_code=422, detail={"error": "data_incomplete", "detail": str(e)})
     except PoolExhausted as e:
@@ -141,14 +148,15 @@ async def get_cross_sell_summary(
 @router.get("/upsell")
 async def get_upsell(
     tenant_id: Optional[str] = Query(None),
-    run_id: Optional[str] = Query(None),
+    pipeline_run_id: Optional[str] = Query(None),
 ):
     """Upsell opportunities from shared customers and service gap analysis."""
-    tid, rid = resolve_tenant_and_run(tenant_id, run_id)
+    tid, rid = resolve_tenant_and_run(tenant_id, pipeline_run_id)
+    identity = build_identity_context(tid, rid)
     try:
         engine = UpsellEngineV2(tid, rid)
         opportunities = engine.get_upsell_opportunities()
-        return {"total": len(opportunities), "opportunities": opportunities}
+        return {**identity, "total": len(opportunities), "opportunities": opportunities}
     except ValueError as e:
         raise HTTPException(status_code=422, detail={"error": "data_incomplete", "detail": str(e)})
     except PoolExhausted as e:
@@ -163,13 +171,15 @@ async def get_upsell(
 @router.get("/upsell/summary")
 async def get_upsell_summary(
     tenant_id: Optional[str] = Query(None),
-    run_id: Optional[str] = Query(None),
+    pipeline_run_id: Optional[str] = Query(None),
 ):
     """Summary of upsell opportunities with expansion ACV totals and breakdowns."""
-    tid, rid = resolve_tenant_and_run(tenant_id, run_id)
+    tid, rid = resolve_tenant_and_run(tenant_id, pipeline_run_id)
+    identity = build_identity_context(tid, rid)
     try:
         engine = UpsellEngineV2(tid, rid)
-        return engine.get_upsell_summary()
+        result = engine.get_upsell_summary()
+        return {**identity, **result}
     except ValueError as e:
         raise HTTPException(status_code=422, detail={"error": "data_incomplete", "detail": str(e)})
     except PoolExhausted as e:

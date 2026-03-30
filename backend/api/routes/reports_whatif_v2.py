@@ -1,5 +1,5 @@
 """
-V2 What-If + Revenue Bridge routes — data from semantic_triples.
+V2 What-If + Revenue Bridge routes — data from convergence_triples.
 
 Mounts at /api/convergence/reports/v2:
   POST /api/convergence/reports/v2/whatif/scenario
@@ -18,7 +18,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
-from backend.api.routes.v2_helpers import resolve_tenant_and_run
+from backend.api.routes.v2_helpers import resolve_tenant_and_run, build_identity_context
 from backend.core.db import PoolExhausted
 from backend.engine.what_if_v2 import WhatIfEngineV2
 from backend.engine.revenue_bridge import RevenueBridgeV2
@@ -68,14 +68,16 @@ class SaveScenarioRequest(BaseModel):
 async def apply_scenario(
     request: ScenarioRequest,
     tenant_id: Optional[str] = Query(None),
-    run_id: Optional[str] = Query(None),
+    pipeline_run_id: Optional[str] = Query(None),
 ):
     """Apply what-if adjustments to a baseline and compute impacts."""
-    tid, rid = resolve_tenant_and_run(tenant_id, run_id, domain_hint="financial")
+    tid, rid = resolve_tenant_and_run(tenant_id, pipeline_run_id)
+    identity = build_identity_context(tid, rid)
     try:
         engine = WhatIfEngineV2(tid, rid)
         adjustments = [a.model_dump() for a in request.adjustments]
-        return engine.apply_scenario(request.entity_id, request.period, adjustments)
+        result = engine.apply_scenario(request.entity_id, request.period, adjustments)
+        return {**identity, "entity_id": request.entity_id, **result}
     except ValueError as e:
         raise HTTPException(status_code=422, detail={"error": "data_incomplete", "detail": str(e)})
     except PoolExhausted as e:
@@ -91,17 +93,19 @@ async def apply_scenario(
 async def compare_scenarios(
     request: CompareRequest,
     tenant_id: Optional[str] = Query(None),
-    run_id: Optional[str] = Query(None),
+    pipeline_run_id: Optional[str] = Query(None),
 ):
     """Compare multiple named scenarios side by side."""
-    tid, rid = resolve_tenant_and_run(tenant_id, run_id, domain_hint="financial")
+    tid, rid = resolve_tenant_and_run(tenant_id, pipeline_run_id)
+    identity = build_identity_context(tid, rid)
     try:
         engine = WhatIfEngineV2(tid, rid)
         scenarios = {
             name: [a.model_dump() for a in adjs]
             for name, adjs in request.scenarios.items()
         }
-        return engine.compare_scenarios(request.entity_id, request.period, scenarios)
+        result = engine.compare_scenarios(request.entity_id, request.period, scenarios)
+        return {**identity, "entity_id": request.entity_id, **result}
     except ValueError as e:
         raise HTTPException(status_code=422, detail={"error": "data_incomplete", "detail": str(e)})
     except PoolExhausted as e:
@@ -121,13 +125,15 @@ async def sensitivity_analysis(
     range_pct: float = 20.0,
     steps: int = 5,
     tenant_id: Optional[str] = Query(None),
-    run_id: Optional[str] = Query(None),
+    pipeline_run_id: Optional[str] = Query(None),
 ):
     """Vary a single concept and show impact on EBITDA/net income."""
-    tid, rid = resolve_tenant_and_run(tenant_id, run_id, domain_hint="financial")
+    tid, rid = resolve_tenant_and_run(tenant_id, pipeline_run_id)
+    identity = build_identity_context(tid, rid)
     try:
         engine = WhatIfEngineV2(tid, rid)
-        return engine.sensitivity_analysis(entity_id, period, concept, range_pct, steps)
+        steps_result = engine.sensitivity_analysis(entity_id, period, concept, range_pct, steps)
+        return {**identity, "entity_id": entity_id, "steps": steps_result}
     except ValueError as e:
         raise HTTPException(status_code=422, detail={"error": "data_incomplete", "detail": str(e)})
     except PoolExhausted as e:
@@ -143,17 +149,18 @@ async def sensitivity_analysis(
 async def save_scenario(
     request: SaveScenarioRequest,
     tenant_id: Optional[str] = Query(None),
-    run_id: Optional[str] = Query(None),
+    pipeline_run_id: Optional[str] = Query(None),
 ):
     """Persist a scenario to the database."""
-    tid, rid = resolve_tenant_and_run(tenant_id, run_id, domain_hint="financial")
+    tid, rid = resolve_tenant_and_run(tenant_id, pipeline_run_id)
+    identity = build_identity_context(tid, rid)
     try:
         engine = WhatIfEngineV2(tid, rid)
         adjustments = [a.model_dump() for a in request.adjustments]
         scenario_id = engine.save_scenario(
             request.name, request.entity_id, request.period, adjustments,
         )
-        return {"scenario_id": scenario_id, "name": request.name}
+        return {**identity, "scenario_id": scenario_id, "name": request.name}
     except ValueError as e:
         raise HTTPException(status_code=422, detail={"error": "data_incomplete", "detail": str(e)})
     except PoolExhausted as e:
@@ -168,13 +175,15 @@ async def save_scenario(
 @router.get("/whatif/scenarios")
 async def list_scenarios(
     tenant_id: Optional[str] = Query(None),
-    run_id: Optional[str] = Query(None),
+    pipeline_run_id: Optional[str] = Query(None),
 ):
     """List all saved scenarios."""
-    tid, rid = resolve_tenant_and_run(tenant_id, run_id, domain_hint="financial")
+    tid, rid = resolve_tenant_and_run(tenant_id, pipeline_run_id)
+    identity = build_identity_context(tid, rid)
     try:
         engine = WhatIfEngineV2(tid, rid)
-        return engine.list_scenarios()
+        scenarios = engine.list_scenarios()
+        return {**identity, "scenarios": scenarios}
     except PoolExhausted as e:
         raise HTTPException(
             status_code=503,
@@ -188,13 +197,15 @@ async def list_scenarios(
 async def load_scenario(
     scenario_id: str,
     tenant_id: Optional[str] = Query(None),
-    run_id: Optional[str] = Query(None),
+    pipeline_run_id: Optional[str] = Query(None),
 ):
     """Load a saved scenario and re-apply against current baselines."""
-    tid, rid = resolve_tenant_and_run(tenant_id, run_id, domain_hint="financial")
+    tid, rid = resolve_tenant_and_run(tenant_id, pipeline_run_id)
+    identity = build_identity_context(tid, rid)
     try:
         engine = WhatIfEngineV2(tid, rid)
-        return engine.load_scenario(scenario_id)
+        result = engine.load_scenario(scenario_id)
+        return {**identity, **result}
     except ValueError as e:
         raise HTTPException(status_code=422, detail={"error": "data_incomplete", "detail": str(e)})
     except PoolExhausted as e:
@@ -217,10 +228,11 @@ async def get_revenue_bridge(
     period_from: Optional[str] = None,
     period_to: Optional[str] = None,
     tenant_id: Optional[str] = Query(None),
-    run_id: Optional[str] = Query(None),
+    pipeline_run_id: Optional[str] = Query(None),
 ):
     """Revenue bridge between two periods."""
-    tid, rid = resolve_tenant_and_run(tenant_id, run_id, domain_hint="financial")
+    tid, rid = resolve_tenant_and_run(tenant_id, pipeline_run_id)
+    identity = build_identity_context(tid, rid)
     try:
         bridge = RevenueBridgeV2(tid, rid)
         if period_from is None or period_to is None:
@@ -228,7 +240,8 @@ async def get_revenue_bridge(
                 "Revenue bridge requires 'period_from' and 'period_to' query parameters. "
                 "Example: ?entity_id=<entity>&period_from=2024-Q1&period_to=2025-Q1"
             )
-        return bridge.get_revenue_bridge(entity_id, period_from, period_to)
+        result = bridge.get_revenue_bridge(entity_id, period_from, period_to)
+        return {**identity, "entity_id": entity_id, **result}
     except ValueError as e:
         raise HTTPException(status_code=422, detail={"error": "data_incomplete", "detail": str(e)})
     except PoolExhausted as e:
@@ -245,13 +258,15 @@ async def get_yoy_bridge(
     entity_id: str = Query(..., description="Entity ID"),
     period: str = "2025-Q1",
     tenant_id: Optional[str] = Query(None),
-    run_id: Optional[str] = Query(None),
+    pipeline_run_id: Optional[str] = Query(None),
 ):
     """Year-over-year revenue bridge."""
-    tid, rid = resolve_tenant_and_run(tenant_id, run_id, domain_hint="financial")
+    tid, rid = resolve_tenant_and_run(tenant_id, pipeline_run_id)
+    identity = build_identity_context(tid, rid)
     try:
         bridge = RevenueBridgeV2(tid, rid)
-        return bridge.get_yoy_bridge(entity_id, period)
+        result = bridge.get_yoy_bridge(entity_id, period)
+        return {**identity, "entity_id": entity_id, **result}
     except ValueError as e:
         raise HTTPException(status_code=422, detail={"error": "data_incomplete", "detail": str(e)})
     except PoolExhausted as e:
@@ -268,17 +283,19 @@ async def get_combined_revenue_bridge(
     period_from: Optional[str] = None,
     period_to: Optional[str] = None,
     tenant_id: Optional[str] = Query(None),
-    run_id: Optional[str] = Query(None),
+    pipeline_run_id: Optional[str] = Query(None),
 ):
     """Combined (all entities) revenue bridge."""
-    tid, rid = resolve_tenant_and_run(tenant_id, run_id, domain_hint="financial")
+    tid, rid = resolve_tenant_and_run(tenant_id, pipeline_run_id)
+    identity = build_identity_context(tid, rid)
     try:
         bridge = RevenueBridgeV2(tid, rid)
         if period_from is None or period_to is None:
             raise ValueError(
                 "Combined revenue bridge requires 'period_from' and 'period_to' query parameters."
             )
-        return bridge.get_combined_revenue_bridge(period_from, period_to)
+        result = bridge.get_combined_revenue_bridge(period_from, period_to)
+        return {**identity, **result}
     except ValueError as e:
         raise HTTPException(status_code=422, detail={"error": "data_incomplete", "detail": str(e)})
     except PoolExhausted as e:

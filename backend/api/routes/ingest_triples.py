@@ -16,6 +16,7 @@ from typing import Optional
 
 from backend.core.db import get_connection
 from backend.db.triple_store import TripleStore
+from backend.engine.engagement import get_active_engagement
 from backend.registry.concept_registry import ConceptRegistry
 from backend.utils.log_utils import get_logger
 
@@ -28,7 +29,7 @@ _concept_registry = ConceptRegistry()
 
 
 # ---------------------------------------------------------------------------
-# Request / response models — mirrors DCL's contract exactly
+# Request / response models
 # ---------------------------------------------------------------------------
 
 class TriplePayload(BaseModel):
@@ -52,15 +53,22 @@ class TriplePayload(BaseModel):
 
 class IngestRequest(BaseModel):
     tenant_id: str
-    run_id: str
+    pipeline_run_id: str
     source_run_tag: Optional[str] = None
     triples: list[TriplePayload]
 
 
 class IngestResponse(BaseModel):
-    run_id: str
+    convergence_ingest_id: str
+    tenant_id: str
+    engagement_id: str
+    entity_ids: list[str]
+    run_name: str
     triple_count: int
     concept_summary: dict
+    source_rows: int
+    triples_written: int
+    expansion_factor: float
 
 
 # ---------------------------------------------------------------------------
@@ -175,7 +183,7 @@ def _validate_triple(t: TriplePayload, index: int) -> None:
 # ---------------------------------------------------------------------------
 
 def _record_convergence_ingest_log(
-    run_id: str,
+    pipeline_run_id: str,
     tenant_id: str,
     entity_id: str | None,
     source_systems: list[str],
@@ -195,7 +203,7 @@ def _record_convergence_ingest_log(
                     " triples_rejected, rejection_reasons, source_systems, duration_ms) "
                     "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
                     (
-                        run_id, entity_id, tenant_id,
+                        pipeline_run_id, entity_id, tenant_id,
                         triples_received, triples_written,
                         triples_rejected,
                         json.dumps(rejection_reasons or []),
@@ -222,14 +230,14 @@ def ingest_triples(
     Batch ingest semantic triples for multi-entity / convergence data.
 
     - Validates all triples before inserting any (atomic batch).
-    - If run_id already exists: returns 409 unless ?replace=true or ?append=true.
+    - If pipeline_run_id already exists: returns 409 unless ?replace=true or ?append=true.
     - With ?replace=true: deactivates old triples, inserts new ones.
     - With ?append=true: skips idempotency check, adds triples to existing run.
-      Use this for multi-batch ingestion where the caller sends the same run_id
+      Use this for multi-batch ingestion where the caller sends the same pipeline_run_id
       across multiple requests (e.g. Farm pushing 18K triples in 1K batches).
     """
     _validate_uuid(req.tenant_id, "tenant_id")
-    _validate_uuid(req.run_id, "run_id")
+    _validate_uuid(req.pipeline_run_id, "pipeline_run_id")
 
     if not req.triples:
         raise HTTPException(
@@ -245,22 +253,22 @@ def ingest_triples(
         _validate_triple(t, i)
 
     # Idempotency check — skipped when append=true (multi-batch ingestion)
-    run_exists = _triple_store.run_exists(req.run_id)
+    run_exists = _triple_store.run_exists(req.pipeline_run_id)
     if run_exists and not replace and not append:
         raise HTTPException(
             status_code=409,
             detail={
                 "error": "RUN_ALREADY_EXISTS",
-                "message": f"run_id {req.run_id} already has triples in the store. "
+                "message": f"pipeline_run_id {req.pipeline_run_id} already has triples in the store. "
                            "Use ?replace=true to deactivate old triples and re-ingest, "
                            "or ?append=true to add more triples to this run.",
-                "run_id": req.run_id,
+                "convergence_ingest_id": req.pipeline_run_id,
             },
         )
 
     if run_exists and replace:
         logger.info(
-            f"[ingest-triples] replace=true for existing run_id={req.run_id}; "
+            f"[ingest-triples] replace=true for existing pipeline_run_id={req.pipeline_run_id}; "
             f"inserting new triples, pointer will be updated after insert"
         )
 
@@ -280,7 +288,7 @@ def ingest_triples(
             "source_table": t.source_table,
             "source_field": t.source_field,
             "pipe_id": t.pipe_id,
-            "run_id": req.run_id,
+            "run_id": req.pipeline_run_id,
             "source_run_tag": req.source_run_tag,
             "confidence_score": t.confidence_score,
             "confidence_tier": t.confidence_tier,
@@ -290,7 +298,7 @@ def ingest_triples(
         })
 
     triples_received = len(rows)
-    entity_ids = list({r["entity_id"] for r in rows if r.get("entity_id")})
+    entity_ids = sorted({r["entity_id"] for r in rows if r.get("entity_id")})
     source_systems = sorted({r["source_system"] for r in rows if r.get("source_system")})
 
     start_ts = time.monotonic()
@@ -303,7 +311,7 @@ def ingest_triples(
         duration_ms = int((time.monotonic() - start_ts) * 1000)
         logger.error(
             f"[ingest-triples] DB write failed after {duration_ms}ms for "
-            f"run_id={req.run_id}, tenant_id={req.tenant_id}, "
+            f"pipeline_run_id={req.pipeline_run_id}, tenant_id={req.tenant_id}, "
             f"triples_attempted={triples_received}: {db_err}",
             exc_info=True,
         )
@@ -337,22 +345,26 @@ def ingest_triples(
     # Atomic pointer swap — O(1), single-row UPSERT, no table scan.
     # Not set for append=true (multi-batch ingest keeps existing pointer).
     if not append:
-        _triple_store.upsert_tenant_run(str(req.tenant_id), str(req.run_id))
+        _triple_store.upsert_tenant_run(str(req.tenant_id), str(req.pipeline_run_id))
         logger.info(
-            f"[ingest-triples] tenant_runs updated: tenant_id={req.tenant_id} "
-            f"→ current_run_id={req.run_id}"
+            f"[ingest-triples] convergence_tenant_runs updated: tenant_id={req.tenant_id} "
+            f"→ current_run_id={req.pipeline_run_id}"
         )
 
-    concept_summary = _triple_store.count_by_domain(req.tenant_id, run_id=req.run_id)
+    concept_summary = _triple_store.count_by_domain(req.tenant_id, run_id=req.pipeline_run_id)
+
+    # Engagement identity context
+    eng = get_active_engagement()
+    run_name = f"{eng.short_name}-{req.pipeline_run_id[:4]}"
 
     logger.info(
-        f"[ingest-triples] Ingested {count} triples for run_id={req.run_id}, "
+        f"[ingest-triples] Ingested {count} triples for pipeline_run_id={req.pipeline_run_id}, "
         f"tenant_id={req.tenant_id}, concepts={concept_summary}, duration={duration_ms}ms"
     )
 
     # Record to convergence_ingest_log — observability only, never fails the ingest
     _record_convergence_ingest_log(
-        run_id=req.run_id,
+        pipeline_run_id=req.pipeline_run_id,
         tenant_id=req.tenant_id,
         entity_id=entity_ids[0] if len(entity_ids) == 1 else None,
         source_systems=source_systems,
@@ -361,8 +373,17 @@ def ingest_triples(
         duration_ms=duration_ms,
     )
 
+    expansion_factor = round(count / triples_received, 4) if triples_received > 0 else 0.0
+
     return IngestResponse(
-        run_id=req.run_id,
+        convergence_ingest_id=req.pipeline_run_id,
+        tenant_id=req.tenant_id,
+        engagement_id=eng.engagement_id,
+        entity_ids=entity_ids,
+        run_name=run_name,
         triple_count=count,
         concept_summary=concept_summary,
+        source_rows=triples_received,
+        triples_written=count,
+        expansion_factor=expansion_factor,
     )

@@ -20,7 +20,11 @@ router = APIRouter(prefix="/api/convergence", tags=["engagement"])
 
 @router.get("/engagements")
 async def list_engagements():
-    """Fetch engagements from Platform and return engagement_id, status, created_at."""
+    """List engagements with identity fields. ORDER BY created_at DESC.
+
+    Returns engagement_id, engagement_short_name, entity_pair, status, created_at.
+    Enriches Platform data with engagement config.
+    """
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
             resp = await client.get(f"{PLATFORM_URL}/api/maestra/engagements")
@@ -30,14 +34,29 @@ async def list_engagements():
             status_code=502,
             detail=f"Cannot reach Platform at {PLATFORM_URL}/api/maestra/engagements — {e}",
         )
-    return [
-        {
-            "engagement_id": eng["engagement_id"],
-            "status": eng["state"],
-            "created_at": eng["created_at"],
-        }
-        for eng in resp.json()
-    ]
+
+    # Enrich with engagement config for short_name and entity_pair
+    try:
+        eng = get_active_engagement()
+        short_name = eng.short_name
+        entity_pair = [eng.entity_a.id, eng.entity_b.id]
+    except Exception:
+        short_name = None
+        entity_pair = None
+
+    engagements = []
+    for item in resp.json():
+        engagements.append({
+            "engagement_id": item["engagement_id"],
+            "engagement_short_name": short_name,
+            "entity_pair": entity_pair,
+            "status": item.get("state", item.get("status")),
+            "created_at": item["created_at"],
+        })
+
+    # ORDER BY created_at DESC
+    engagements.sort(key=lambda e: e["created_at"] or "", reverse=True)
+    return engagements
 
 
 @router.post("/maestra/cofa-chat")
@@ -69,7 +88,9 @@ async def get_engagement():
     eng = get_active_engagement()
     return {
         "engagement_id": eng.engagement_id,
+        "engagement_short_name": eng.short_name,
         "deal_name": eng.deal_name,
+        "entity_pair": [eng.entity_a.id, eng.entity_b.id],
         "entity_a": {
             "id": eng.entity_a.id,
             "display_name": eng.entity_a.display_name,

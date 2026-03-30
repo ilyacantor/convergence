@@ -143,10 +143,10 @@ def test_missing_entity_raises(resolver):
         resolver.get_metric("revenue.total", "nonexistent_entity", "2025-Q1")
 
 # --- Test 13: Provenance ---
-def test_provenance_has_run_id(resolver):
+def test_provenance_has_pipeline_run_id(resolver):
     prov = resolver.get_provenance("revenue.total", "meridian", "2025-Q1")
-    assert prov["run_id"] is not None, "Provenance must include a run_id"
-    assert len(str(prov["run_id"])) == 36, f"run_id should be a UUID, got: {prov['run_id']}"
+    assert prov["pipeline_run_id"] is not None, "Provenance must include pipeline_run_id (I1: no bare run_id)"
+    assert len(str(prov["pipeline_run_id"])) == 36, f"pipeline_run_id should be a UUID, got: {prov['pipeline_run_id']}"
 
 # --- Test 14: Materialized views ---
 def test_all_periods(views):

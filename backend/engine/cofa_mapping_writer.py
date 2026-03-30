@@ -299,5 +299,4 @@ def write_cofa_mapping(data: dict) -> dict:
             "conflict_triples": len(conflict_triples),
             "unified_triples": len(unified_triples),
         },
-        "run_id": run_id,
     }

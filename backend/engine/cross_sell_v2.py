@@ -1,5 +1,5 @@
 """
-CrossSellEngineV2 — cross-sell opportunity scoring from semantic_triples.
+CrossSellEngineV2 — cross-sell opportunity scoring from convergence_triples.
 
 Identifies services that Entity A offers to shared customers
 that Entity B could also offer (and vice versa).
@@ -11,7 +11,7 @@ Computes propensity scores from customer triple data:
   - engagement_fit (0-15): service/delivery model fit
   - relationship_strength (0-10): overlap match confidence
 
-All data sourced from PG semantic_triples — no JSON files.
+All data sourced from PG convergence_triples — no JSON files.
 """
 
 from collections import defaultdict
@@ -53,10 +53,10 @@ class CrossSellEngineV2:
     Computes propensity scores from customer and service triples.
     """
 
-    def __init__(self, tenant_id: str, run_id: str):
+    def __init__(self, tenant_id: str, pipeline_run_id: str):
         self.tenant_id = tenant_id
-        self.run_id = run_id
-        self._overlap_engine = OverlapEngineV2(tenant_id, run_id)
+        self.pipeline_run_id = pipeline_run_id
+        self._overlap_engine = OverlapEngineV2(tenant_id, pipeline_run_id)
 
     def _query(self, sql: str, params: list) -> list[dict]:
         """Execute a parameterized query and return rows as dicts."""
@@ -79,13 +79,13 @@ class CrossSellEngineV2:
         sql = """
             SELECT DISTINCT ON (concept, property)
                    concept, property, value
-            FROM semantic_triples
+            FROM convergence_triples
             WHERE tenant_id = %s AND run_id = %s
               AND concept LIKE 'service.%%'
               AND entity_id = %s
             ORDER BY concept, property, created_at DESC
         """
-        rows = self._query(sql, [self.tenant_id, self.run_id, entity_id])
+        rows = self._query(sql, [self.tenant_id, self.pipeline_run_id, entity_id])
 
         # Group by concept
         services: dict[str, dict] = {}
@@ -119,7 +119,7 @@ class CrossSellEngineV2:
         sql = """
             SELECT DISTINCT ON (st.concept, st.property)
                    st.concept, st.property, st.value
-            FROM semantic_triples st
+            FROM convergence_triples st
             WHERE st.tenant_id = %s AND st.run_id = %s
               AND st.concept LIKE 'customer.%%'
               AND st.concept NOT LIKE 'customer.%%.%%'
@@ -127,7 +127,7 @@ class CrossSellEngineV2:
               AND st.property IN ('revenue', 'industry', 'segment', 'size', 'match_confidence')
               AND NOT EXISTS (
                   SELECT 1
-                  FROM semantic_triples other
+                  FROM convergence_triples other
                   WHERE other.tenant_id = %s AND other.run_id = %s
                     AND other.concept = st.concept
                     AND other.concept LIKE 'customer.%%'
@@ -136,7 +136,7 @@ class CrossSellEngineV2:
               )
             ORDER BY st.concept, st.property, st.created_at DESC
         """
-        rows = self._query(sql, [self.tenant_id, self.run_id, entity_id, self.tenant_id, self.run_id, other_entity_id])
+        rows = self._query(sql, [self.tenant_id, self.pipeline_run_id, entity_id, self.tenant_id, self.pipeline_run_id, other_entity_id])
 
         customers: dict[str, dict] = {}
         for row in rows:

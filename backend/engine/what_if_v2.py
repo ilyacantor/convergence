@@ -1,5 +1,5 @@
 """
-WhatIfEngineV2 — what-if scenario engine with baselines from semantic_triples.
+WhatIfEngineV2 — what-if scenario engine with baselines from convergence_triples.
 
 Baselines are read from PG via TripleQueryResolver. Scenarios apply percentage
 or absolute adjustments to baselines and compute downstream impacts through
@@ -27,14 +27,17 @@ _PNL_CASCADE_CONCEPTS = [
 
 
 def _ensure_scenarios_table() -> None:
-    """Create the whatif_scenarios table if it does not exist."""
+    """Create the whatif_scenarios table if it does not exist.
+
+    Uses UUID for id, tenant_id, run_id — consistent with all other tables.
+    """
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS whatif_scenarios (
-                    id TEXT PRIMARY KEY,
-                    tenant_id TEXT NOT NULL,
-                    run_id TEXT NOT NULL,
+                    id UUID PRIMARY KEY,
+                    tenant_id UUID NOT NULL,
+                    run_id UUID NOT NULL,
                     name TEXT NOT NULL,
                     entity_id TEXT NOT NULL,
                     period TEXT NOT NULL,
@@ -47,17 +50,17 @@ def _ensure_scenarios_table() -> None:
 
 class WhatIfEngineV2:
     """
-    What-if scenario engine with baselines from semantic_triples.
+    What-if scenario engine with baselines from convergence_triples.
 
     Baselines are read from PG. Scenarios apply percentage or absolute
     adjustments to baselines and compute downstream impacts through
     the P&L, BS, and CF chains.
     """
 
-    def __init__(self, tenant_id: str, run_id: str):
+    def __init__(self, tenant_id: str, pipeline_run_id: str):
         self.tenant_id = tenant_id
-        self.run_id = run_id
-        self._resolver = TripleQueryResolver(tenant_id, run_id)
+        self.pipeline_run_id = pipeline_run_id
+        self._resolver = TripleQueryResolver(tenant_id, pipeline_run_id)
 
     def get_baseline(self, entity_id: str, period: str) -> dict:
         """
@@ -250,7 +253,7 @@ class WhatIfEngineV2:
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                     """,
                     [
-                        scenario_id, self.tenant_id, self.run_id, name,
+                        scenario_id, self.tenant_id, self.pipeline_run_id, name,
                         entity_id, period, json.dumps(adjustments),
                         datetime.now(timezone.utc).isoformat(),
                     ],
@@ -276,7 +279,7 @@ class WhatIfEngineV2:
                     WHERE tenant_id = %s AND run_id = %s
                     ORDER BY created_at DESC
                     """,
-                    [self.tenant_id, self.run_id],
+                    [self.tenant_id, self.pipeline_run_id],
                 )
                 columns = [desc[0] for desc in cur.description]
                 rows = [dict(zip(columns, row)) for row in cur.fetchall()]
@@ -305,14 +308,14 @@ class WhatIfEngineV2:
                     FROM whatif_scenarios
                     WHERE id = %s AND tenant_id = %s AND run_id = %s
                     """,
-                    [scenario_id, self.tenant_id, self.run_id],
+                    [scenario_id, self.tenant_id, self.pipeline_run_id],
                 )
                 row = cur.fetchone()
 
         if row is None:
             raise ValueError(
                 f"Scenario not found: id='{scenario_id}' for "
-                f"tenant_id='{self.tenant_id}', run_id='{self.run_id}'"
+                f"tenant_id='{self.tenant_id}', run_id='{self.pipeline_run_id}'"
             )
 
         name, entity_id, period, adjustments = row

@@ -1,10 +1,10 @@
 """
-CombiningEngineV2 — four-column combining financial statements from semantic_triples.
+CombiningEngineV2 — four-column combining financial statements from convergence_triples.
 
 Produces combining statements (Entity A | Entity B | COFA Adjustments | Combined Pro Forma)
 for income statement, balance sheet, and cash flow.
 
-All data sourced from semantic_triples — no JSON file fallbacks.
+All data sourced from convergence_triples — no JSON file fallbacks.
 Identity gates validate every statement before returning.
 COFA conflicts read from cofa_conflict.* triples in the database.
 """
@@ -45,17 +45,17 @@ def _jsonb_float(value) -> float:
 
 class CombiningEngineV2:
     """
-    Produces combining financial statements from semantic_triples.
+    Produces combining financial statements from convergence_triples.
 
     Four columns: Entity A | Entity B | COFA Adjustments | Combined Pro Forma.
     Identity gates: every statement must balance before returning.
     """
 
-    def __init__(self, tenant_id: str, run_id: str):
+    def __init__(self, tenant_id: str, pipeline_run_id: str):
         """Store context, initialize TripleQueryResolver internally."""
         self.tenant_id = tenant_id
-        self.run_id = run_id
-        self._resolver = TripleQueryResolver(tenant_id, run_id)
+        self.pipeline_run_id = pipeline_run_id
+        self._resolver = TripleQueryResolver(tenant_id, pipeline_run_id)
 
     # ------------------------------------------------------------------
     # COFA adjustments
@@ -155,7 +155,7 @@ class CombiningEngineV2:
             raise ValueError(
                 f"Combining statement requires at least 2 entities, "
                 f"found {len(entities)}: {entities} for "
-                f"tenant_id='{self.tenant_id}', run_id='{self.run_id}'"
+                f"tenant_id='{self.tenant_id}', run_id='{self.pipeline_run_id}'"
             )
         entity_a_id = entities[0]
         entity_b_id = entities[1]

@@ -7,7 +7,7 @@ QoE assesses how reliable the reported earnings are by analyzing:
 3. Revenue quality (recurring vs non-recurring mix)
 4. Margin trends over time
 
-All data sourced from semantic_triples in PG — no JSON files.
+All data sourced from convergence_triples in PG — no JSON files.
 """
 
 from backend.core.db import get_connection
@@ -41,10 +41,10 @@ class QualityOfEarningsV2:
     4. Margin trends over time
     """
 
-    def __init__(self, tenant_id: str, run_id: str):
+    def __init__(self, tenant_id: str, pipeline_run_id: str):
         self.tenant_id = tenant_id
-        self.run_id = run_id
-        self._bridge_engine = EBITDABridgeV2(tenant_id, run_id)
+        self.pipeline_run_id = pipeline_run_id
+        self._bridge_engine = EBITDABridgeV2(tenant_id, pipeline_run_id)
 
     def _query(self, sql: str, params: list) -> list[dict]:
         """Execute a parameterized query and return rows as dicts."""
@@ -59,13 +59,13 @@ class QualityOfEarningsV2:
         sql = """
             SELECT DISTINCT ON (entity_id, concept, period)
                    value
-            FROM semantic_triples
+            FROM convergence_triples
             WHERE tenant_id = %s AND run_id = %s
               AND concept = %s AND entity_id = %s AND period = %s
               AND property = 'amount'
             ORDER BY entity_id, concept, period, created_at DESC
         """
-        rows = self._query(sql, [self.tenant_id, self.run_id, concept, entity_id, period])
+        rows = self._query(sql, [self.tenant_id, self.pipeline_run_id, concept, entity_id, period])
         if not rows:
             return None
         return _to_float(rows[0]["value"])
@@ -80,7 +80,7 @@ class QualityOfEarningsV2:
             WITH deduped AS (
                 SELECT DISTINCT ON (entity_id, concept, period)
                        concept, period, value
-                FROM semantic_triples
+                FROM convergence_triples
                 WHERE tenant_id = %s AND run_id = %s
                   AND concept LIKE 'revenue.%%'
                   AND entity_id = %s
@@ -93,7 +93,7 @@ class QualityOfEarningsV2:
             GROUP BY concept
             ORDER BY SUM((value #>> '{{}}')::float) DESC
         """
-        params = [self.tenant_id, self.run_id, entity_id] + _ANNUAL_PERIODS
+        params = [self.tenant_id, self.pipeline_run_id, entity_id] + _ANNUAL_PERIODS
         return self._query(sql, params)
 
     def _get_margin_trend(self, entity_id: str) -> list[dict]:
@@ -102,14 +102,14 @@ class QualityOfEarningsV2:
         sql = """
             SELECT DISTINCT ON (entity_id, concept, period)
                    period, concept, value
-            FROM semantic_triples
+            FROM convergence_triples
             WHERE tenant_id = %s AND run_id = %s
               AND concept IN ('revenue.total', 'pnl.ebitda')
               AND entity_id = %s
               AND property = 'amount'
             ORDER BY entity_id, concept, period, created_at DESC
         """
-        rows = self._query(sql, [self.tenant_id, self.run_id, entity_id])
+        rows = self._query(sql, [self.tenant_id, self.pipeline_run_id, entity_id])
 
         # Group by period
         by_period: dict[str, dict[str, float]] = {}
@@ -364,14 +364,14 @@ class QualityOfEarningsV2:
         sql = """
             SELECT DISTINCT ON (entity_id, concept, period)
                    entity_id, concept, period, value
-            FROM semantic_triples
+            FROM convergence_triples
             WHERE tenant_id = %s AND run_id = %s
               AND concept IN ('revenue.total', 'pnl.ebitda')
               AND entity_id IN (%s, %s)
               AND property = 'amount'
             ORDER BY entity_id, concept, period, created_at DESC
         """
-        rows = self._query(sql, [self.tenant_id, self.run_id, entity_a, entity_b])
+        rows = self._query(sql, [self.tenant_id, self.pipeline_run_id, entity_a, entity_b])
 
         metric_map: dict[tuple[str, str, str], float] = {}
         for row in rows:

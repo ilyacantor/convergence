@@ -25,6 +25,8 @@ REQUIRED_TABLES = [
     "convergence_triples",
     "convergence_tenant_runs",
     "convergence_ingest_log",
+    # What-if scenario persistence
+    "whatif_scenarios",
 ]
 
 

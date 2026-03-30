@@ -2,7 +2,7 @@
 EntityResolutionV2 — PG-backed entity resolution derived from triple overlap.
 
 Workspaces are created from concepts that appear under both entity_ids
-in semantic_triples (customer.*, vendor.*, employee.* domains).
+in convergence_triples (customer.*, vendor.*, employee.* domains).
 
 Decisions (confirm/reject/escalate) are persisted to resolution_workspaces_v2
 table and survive restarts.
@@ -36,16 +36,16 @@ class EntityResolutionV2:
     PG-backed entity resolution derived from triple overlap.
 
     Workspaces are created from concepts that appear under both entity_ids
-    in semantic_triples (customer.*, vendor.*, employee.* domains).
+    in convergence_triples (customer.*, vendor.*, employee.* domains).
 
     Decisions (confirm/reject/escalate) are persisted to resolution_workspaces_v2
     table and survive restarts.
     """
 
-    def __init__(self, tenant_id: str, run_id: str):
+    def __init__(self, tenant_id: str, pipeline_run_id: str):
         """Store tenant/run context."""
         self.tenant_id = tenant_id
-        self.run_id = run_id
+        self.pipeline_run_id = pipeline_run_id
 
     def _get_conn(self):
         """Get a database connection or raise."""
@@ -77,7 +77,7 @@ class EntityResolutionV2:
         return {
             "workspace_id": str(row["id"]),
             "tenant_id": str(row["tenant_id"]),
-            "run_id": str(row["run_id"]),
+            "pipeline_run_id": str(row["run_id"]),
             "concept": row["concept"],
             "domain": row["domain"],
             "status": row["status"],
@@ -91,7 +91,7 @@ class EntityResolutionV2:
 
     def create_workspaces_from_overlap(self) -> dict:
         """
-        Scan semantic_triples for concepts in customer.*, vendor.*, employee.*
+        Scan convergence_triples for concepts in customer.*, vendor.*, employee.*
         that appear under both entity_ids. Create one workspace per overlapping
         concept. Returns {"created": int, "by_domain": {"customer": int, ...}}.
 
@@ -108,7 +108,7 @@ class EntityResolutionV2:
 
         logger.info(
             f"EntityResolutionV2: created {total_created} workspaces from overlap "
-            f"(by_domain={by_domain}) for tenant={self.tenant_id}, run={self.run_id}"
+            f"(by_domain={by_domain}) for tenant={self.tenant_id}, run={self.pipeline_run_id}"
         )
 
         return {"created": total_created, "by_domain": by_domain}
@@ -121,7 +121,7 @@ class EntityResolutionV2:
         """
         sql = """
             SELECT concept
-            FROM semantic_triples
+            FROM convergence_triples
             WHERE tenant_id = %s AND run_id = %s
               AND concept LIKE %s
               AND concept NOT LIKE %s
@@ -130,7 +130,7 @@ class EntityResolutionV2:
             HAVING COUNT(DISTINCT entity_id) > 1
             ORDER BY concept
         """
-        rows = self._query(sql, [self.tenant_id, self.run_id, f"{domain}.%", f"{domain}.%.%"])
+        rows = self._query(sql, [self.tenant_id, self.pipeline_run_id, f"{domain}.%", f"{domain}.%.%"])
         return [r["concept"] for r in rows]
 
     def _batch_create_workspaces(self, concepts: list[str], domain: str) -> int:
@@ -143,7 +143,7 @@ class EntityResolutionV2:
         params: list = []
         for concept in concepts:
             value_placeholders.append("(%s, %s, %s, %s, 'pending')")
-            params.extend([self.tenant_id, self.run_id, concept, domain])
+            params.extend([self.tenant_id, self.pipeline_run_id, concept, domain])
 
         sql = (
             "INSERT INTO resolution_workspaces_v2 "
@@ -166,7 +166,7 @@ class EntityResolutionV2:
         Returns list of workspace dicts with concept, domain, status, decision metadata.
         """
         clauses = ["tenant_id = %s", "run_id = %s"]
-        params: list = [self.tenant_id, self.run_id]
+        params: list = [self.tenant_id, self.pipeline_run_id]
 
         if domain is not None:
             clauses.append("domain = %s")
@@ -186,18 +186,18 @@ class EntityResolutionV2:
         if not _is_valid_uuid(workspace_id):
             raise ValueError(
                 f"Workspace not found: workspace_id='{workspace_id}' "
-                f"for tenant_id='{self.tenant_id}', run_id='{self.run_id}'"
+                f"for tenant_id='{self.tenant_id}', run_id='{self.pipeline_run_id}'"
             )
 
         sql = """
             SELECT * FROM resolution_workspaces_v2
             WHERE id = %s AND tenant_id = %s AND run_id = %s
         """
-        rows = self._query(sql, [workspace_id, self.tenant_id, self.run_id])
+        rows = self._query(sql, [workspace_id, self.tenant_id, self.pipeline_run_id])
         if not rows:
             raise ValueError(
                 f"Workspace not found: workspace_id='{workspace_id}' "
-                f"for tenant_id='{self.tenant_id}', run_id='{self.run_id}'"
+                f"for tenant_id='{self.tenant_id}', run_id='{self.pipeline_run_id}'"
             )
         return self._row_to_workspace(rows[0])
 
@@ -205,7 +205,7 @@ class EntityResolutionV2:
                       decided_by: str = "system") -> dict:
         """
         Confirm that the overlapping concept is the same real-world entity.
-        Sets canonical_id on the semantic_triples for this concept.
+        Sets canonical_id on the convergence_triples for this concept.
         Returns the updated workspace.
         """
         # Get workspace first to find concept
@@ -225,7 +225,7 @@ class EntityResolutionV2:
                 f"Failed to update workspace: workspace_id='{workspace_id}'"
             )
 
-        # Set canonical_id on semantic_triples for this concept
+        # Set canonical_id on convergence_triples for this concept
         self._set_canonical_on_triples(ws["concept"], canonical_id)
 
         return self._row_to_workspace(rows[0])
@@ -243,11 +243,11 @@ class EntityResolutionV2:
             WHERE id = %s AND tenant_id = %s AND run_id = %s
             RETURNING *
         """
-        rows = self._execute(sql, [decided_by, workspace_id, self.tenant_id, self.run_id])
+        rows = self._execute(sql, [decided_by, workspace_id, self.tenant_id, self.pipeline_run_id])
         if not rows:
             raise ValueError(
                 f"Workspace not found: workspace_id='{workspace_id}' "
-                f"for tenant_id='{self.tenant_id}', run_id='{self.run_id}'"
+                f"for tenant_id='{self.tenant_id}', run_id='{self.pipeline_run_id}'"
             )
         return self._row_to_workspace(rows[0])
 
@@ -263,11 +263,11 @@ class EntityResolutionV2:
             WHERE id = %s AND tenant_id = %s AND run_id = %s
             RETURNING *
         """
-        rows = self._execute(sql, [decided_by, reason, workspace_id, self.tenant_id, self.run_id])
+        rows = self._execute(sql, [decided_by, reason, workspace_id, self.tenant_id, self.pipeline_run_id])
         if not rows:
             raise ValueError(
                 f"Workspace not found: workspace_id='{workspace_id}' "
-                f"for tenant_id='{self.tenant_id}', run_id='{self.run_id}'"
+                f"for tenant_id='{self.tenant_id}', run_id='{self.pipeline_run_id}'"
             )
         return self._row_to_workspace(rows[0])
 
@@ -290,11 +290,11 @@ class EntityResolutionV2:
             WHERE id = %s AND tenant_id = %s AND run_id = %s
             RETURNING *
         """
-        rows = self._execute(sql, [workspace_id, self.tenant_id, self.run_id])
+        rows = self._execute(sql, [workspace_id, self.tenant_id, self.pipeline_run_id])
         if not rows:
             raise ValueError(
                 f"Workspace not found: workspace_id='{workspace_id}' "
-                f"for tenant_id='{self.tenant_id}', run_id='{self.run_id}'"
+                f"for tenant_id='{self.tenant_id}', run_id='{self.pipeline_run_id}'"
             )
         return self._row_to_workspace(rows[0])
 
@@ -310,7 +310,7 @@ class EntityResolutionV2:
             WHERE tenant_id = %s AND run_id = %s
             GROUP BY status
         """
-        status_rows = self._query(sql, [self.tenant_id, self.run_id])
+        status_rows = self._query(sql, [self.tenant_id, self.pipeline_run_id])
         status_counts = {r["status"]: r["cnt"] for r in status_rows}
 
         # Domain counts
@@ -320,7 +320,7 @@ class EntityResolutionV2:
             WHERE tenant_id = %s AND run_id = %s
             GROUP BY domain
         """
-        domain_rows = self._query(sql_domain, [self.tenant_id, self.run_id])
+        domain_rows = self._query(sql_domain, [self.tenant_id, self.pipeline_run_id])
         by_domain = {r["domain"]: r["cnt"] for r in domain_rows}
 
         total = sum(status_counts.values())
@@ -330,13 +330,13 @@ class EntityResolutionV2:
         # Excludes synthetic 'combined' aggregate.
         sql_entities = """
             SELECT DISTINCT entity_id
-            FROM semantic_triples
+            FROM convergence_triples
             WHERE tenant_id = %s AND run_id = %s
               AND entity_id IS NOT NULL
               AND entity_id != 'combined'
             ORDER BY entity_id
         """
-        entity_rows = self._query(sql_entities, [self.tenant_id, self.run_id])
+        entity_rows = self._query(sql_entities, [self.tenant_id, self.pipeline_run_id])
         entities = [r["entity_id"] for r in entity_rows]
 
         return {
@@ -350,9 +350,9 @@ class EntityResolutionV2:
         }
 
     def _set_canonical_on_triples(self, concept: str, canonical_id: str) -> int:
-        """Set canonical_id on semantic_triples for a given concept.
+        """Set canonical_id on convergence_triples for a given concept.
 
-        semantic_triples.canonical_id is UUID type. If canonical_id is not a
+        convergence_triples.canonical_id is UUID type. If canonical_id is not a
         valid UUID, generate a deterministic UUID v5 from it so the link is
         still traceable.
         """
@@ -362,27 +362,27 @@ class EntityResolutionV2:
             uuid_val = str(_uuid_mod.uuid5(_uuid_mod.NAMESPACE_DNS, canonical_id))
 
         sql = """
-            UPDATE semantic_triples
+            UPDATE convergence_triples
             SET canonical_id = %s, resolution_method = 'manual',
                 resolution_confidence = 1.0, updated_at = now()
             WHERE tenant_id = %s AND concept = %s AND run_id = %s
         """
         with get_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute(sql, [uuid_val, self.tenant_id, concept, self.run_id])
+                cur.execute(sql, [uuid_val, self.tenant_id, concept, self.pipeline_run_id])
                 conn.commit()
                 return cur.rowcount
 
     def _clear_canonical_on_triples(self, concept: str) -> int:
-        """Remove canonical_id from semantic_triples for a given concept."""
+        """Remove canonical_id from convergence_triples for a given concept."""
         sql = """
-            UPDATE semantic_triples
+            UPDATE convergence_triples
             SET canonical_id = NULL, resolution_method = NULL,
                 resolution_confidence = NULL, updated_at = now()
             WHERE tenant_id = %s AND concept = %s AND run_id = %s
         """
         with get_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute(sql, [self.tenant_id, concept, self.run_id])
+                cur.execute(sql, [self.tenant_id, concept, self.pipeline_run_id])
                 conn.commit()
                 return cur.rowcount

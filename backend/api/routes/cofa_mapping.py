@@ -52,7 +52,7 @@ class COFAMappingRequest(BaseModel):
     acquirer_entity_id: str
     target_entity_id: str
     tenant_id: str
-    run_id: str
+    cofa_run_id: str
     mappings: list[MappingEntry]
     conflicts: list[ConflictEntry] = Field(default_factory=list)
     unified_accounts: list[UnifiedAccountEntry] = Field(default_factory=list)
@@ -132,17 +132,40 @@ def _check_completeness(
     }
 
 
+def _get_consumed_dcl_ingest_ids(entity_ids: list[str]) -> list[str]:
+    """Get the DCL ingest run_ids that produced source data for these entities.
+
+    Queries semantic_triples (DCL-owned) for distinct active run_ids
+    belonging to the entity pair. These are the upstream ingest IDs that
+    the COFA mapping consumed.
+    """
+    if not entity_ids:
+        return []
+    placeholders = ", ".join(["%s"] * len(entity_ids))
+    sql = (
+        f"SELECT DISTINCT run_id::text FROM semantic_triples "
+        f"WHERE entity_id IN ({placeholders}) AND is_active = true "
+        f"ORDER BY run_id"
+    )
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, entity_ids)
+            return [row[0] for row in cur.fetchall()]
+
+
 @router.post(
     "",
     summary="Write COFA mapping triples",
     description=(
         "Converts Maestra's structured COFA mapping output into semantic triples "
-        "and writes them to the convergence_triples table. Idempotent per run_id. "
+        "and writes them to the convergence_triples table. Idempotent per cofa_run_id. "
         "Enforces COFACompletionGate — rejects with 422 if any CoA account is unmapped."
     ),
 )
 async def create_cofa_mapping(req: COFAMappingRequest):
+    # Translate cofa_run_id to the internal "run_id" key used by the writer
     data = req.model_dump()
+    data["run_id"] = data.pop("cofa_run_id")
 
     # --- COFACompletionGate: load CoA accounts from DB and validate ---
     with get_connection() as conn:
@@ -203,5 +226,22 @@ async def create_cofa_mapping(req: COFAMappingRequest):
 
     if result["status"] == "error":
         raise HTTPException(status_code=422, detail=result)
+
+    # Add identity fields and consumed_dcl_ingest_ids (I2, I3)
+    consumed_ids = _get_consumed_dcl_ingest_ids([req.acquirer_entity_id, req.target_entity_id])
+    result["cofa_run_id"] = req.cofa_run_id
+    result["tenant_id"] = req.tenant_id
+    result["engagement_id"] = req.engagement_id
+    result["entity_pair"] = [req.acquirer_entity_id, req.target_entity_id]
+    result["consumed_dcl_ingest_ids"] = consumed_ids
+    # Expansion fields
+    source_rows = len(req.mappings) + len(req.conflicts) + len(req.unified_accounts)
+    result["source_rows"] = source_rows
+    result["triples_written"] = result.get("triple_count", 0)
+    result["expansion_factor"] = (
+        round(result["triples_written"] / source_rows, 4) if source_rows > 0 else 0.0
+    )
+    # Remove bare run_id from response (I1)
+    result.pop("run_id", None)
 
     return JSONResponse(status_code=201, content=result)
