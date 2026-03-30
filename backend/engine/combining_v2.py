@@ -112,7 +112,7 @@ class CombiningEngineV2:
 
         if not results:
             logger.info(
-                "No COFA conflicts found in semantic_triples for "
+                "No COFA conflicts found in convergence_triples for "
                 "tenant_id='%s'. Combining statement will use zero adjustments.",
                 self.tenant_id,
             )
@@ -130,7 +130,7 @@ class CombiningEngineV2:
                     """
                     SELECT DISTINCT ON (concept, property)
                            concept, property, value
-                    FROM semantic_triples
+                    FROM convergence_triples
                     WHERE tenant_id = %s AND is_active = true
                       AND (concept LIKE 'cofa_conflict.%%' OR concept LIKE 'cofa.%%')
                     ORDER BY concept, property, created_at DESC

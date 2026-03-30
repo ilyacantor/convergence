@@ -21,6 +21,10 @@ REQUIRED_TABLES = [
     "resolution_workspaces_v2",
     # semantic_triples is DCL-owned but convergence reads it — verify it exists
     "semantic_triples",
+    # Convergence-owned triple store (ME data isolation)
+    "convergence_triples",
+    "convergence_tenant_runs",
+    "convergence_ingest_log",
 ]
 
 

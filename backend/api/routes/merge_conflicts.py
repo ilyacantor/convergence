@@ -76,7 +76,7 @@ def _jsonb_float_or_none(value) -> float | None:
 
 
 def _load_conflicts(cur) -> list[dict]:
-    """Load all COFA conflicts from semantic_triples, grouped by concept.
+    """Load all COFA conflicts from convergence_triples, grouped by concept.
 
     Reads cofa_conflict.* triples and groups properties per conflict.
     Also reads resolution properties if they exist.
@@ -84,7 +84,7 @@ def _load_conflicts(cur) -> list[dict]:
     """
     cur.execute(
         "SELECT DISTINCT ON (concept, property) concept, property, value "
-        "FROM semantic_triples "
+        "FROM convergence_triples "
         "WHERE is_active = true AND concept LIKE 'cofa_conflict.%%' "
         "ORDER BY concept, property, created_at DESC"
     )
@@ -138,20 +138,20 @@ def _resolve_conflict(cur, conn, conflict_id: str, resolution: str, notes: str, 
 
     # Verify the conflict exists
     cur.execute(
-        "SELECT COUNT(*) FROM semantic_triples "
+        "SELECT COUNT(*) FROM convergence_triples "
         "WHERE is_active = true AND concept = %s",
         (concept,),
     )
     if cur.fetchone()[0] == 0:
         raise HTTPException(
             status_code=404,
-            detail=f"Conflict '{conflict_id}' not found in active semantic_triples. "
+            detail=f"Conflict '{conflict_id}' not found in active convergence_triples. "
                    f"Verify the conflict_id matches a cofa_conflict.* concept.",
         )
 
     # Get tenant_id and entity_id from existing conflict triple
     cur.execute(
-        "SELECT tenant_id, entity_id, run_id FROM semantic_triples "
+        "SELECT tenant_id, entity_id, run_id FROM convergence_triples "
         "WHERE is_active = true AND concept = %s LIMIT 1",
         (concept,),
     )
@@ -164,7 +164,7 @@ def _resolve_conflict(cur, conn, conflict_id: str, resolution: str, notes: str, 
     resolution_props = ("resolution_status", "resolution", "resolved_by", "resolved_at", "resolution_notes")
     for prop in resolution_props:
         cur.execute(
-            "UPDATE semantic_triples SET is_active = false, updated_at = now() "
+            "UPDATE convergence_triples SET is_active = false, updated_at = now() "
             "WHERE is_active = true AND concept = %s AND property = %s",
             (concept, prop),
         )
@@ -189,7 +189,7 @@ def _resolve_conflict(cur, conn, conflict_id: str, resolution: str, notes: str, 
     ]
     col_names = ", ".join(cols)
     placeholders = ", ".join(["%s"] * len(cols))
-    sql = f"INSERT INTO semantic_triples ({col_names}) VALUES ({placeholders})"
+    sql = f"INSERT INTO convergence_triples ({col_names}) VALUES ({placeholders})"
 
     for prop, val in new_props.items():
         cur.execute(sql, (

@@ -241,7 +241,7 @@ def _build_unified_account_triples(data: dict) -> list[dict]:
 
 
 def write_cofa_mapping(data: dict) -> dict:
-    """Write COFA mapping triples to semantic_triples. Returns result dict."""
+    """Write COFA mapping triples to convergence_triples. Returns result dict."""
     # Validate input
     errors = _validate(data)
     if errors:

@@ -64,12 +64,20 @@ def _load_coa_accounts(cur, entity_id: str) -> dict[str, str]:
     Returns {account_name: account_number} from the coa.* triples.
     """
     cur.execute(
-        "SELECT split_part(concept, '.', 2) AS acct_num, "
-        "       value #>> '{}' AS acct_name "
-        "FROM semantic_triples "
-        "WHERE concept LIKE 'coa.%%' AND entity_id = %s "
-        "  AND property = 'account_name' AND is_active = true",
-        (entity_id,),
+        "SELECT acct_num, acct_name FROM ("
+        "  SELECT split_part(concept, '.', 2) AS acct_num, "
+        "         value #>> '{}' AS acct_name, created_at "
+        "  FROM semantic_triples "
+        "  WHERE concept LIKE 'coa.%%' AND entity_id = %s "
+        "    AND property = 'account_name' AND is_active = true "
+        "  UNION ALL "
+        "  SELECT split_part(concept, '.', 2) AS acct_num, "
+        "         value #>> '{}' AS acct_name, created_at "
+        "  FROM convergence_triples "
+        "  WHERE concept LIKE 'coa.%%' AND entity_id = %s "
+        "    AND property = 'account_name' AND is_active = true "
+        ") sub",
+        (entity_id, entity_id),
     )
     return {
         row[1].strip('"'): row[0]
@@ -129,7 +137,7 @@ def _check_completeness(
     summary="Write COFA mapping triples",
     description=(
         "Converts Maestra's structured COFA mapping output into semantic triples "
-        "and writes them to the semantic_triples table. Idempotent per run_id. "
+        "and writes them to the convergence_triples table. Idempotent per run_id. "
         "Enforces COFACompletionGate — rejects with 422 if any CoA account is unmapped."
     ),
 )

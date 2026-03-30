@@ -59,11 +59,16 @@ def _get_cofa_entity_ids(cur) -> list[str]:
     merge tab works both before and after Maestra runs.
     """
     cur.execute(
-        "SELECT DISTINCT entity_id FROM semantic_triples "
-        "WHERE is_active = true "
-        "  AND (split_part(concept, '.', 1) = 'coa' "
-        "       OR split_part(concept, '.', 1) LIKE 'cofa%%') "
-        "ORDER BY entity_id"
+        "SELECT DISTINCT entity_id FROM ("
+        "  SELECT entity_id FROM semantic_triples "
+        "  WHERE is_active = true "
+        "    AND split_part(concept, '.', 1) = 'coa' "
+        "  UNION "
+        "  SELECT entity_id FROM convergence_triples "
+        "  WHERE is_active = true "
+        "    AND (split_part(concept, '.', 1) = 'coa' "
+        "         OR split_part(concept, '.', 1) LIKE 'cofa%%') "
+        ") sub ORDER BY entity_id"
     )
     return [r[0] for r in cur.fetchall()]
 
@@ -188,12 +193,18 @@ def merge_overview(
 
             # --- Source run tag (provenance from upstream system) ---
             cur.execute(
-                "SELECT DISTINCT ON (entity_id) entity_id, source_run_tag "
-                "FROM semantic_triples "
-                "WHERE is_active = true AND entity_id IN (%s, %s) "
-                "  AND source_run_tag IS NOT NULL "
-                "ORDER BY entity_id, created_at DESC",
-                (acq_id, tgt_id),
+                "SELECT DISTINCT ON (entity_id) entity_id, source_run_tag FROM ("
+                "  SELECT entity_id, source_run_tag, created_at "
+                "  FROM semantic_triples "
+                "  WHERE is_active = true AND entity_id IN (%s, %s) "
+                "    AND source_run_tag IS NOT NULL "
+                "  UNION ALL "
+                "  SELECT entity_id, source_run_tag, created_at "
+                "  FROM convergence_triples "
+                "  WHERE is_active = true AND entity_id IN (%s, %s) "
+                "    AND source_run_tag IS NOT NULL "
+                ") sub ORDER BY entity_id, created_at DESC",
+                (acq_id, tgt_id, acq_id, tgt_id),
             )
             tag_map = {row[0]: row[1] for row in cur.fetchall()}
             tags = list(set(tag_map.values()))
@@ -207,14 +218,21 @@ def merge_overview(
             # --- Section 1: Overview stats ---
             # Count both coa (source accounts) and cofa-prefixed (mapping results) triples.
             cur.execute(
-                "SELECT entity_id, COUNT(*) AS cofa_count, MAX(created_at) AS last_ingest "
-                "FROM semantic_triples "
-                "WHERE is_active = true "
-                "  AND (split_part(concept, '.', 1) = 'coa' "
-                "       OR split_part(concept, '.', 1) LIKE 'cofa%%') "
-                "  AND entity_id IN (%s, %s) "
-                "GROUP BY entity_id",
-                (acq_id, tgt_id),
+                "SELECT entity_id, COUNT(*) AS cofa_count, MAX(created_at) AS last_ingest FROM ("
+                "  SELECT entity_id, concept, created_at "
+                "  FROM semantic_triples "
+                "  WHERE is_active = true "
+                "    AND split_part(concept, '.', 1) = 'coa' "
+                "    AND entity_id IN (%s, %s) "
+                "  UNION ALL "
+                "  SELECT entity_id, concept, created_at "
+                "  FROM convergence_triples "
+                "  WHERE is_active = true "
+                "    AND (split_part(concept, '.', 1) = 'coa' "
+                "         OR split_part(concept, '.', 1) LIKE 'cofa%%') "
+                "    AND entity_id IN (%s, %s) "
+                ") sub GROUP BY entity_id",
+                (acq_id, tgt_id, acq_id, tgt_id),
             )
             entity_stats = {}
             for row in cur.fetchall():
@@ -398,12 +416,18 @@ def merge_overview(
             # not COFA conflict triples.  COFA conflicts are shown in section 3.
             cur.execute(
                 "SELECT DISTINCT ON (entity_id, concept, property, period) "
-                "  entity_id, concept, property, value, period "
-                "FROM semantic_triples "
-                "WHERE is_active = true AND split_part(concept, '.', 1) = 'coa' "
-                "  AND entity_id IN (%s, %s) "
-                "ORDER BY entity_id, concept, property, period, created_at DESC",
-                (acq_id, tgt_id),
+                "  entity_id, concept, property, value, period FROM ("
+                "  SELECT entity_id, concept, property, value, period, created_at "
+                "  FROM semantic_triples "
+                "  WHERE is_active = true AND split_part(concept, '.', 1) = 'coa' "
+                "    AND entity_id IN (%s, %s) "
+                "  UNION ALL "
+                "  SELECT entity_id, concept, property, value, period, created_at "
+                "  FROM convergence_triples "
+                "  WHERE is_active = true AND split_part(concept, '.', 1) = 'coa' "
+                "    AND entity_id IN (%s, %s) "
+                ") sub ORDER BY entity_id, concept, property, period, created_at DESC",
+                (acq_id, tgt_id, acq_id, tgt_id),
             )
             # Group by concept
             concept_map: dict[str, dict] = {}
@@ -435,8 +459,8 @@ def merge_overview(
                 "SELECT DISTINCT ON (a.canonical_id) "
                 "  a.concept AS acquirer_concept, b.concept AS target_concept, "
                 "  a.canonical_id, a.resolution_confidence, a.source_field, a.resolution_method "
-                "FROM semantic_triples a "
-                "JOIN semantic_triples b ON a.canonical_id = b.canonical_id AND a.id != b.id "
+                "FROM convergence_triples a "
+                "JOIN convergence_triples b ON a.canonical_id = b.canonical_id AND a.id != b.id "
                 "WHERE a.is_active = true AND b.is_active = true "
                 "  AND a.entity_id = %s AND b.entity_id = %s "
                 "  AND a.canonical_id IS NOT NULL "
@@ -481,15 +505,20 @@ def merge_overview(
             # many-to-one mappings produce multiple triples for one concept).
             cur.execute(
                 "SELECT entity_id, "
-                "  COUNT(DISTINCT CASE WHEN split_part(concept, '.', 1) = 'coa' "
-                "        THEN concept END) AS coa_count, "
-                "  COUNT(DISTINCT CASE WHEN split_part(concept, '.', 1) = 'cofa_mapping' "
-                "        THEN concept END) AS mapping_count "
-                "FROM semantic_triples "
-                "WHERE is_active = true AND entity_id IN (%s, %s) "
-                "  AND split_part(concept, '.', 1) IN ('coa', 'cofa_mapping') "
-                "GROUP BY entity_id",
-                (acq_id, tgt_id),
+                "  COUNT(DISTINCT CASE WHEN domain = 'coa' THEN concept END) AS coa_count, "
+                "  COUNT(DISTINCT CASE WHEN domain = 'cofa_mapping' THEN concept END) AS mapping_count "
+                "FROM ("
+                "  SELECT entity_id, concept, split_part(concept, '.', 1) AS domain "
+                "  FROM semantic_triples "
+                "  WHERE is_active = true AND entity_id IN (%s, %s) "
+                "    AND split_part(concept, '.', 1) = 'coa' "
+                "  UNION ALL "
+                "  SELECT entity_id, concept, split_part(concept, '.', 1) AS domain "
+                "  FROM convergence_triples "
+                "  WHERE is_active = true AND entity_id IN (%s, %s) "
+                "    AND split_part(concept, '.', 1) IN ('coa', 'cofa_mapping') "
+                ") sub GROUP BY entity_id",
+                (acq_id, tgt_id, acq_id, tgt_id),
             )
             coverage = {}
             for row in cur.fetchall():
@@ -523,7 +552,7 @@ def merge_overview(
                 "           WHEN property = 'resolution_status' "
                 "             AND value #>> '{}' = 'resolved' "
                 "           THEN concept END) AS resolved "
-                "FROM semantic_triples "
+                "FROM convergence_triples "
                 "WHERE is_active = true "
                 "  AND split_part(concept, '.', 1) = 'cofa_conflict' "
                 "  AND entity_id IN (%s, %s)",

@@ -1,9 +1,12 @@
 # FORKED from dcl/backend/db/triple_store.py on 2026-03-29
-# Changes from DCL original: [none yet — initial fork]
+# Changes from DCL original:
+#   - All table references: convergence_triples → convergence_triples
+#   - All table references: tenant_runs → convergence_tenant_runs
+#   - Full data isolation: ME data in convergence-owned tables
 # aos-common extraction planned post-carveout
 
 """
-TripleStore — data access for the semantic_triples table.
+TripleStore — data access for the convergence_triples table.
 
 Sync psycopg2, parameterized queries, no business logic.
 """
@@ -28,7 +31,7 @@ class TripleStore:
         "canonical_id", "resolution_method", "resolution_confidence",
     ]
     _COPY_SQL = (
-        f"COPY semantic_triples ({', '.join(_COPY_COLS)}) "
+        f"COPY convergence_triples ({', '.join(_COPY_COLS)}) "
         f"FROM STDIN WITH (FORMAT text)"
     )
 
@@ -107,13 +110,13 @@ class TripleStore:
                 if entity_ids:
                     placeholders = ", ".join(["%s"] * len(entity_ids))
                     cur.execute(
-                        f"DELETE FROM semantic_triples "
+                        f"DELETE FROM convergence_triples "
                         f"WHERE tenant_id = %s AND entity_id IN ({placeholders})",
                         [tenant_id] + entity_ids,
                     )
                 else:
                     cur.execute(
-                        "DELETE FROM semantic_triples WHERE tenant_id = %s",
+                        "DELETE FROM convergence_triples WHERE tenant_id = %s",
                         (tenant_id,),
                     )
                 deleted = cur.rowcount
@@ -148,14 +151,14 @@ class TripleStore:
             if tenant_id is not None:
                 # Use current_run_id pointer — tenant_id already in clauses above
                 clauses.append(
-                    "run_id = (SELECT current_run_id FROM tenant_runs WHERE tenant_id = %s)"
+                    "run_id = (SELECT current_run_id FROM convergence_tenant_runs WHERE tenant_id = %s)"
                 )
                 params.append(tenant_id)
             else:
                 clauses.append("is_active = true")
 
         where = " AND ".join(clauses)
-        sql = f"SELECT * FROM semantic_triples WHERE {where} ORDER BY created_at"
+        sql = f"SELECT * FROM convergence_triples WHERE {where} ORDER BY created_at"
 
         with get_connection() as conn:
             with conn.cursor() as cur:
@@ -165,7 +168,7 @@ class TripleStore:
 
     def get_triples_by_run(self, run_id: str) -> list[dict]:
         """All triples from a run."""
-        sql = "SELECT * FROM semantic_triples WHERE run_id = %s ORDER BY created_at"
+        sql = "SELECT * FROM convergence_triples WHERE run_id = %s ORDER BY created_at"
         with get_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(sql, (run_id,))
@@ -184,7 +187,7 @@ class TripleStore:
         all_ids = list(set(entity_ids + ["combined"]))
         placeholders = ", ".join(["%s"] * len(all_ids))
         sql = (
-            "UPDATE semantic_triples SET is_active = false, updated_at = now() "
+            "UPDATE convergence_triples SET is_active = false, updated_at = now() "
             "WHERE is_active = true "
             "  AND (   split_part(concept, '.', 1) = 'cofa' "
             "       OR split_part(concept, '.', 1) = 'cofa_mapping' "
@@ -217,7 +220,7 @@ class TripleStore:
             )
         placeholders = ", ".join(["%s"] * len(entity_ids))
         sql = (
-            "UPDATE semantic_triples SET is_active = false, updated_at = now() "
+            "UPDATE convergence_triples SET is_active = false, updated_at = now() "
             f"WHERE is_active = true AND tenant_id = %s AND entity_id IN ({placeholders})"
         )
         params = [tenant_id] + entity_ids
@@ -237,7 +240,7 @@ class TripleStore:
         if not tenant_id:
             raise ValueError("deactivate_tenant_triples requires tenant_id.")
         sql = (
-            "UPDATE semantic_triples SET is_active = false, updated_at = now() "
+            "UPDATE convergence_triples SET is_active = false, updated_at = now() "
             "WHERE is_active = true AND tenant_id = %s"
         )
         with get_connection() as conn:
@@ -252,7 +255,7 @@ class TripleStore:
 
         Maintenance operation to purge deactivated runs and reclaim space.
         """
-        sql = "DELETE FROM semantic_triples WHERE is_active = false"
+        sql = "DELETE FROM convergence_triples WHERE is_active = false"
         with get_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(sql)
@@ -262,7 +265,7 @@ class TripleStore:
     def deactivate_run(self, run_id: str) -> int:
         """Set is_active=false for all triples in a run. Returns count affected."""
         sql = (
-            "UPDATE semantic_triples SET is_active = false, updated_at = now() "
+            "UPDATE convergence_triples SET is_active = false, updated_at = now() "
             "WHERE run_id = %s AND is_active = true"
         )
         with get_connection() as conn:
@@ -279,10 +282,10 @@ class TripleStore:
         hot path. Single-row UPSERT — no table scan, no lock contention.
         """
         sql = """
-            INSERT INTO tenant_runs (tenant_id, current_run_id, previous_run_id, updated_at)
+            INSERT INTO convergence_tenant_runs (tenant_id, current_run_id, previous_run_id, updated_at)
             VALUES (%s, %s, NULL, now())
             ON CONFLICT (tenant_id) DO UPDATE
-              SET previous_run_id = tenant_runs.current_run_id,
+              SET previous_run_id = convergence_tenant_runs.current_run_id,
                   current_run_id  = EXCLUDED.current_run_id,
                   updated_at      = now()
         """
@@ -297,7 +300,7 @@ class TripleStore:
         Raises ValueError if no entry exists — no silent empty returns.
         Callers that need a best-effort fallback should catch ValueError.
         """
-        sql = "SELECT current_run_id FROM tenant_runs WHERE tenant_id = %s"
+        sql = "SELECT current_run_id FROM convergence_tenant_runs WHERE tenant_id = %s"
         with get_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(sql, (tenant_id,))
@@ -305,7 +308,7 @@ class TripleStore:
         if row is None:
             raise ValueError(
                 f"No current_run_id registered for tenant {tenant_id}. "
-                f"Run the ingest pipeline first to populate tenant_runs."
+                f"Run the ingest pipeline first to populate convergence_tenant_runs."
             )
         return str(row[0])
 
@@ -319,7 +322,7 @@ class TripleStore:
         if keep_runs < 1:
             raise ValueError("keep_runs must be >= 1")
         sql_find = """
-            SELECT run_id FROM semantic_triples
+            SELECT run_id FROM convergence_triples
             WHERE tenant_id = %s
             GROUP BY run_id
             ORDER BY MIN(created_at) DESC
@@ -333,7 +336,7 @@ class TripleStore:
                     return 0
                 placeholders = ", ".join(["%s"] * len(old_run_ids))
                 sql_delete = (
-                    f"DELETE FROM semantic_triples "
+                    f"DELETE FROM convergence_triples "
                     f"WHERE tenant_id = %s AND run_id IN ({placeholders})"
                 )
                 cur.execute(sql_delete, [tenant_id] + old_run_ids)
@@ -355,7 +358,7 @@ class TripleStore:
             # Tenant-scoped: use current_run_id pointer (avoids counting stale runs)
             clauses.append("tenant_id = %s")
             clauses.append(
-                "run_id = (SELECT current_run_id FROM tenant_runs WHERE tenant_id = %s)"
+                "run_id = (SELECT current_run_id FROM convergence_tenant_runs WHERE tenant_id = %s)"
             )
             params.extend([tenant_id, tenant_id])
         else:
@@ -368,7 +371,7 @@ class TripleStore:
         where = " AND ".join(clauses)
         sql = (
             f"SELECT split_part(concept, '.', 1) AS domain, COUNT(*) AS cnt "
-            f"FROM semantic_triples WHERE {where} "
+            f"FROM convergence_triples WHERE {where} "
             f"GROUP BY domain ORDER BY domain"
         )
 
@@ -379,7 +382,7 @@ class TripleStore:
 
     def count_by_run(self, run_id: str) -> int:
         """Count triples for a given run_id."""
-        sql = "SELECT COUNT(*) FROM semantic_triples WHERE run_id = %s"
+        sql = "SELECT COUNT(*) FROM convergence_triples WHERE run_id = %s"
         with get_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(sql, (run_id,))
@@ -387,7 +390,7 @@ class TripleStore:
 
     def run_exists(self, run_id: str) -> bool:
         """Check if any triples exist for a run_id."""
-        sql = "SELECT EXISTS(SELECT 1 FROM semantic_triples WHERE run_id = %s)"
+        sql = "SELECT EXISTS(SELECT 1 FROM convergence_triples WHERE run_id = %s)"
         with get_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(sql, (run_id,))
@@ -399,7 +402,7 @@ class TripleStore:
             "SELECT run_id, COUNT(*) as triple_count, "
             "MIN(created_at) as created_at, "
             "bool_and(is_active) as is_active "
-            "FROM semantic_triples WHERE run_id = %s "
+            "FROM convergence_triples WHERE run_id = %s "
             "GROUP BY run_id"
         )
         with get_connection() as conn:
@@ -418,7 +421,7 @@ class TripleStore:
                 "SELECT run_id, tenant_id, COUNT(*) as triple_count, "
                 "MIN(created_at) as created_at, "
                 "bool_and(is_active) as is_active "
-                "FROM semantic_triples WHERE tenant_id = %s "
+                "FROM convergence_triples WHERE tenant_id = %s "
                 "GROUP BY run_id, tenant_id ORDER BY MIN(created_at) DESC"
             )
             params = (tenant_id,)
@@ -427,7 +430,7 @@ class TripleStore:
                 "SELECT run_id, tenant_id, COUNT(*) as triple_count, "
                 "MIN(created_at) as created_at, "
                 "bool_and(is_active) as is_active "
-                "FROM semantic_triples "
+                "FROM convergence_triples "
                 "GROUP BY run_id, tenant_id ORDER BY MIN(created_at) DESC"
             )
             params = ()
@@ -442,13 +445,13 @@ class TripleStore:
         """Count triples in the current run. With tenant_id uses current_run_id pointer."""
         if tenant_id:
             sql = (
-                "SELECT COUNT(*) FROM semantic_triples "
+                "SELECT COUNT(*) FROM convergence_triples "
                 "WHERE tenant_id = %s "
-                "AND run_id = (SELECT current_run_id FROM tenant_runs WHERE tenant_id = %s)"
+                "AND run_id = (SELECT current_run_id FROM convergence_tenant_runs WHERE tenant_id = %s)"
             )
             params: tuple = (tenant_id, tenant_id)
         else:
-            sql = "SELECT COUNT(*) FROM semantic_triples WHERE is_active = true"
+            sql = "SELECT COUNT(*) FROM convergence_triples WHERE is_active = true"
             params = ()
 
         with get_connection() as conn:
@@ -457,22 +460,22 @@ class TripleStore:
                 return cur.fetchone()[0]
 
     def count_total_rows(self) -> int:
-        """Count ALL rows in semantic_triples (all tenants, active + inactive)."""
+        """Count ALL rows in convergence_triples (all tenants, active + inactive)."""
         with get_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT COUNT(*) FROM semantic_triples")
+                cur.execute("SELECT COUNT(*) FROM convergence_triples")
                 return cur.fetchone()[0]
 
     def get_source_run_ids(self) -> list[dict]:
         """Return run_ids that are current for at least one tenant, most recent first.
 
         Each row: {run_id: str, created_at: datetime, triple_count: int}
-        Uses tenant_runs join to return only live runs, not all historical runs.
+        Uses convergence_tenant_runs join to return only live runs, not all historical runs.
         """
         sql = (
             "SELECT st.run_id, MIN(st.created_at) AS created_at, COUNT(*) AS triple_count "
-            "FROM semantic_triples st "
-            "JOIN tenant_runs tr "
+            "FROM convergence_triples st "
+            "JOIN convergence_tenant_runs tr "
             "  ON tr.tenant_id = st.tenant_id AND tr.current_run_id = st.run_id "
             "GROUP BY st.run_id ORDER BY MIN(st.created_at) DESC"
         )
@@ -485,7 +488,7 @@ class TripleStore:
     def get_run_entities(self, run_id: str) -> list[str]:
         """Return distinct entity_ids for a specific run_id."""
         sql = (
-            "SELECT DISTINCT entity_id FROM semantic_triples "
+            "SELECT DISTINCT entity_id FROM convergence_triples "
             "WHERE run_id = %s AND entity_id IS NOT NULL "
             "ORDER BY entity_id"
         )
@@ -505,13 +508,13 @@ class TripleStore:
             dict keyed by persona, each with data_sources, domains, triple_count, domain_list.
         """
         # Single query: get per-domain stats from current runs only
-        # Join with tenant_runs so we see only live data, not stale historical runs.
+        # Join with convergence_tenant_runs so we see only live data, not stale historical runs.
         sql = (
             "SELECT split_part(st.concept, '.', 1) AS domain, "
             "COUNT(DISTINCT st.source_system) AS source_count, "
             "COUNT(*) AS triple_count "
-            "FROM semantic_triples st "
-            "JOIN tenant_runs tr "
+            "FROM convergence_triples st "
+            "JOIN convergence_tenant_runs tr "
             "  ON tr.tenant_id = st.tenant_id AND tr.current_run_id = st.run_id "
             "GROUP BY domain"
         )
@@ -540,8 +543,8 @@ class TripleStore:
                 placeholders = ", ".join(["%s"] * len(matched_domains))
                 src_sql = (
                     f"SELECT COUNT(DISTINCT st.source_system) "
-                    f"FROM semantic_triples st "
-                    f"JOIN tenant_runs tr "
+                    f"FROM convergence_triples st "
+                    f"JOIN convergence_tenant_runs tr "
                     f"  ON tr.tenant_id = st.tenant_id AND tr.current_run_id = st.run_id "
                     f"WHERE split_part(st.concept, '.', 1) IN ({placeholders})"
                 )
@@ -574,9 +577,9 @@ class TripleStore:
             sql = (
                 "SELECT source_system, split_part(concept, '.', 1) AS domain, "
                 "entity_id, COUNT(*) AS triple_count "
-                "FROM semantic_triples "
+                "FROM convergence_triples "
                 "WHERE tenant_id = %s "
-                "AND run_id = (SELECT current_run_id FROM tenant_runs WHERE tenant_id = %s) "
+                "AND run_id = (SELECT current_run_id FROM convergence_tenant_runs WHERE tenant_id = %s) "
                 "GROUP BY source_system, split_part(concept, '.', 1), entity_id "
                 "ORDER BY triple_count DESC"
             )
@@ -585,8 +588,8 @@ class TripleStore:
             sql = (
                 "SELECT st.source_system, split_part(st.concept, '.', 1) AS domain, "
                 "st.entity_id, COUNT(*) AS triple_count "
-                "FROM semantic_triples st "
-                "JOIN tenant_runs tr "
+                "FROM convergence_triples st "
+                "JOIN convergence_tenant_runs tr "
                 "  ON tr.tenant_id = st.tenant_id AND tr.current_run_id = st.run_id "
                 "GROUP BY st.source_system, split_part(st.concept, '.', 1), st.entity_id "
                 "ORDER BY triple_count DESC"
@@ -601,7 +604,7 @@ class TripleStore:
 
     def delete_by_run(self, run_id: str) -> int:
         """Hard-delete all triples for a run (test cleanup only)."""
-        sql = "DELETE FROM semantic_triples WHERE run_id = %s"
+        sql = "DELETE FROM convergence_triples WHERE run_id = %s"
         with get_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(sql, (run_id,))

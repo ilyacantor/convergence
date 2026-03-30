@@ -36,6 +36,7 @@ from backend.api.routes.cofa_mapping import router as cofa_mapping_router
 from backend.api.routes.merge_overview import router as merge_overview_router
 from backend.api.routes.merge_conflicts import router as merge_conflicts_router
 from backend.api.routes.engagement_api import router as engagement_api_router
+from backend.api.routes.ingest_triples import router as ingest_triples_router
 
 logger = get_logger(__name__)
 
@@ -127,6 +128,7 @@ app.include_router(cofa_mapping_router)
 app.include_router(merge_overview_router)
 app.include_router(merge_conflicts_router)
 app.include_router(engagement_api_router)
+app.include_router(ingest_triples_router)
 
 
 # =============================================================================
