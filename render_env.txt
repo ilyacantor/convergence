@@ -1,0 +1,78 @@
+# === Convergence (ME) — Complete Render Environment ===
+# Upload this via Render Dashboard > Environment > "Add from .env"
+
+# --- Core ---
+CONVERGENCE_ENV=production
+PYTHON_VERSION=3.11.6
+BACKEND_PORT=10000
+
+# --- Database (shared Supabase PG) ---
+DATABASE_URL=postgresql://postgres:qQu2V7HQMHzyOwI7@db.gdbmdrouocxjxiohpixr.supabase.co:5432/postgres
+CONVERGENCE_POOL_MIN_CONN=2
+CONVERGENCE_POOL_MAX_CONN=10
+DCL_DB_CONNECT_TIMEOUT=10
+DCL_POOL_GETCONN_TIMEOUT=5.0
+DCL_POOL_RETRY_COOLDOWN=30.0
+DCL_INGEST_STATEMENT_TIMEOUT_MS=90000
+
+# --- Cross-Service URLs ---
+FARM_API_URL=https://farmv2.onrender.com
+DCL_API_URL=https://aos-dclv2.onrender.com
+AAM_API_URL=https://aos-aam.onrender.com
+
+# --- CORS ---
+CORS_ORIGINS=https://console-gt7y.onrender.com,https://aos-dclv2.onrender.com,https://autonomos-platform-1.onrender.com
+
+# --- API ---
+DCL_API_VERSION=2.0.0
+DCL_MODE=metadata_only
+
+# --- Confidence Thresholds (heuristic mapper) ---
+DCL_CONFIDENCE_POSITIVE_PATTERN=0.95
+DCL_CONFIDENCE_EXACT_FIELD=0.95
+DCL_CONFIDENCE_PARTIAL_FIELD=0.75
+DCL_CONFIDENCE_SYNONYM=0.70
+DCL_CONFIDENCE_CONCEPT_IN_NAME=0.80
+DCL_CONFIDENCE_CONTEXT_BOOST=0.05
+DCL_CONFIDENCE_CONTEXT_CAP=0.95
+DCL_CONFIDENCE_SEMANTIC_AMOUNT=0.65
+DCL_CONFIDENCE_SEMANTIC_ID=0.60
+
+# --- Confidence Thresholds (mapping service) ---
+DCL_CONFIDENCE_CONCEPT_MATCH=0.95
+DCL_CONFIDENCE_EXAMPLE_EXACT=0.90
+DCL_CONFIDENCE_EXAMPLE_PARTIAL=0.75
+DCL_CONFIDENCE_DEFAULT=0.60
+
+# --- Confidence Thresholds (RAG / LLM) ---
+DCL_RAG_CONFIDENCE_THRESHOLD=0.75
+DCL_LLM_VALIDATION_THRESHOLD=0.80
+DCL_TRUST_SCORE_FALLBACK=60
+
+# --- LLM / Embedding ---
+LLM_MODEL_NAME=gpt-4o-mini
+OPENAI_EMBEDDING_MODEL=text-embedding-3-small
+
+# --- Pinecone ---
+PINECONE_INDEX_NAME=dcl-mapping-lessons
+PINECONE_DIMENSION=1536
+PINECONE_CLOUD=aws
+PINECONE_REGION=us-east-1
+
+# --- Cache TTLs (seconds) ---
+DCL_ONTOLOGY_CACHE_TTL=300.0
+DCL_MAPPINGS_CACHE_TTL=60.0
+DCL_SCHEMA_CACHE_TTL=300.0
+
+# --- Circuit Breaker / Timeouts ---
+DCL_CB_COOLDOWN=120.0
+DCL_FARM_REGISTRY_TIMEOUT=5.0
+DCL_FARM_BROWSER_TIMEOUT=5.0
+
+# --- AAM Integration ---
+AAM_API_TIMEOUT=10
+AAM_EDGE_CACHE_TTL=300
+AAM_EDGE_CONFIDENCE_MIN=0.8
+
+# --- Combining Engine ---
+DCL_COMBINING_MAX_WORKERS=6
