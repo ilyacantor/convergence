@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: aos-convergence
+    runtime: python
+    region: oregon
+    plan: starter
+    branch: dev
+    buildCommand: pip install -r requirements.txt && python migrations/run_migration.py && npm install && npm run build
+    startCommand: uvicorn backend.api.main:app --host 0.0.0.0 --port $PORT --workers 2
+    healthCheckPath: /api/health
+    envVars:
+      - key: CONVERGENCE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: FARM_API_URL
+        value: "https://farmv2.onrender.com"
+      - key: DCL_API_URL
+        sync: false
+      - key: AAM_API_URL
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: PYTHON_VERSION
+        value: "3.11.6"

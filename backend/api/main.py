@@ -17,9 +17,12 @@ import signal
 import time
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from pathlib import Path
+
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from backend.core.db import PoolExhausted
@@ -140,3 +143,40 @@ def _handle_sigterm(*args):
     raise SystemExit(0)
 
 signal.signal(signal.SIGTERM, _handle_sigterm)
+
+
+# =============================================================================
+# SPA serving (must be last — catch-all routes)
+# =============================================================================
+
+DIST_DIR = Path(__file__).parent.parent.parent / "dist"
+
+if DIST_DIR.exists() and (DIST_DIR / "assets").exists():
+    app.mount("/assets", StaticFiles(directory=DIST_DIR / "assets"), name="assets")
+
+
+@app.get("/")
+async def serve_root():
+    index_file = DIST_DIR / "index.html"
+    if index_file.exists():
+        return FileResponse(
+            index_file,
+            headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache"},
+        )
+    return {"status": "Convergence (ME) API is running", "version": "1.0.0", "note": "Frontend not built"}
+
+
+@app.get("/{full_path:path}")
+async def serve_spa(full_path: str):
+    if full_path.startswith("api/"):
+        raise HTTPException(status_code=404, detail="API route not found")
+    blocked = ("data/", "data\\", ".json", ".yaml", ".yml", ".csv", ".env")
+    if any(full_path.lower().startswith(b) or full_path.lower().endswith(b) for b in blocked):
+        raise HTTPException(status_code=403, detail="Direct file access is blocked. Use the query API.")
+    index_file = DIST_DIR / "index.html"
+    if index_file.exists():
+        return FileResponse(
+            index_file,
+            headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache"},
+        )
+    raise HTTPException(status_code=404, detail="Frontend not built")
