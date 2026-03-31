@@ -5,9 +5,12 @@ DCL's maestra.py calls GET /api/convergence/engagement/active instead of
 importing engagement.py directly. This is the cross-service boundary.
 """
 
-import httpx
-from fastapi import APIRouter, HTTPException, Request
+import os
 
+import httpx
+from fastapi import APIRouter, HTTPException, Query, Request
+
+from backend.db.triple_store import TripleStore
 from backend.engine.engagement import get_active_engagement
 from backend.utils.log_utils import get_logger
 
@@ -16,6 +19,8 @@ logger = get_logger(__name__)
 PLATFORM_URL = "http://localhost:8006"
 
 router = APIRouter(prefix="/api/convergence", tags=["engagement"])
+
+_triple_store = TripleStore()
 
 
 def _resolve_entity_roles(eng) -> tuple[str, str]:
@@ -123,14 +128,17 @@ async def cofa_chat(request: Request):
 
 
 @router.get("/engagement/active")
-async def get_engagement():
+async def get_engagement(tenant_id: str = Query(None)):
     """Return the active engagement config as JSON.
 
-    Called by DCL's maestra.py over HTTP. Fails loudly if no engagement
-    is configured — no silent fallback.
+    Called by DCL's maestra.py and NLQ's report proxy over HTTP.
+    Fails loudly if no engagement is configured — no silent fallback.
+
+    When tenant_id is provided, includes current_pipeline_run_id from
+    convergence_tenant_runs so callers can pass it to v2 report endpoints.
     """
     eng = get_active_engagement()
-    return {
+    result = {
         "engagement_id": eng.engagement_id,
         "engagement_short_name": eng.short_name,
         "deal_name": eng.deal_name,
@@ -152,3 +160,15 @@ async def get_engagement():
         "deal_parameters": eng.deal_parameters,
         "synergy_targets": eng.synergy_targets,
     }
+    if tenant_id:
+        try:
+            result["current_pipeline_run_id"] = _triple_store.get_current_run_id(tenant_id)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "error": "NO_PIPELINE_RUN",
+                    "message": str(exc),
+                },
+            )
+    return result
