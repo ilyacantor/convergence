@@ -84,6 +84,12 @@ def _reseed_from_farm(manifest: dict) -> dict:
             f"HTTP {gen_resp.status_code} — {gen_resp.text[:300]}"
         )
     gen_data = gen_resp.json()
+    if "error" in gen_data:
+        raise RuntimeError(
+            "Farm comprehensive generation endpoint returned an error: "
+            f"{gen_data['error']} — this is an upstream regression, "
+            "not a seed data problem."
+        )
     farm_run_id = gen_data["farm_manifest_id"]
 
     # Step 2: push to Convergence ingest
@@ -120,7 +126,29 @@ def _reseed_from_farm(manifest: dict) -> dict:
         (new_run_id,),
     )
     triple_count = cur.fetchone()[0]
+
+    # Verify all required entity-level identity types are present
+    cur.execute(
+        "SELECT DISTINCT split_part(concept, '.', 1) "
+        "FROM convergence_triples "
+        "WHERE run_id=%s "
+        "  AND (concept LIKE 'customer.%%' "
+        "       OR concept LIKE 'vendor.%%' "
+        "       OR concept LIKE 'employee.%%')",
+        (new_run_id,),
+    )
+    found_types = {row[0] for row in cur.fetchall()}
     conn.close()
+
+    missing_types = {"customer", "vendor", "employee"} - found_types
+    if missing_types:
+        raise RuntimeError(
+            "Farm comprehensive generation endpoint did not produce expected "
+            "entity-level identity triples — this is an upstream regression, "
+            "not a seed data problem. "
+            f"Missing concept prefixes: {sorted(missing_types)}. "
+            f"Found: {sorted(found_types)}."
+        )
 
     # Step 4: update manifest file
     manifest["run_id"] = new_run_id
