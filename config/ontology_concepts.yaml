@@ -3734,3 +3734,120 @@ concepts:
     calculation_methodology: null
     comparability_rules: "Date comparison requires timezone alignment. Different date semantics (transaction date vs posting date vs effective date) are not interchangeable. Fiscal calendar dates vs calendar dates require mapping when fiscal year-end differs from December."
 
+  # ─── Farm Operational KPI Concepts ───────────────────────
+  # Root concepts for Farm-generated operational KPI triples.
+  # These enable prefix-based validation for workforce.*, sales.*, etc.
+
+  - id: arr
+    concept_id: FIN-100
+    name: Annual Recurring Revenue
+    description: "Annualized recurring revenue from subscriptions and contracts"
+    domain: finance
+    cluster: Finance
+    example_fields: [arr, annual_recurring_revenue, recurring_revenue]
+    aliases: [annual_recurring_revenue, recurring_revenue]
+    expected_type: float
+    typical_source_systems: [salesforce, zuora, chargebee]
+    persona_relevance:
+      cfo: 1.0
+      cro: 0.9
+
+  - id: efficiency
+    concept_id: OPS-100
+    name: Operational Efficiency
+    description: "Metrics measuring operational throughput and resource utilization"
+    domain: operations
+    cluster: Operations
+    example_fields: [efficiency_ratio, utilization_rate, throughput]
+    aliases: [utilization, throughput, productivity]
+    expected_type: float
+    typical_source_systems: [erp, custom]
+    persona_relevance:
+      coo: 1.0
+      cfo: 0.6
+
+  - id: engineering
+    concept_id: ENG-100
+    name: Engineering Metrics
+    description: "Software engineering delivery and quality metrics"
+    domain: product_eng
+    cluster: Engineering
+    example_fields: [cycle_time, deployment_frequency, lead_time]
+    aliases: [dev_metrics, software_engineering]
+    expected_type: float
+    typical_source_systems: [jira, github, gitlab]
+    persona_relevance:
+      cto: 1.0
+      coo: 0.5
+
+  - id: infrastructure
+    concept_id: IT-100
+    name: Infrastructure
+    description: "IT infrastructure capacity, cost, and reliability metrics"
+    domain: it_infra
+    cluster: IT
+    example_fields: [server_count, uptime, infra_cost]
+    aliases: [it_infrastructure, infra]
+    expected_type: float
+    typical_source_systems: [aws, azure, datadog]
+    persona_relevance:
+      cto: 1.0
+      cfo: 0.5
+
+  - id: operations
+    concept_id: OPS-101
+    name: Operations
+    description: "General operational metrics including delivery, logistics, and fulfillment"
+    domain: operations
+    cluster: Operations
+    example_fields: [ops_metric, delivery_rate, fulfillment_rate]
+    aliases: [ops, operational]
+    expected_type: float
+    typical_source_systems: [erp, custom]
+    persona_relevance:
+      coo: 1.0
+      cfo: 0.5
+
+  - id: sales
+    concept_id: SALES-100
+    name: Sales
+    description: "Sales performance, pipeline, and conversion metrics"
+    domain: sales
+    cluster: Sales
+    example_fields: [sales_volume, win_rate, pipeline_value]
+    aliases: [sales_metrics, selling]
+    expected_type: float
+    typical_source_systems: [salesforce, hubspot]
+    persona_relevance:
+      cro: 1.0
+      cfo: 0.7
+
+  - id: support
+    concept_id: CS-100
+    name: Support
+    description: "Customer support volume, resolution, and satisfaction metrics"
+    domain: customer_success
+    cluster: Customer
+    example_fields: [ticket_volume, resolution_time, csat]
+    aliases: [customer_support, help_desk]
+    expected_type: float
+    typical_source_systems: [zendesk, freshdesk, intercom]
+    persona_relevance:
+      coo: 0.8
+      cro: 0.6
+
+  - id: workforce
+    concept_id: HR-100
+    name: Workforce
+    description: "Workforce composition, productivity, and cost metrics"
+    domain: hr
+    cluster: People
+    example_fields: [workforce_size, labor_cost, productivity_index]
+    aliases: [labor, staffing, workforce_metrics]
+    expected_type: float
+    typical_source_systems: [workday, adp, bamboohr]
+    persona_relevance:
+      chro: 1.0
+      cfo: 0.7
+      coo: 0.6
+

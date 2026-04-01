@@ -41,6 +41,8 @@ from backend.api.routes.merge_conflicts import router as merge_conflicts_router
 from backend.api.routes.engagement_api import router as engagement_api_router
 from backend.api.routes.ingest_triples import router as ingest_triples_router
 from backend.api.routes.verify import router as verify_router
+from backend.api.routes.triple_browse import router as triple_browse_router
+from backend.api.routes.semantic_catalog import router as semantic_catalog_router
 
 logger = get_logger(__name__)
 
@@ -134,6 +136,8 @@ app.include_router(merge_conflicts_router)
 app.include_router(engagement_api_router)
 app.include_router(ingest_triples_router)
 app.include_router(verify_router)
+app.include_router(triple_browse_router)
+app.include_router(semantic_catalog_router)
 
 
 # =============================================================================

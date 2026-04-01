@@ -1,0 +1,46 @@
+persona_concepts:
+  CFO:
+    - arr
+    - mrr
+    - revenue
+    - services_revenue
+    - ar
+    - dso
+    - burn_rate
+    - gross_margin_pct
+    - ar_aging
+  CRO:
+    - pipeline
+    - win_rate_pct
+    - quota_attainment_pct
+    - churn_rate_pct
+    - nrr
+    - revenue
+    - arr
+    - pipeline_value
+    - churn_risk
+    - nrr_by_cohort
+    - customer_count
+  COO:
+    - throughput
+    - cycle_time
+    - sla_compliance_pct
+  CTO:
+    - deploy_frequency
+    - mttr
+    - uptime_pct
+    - slo_attainment_pct
+    - cloud_spend
+  CHRO:
+    - headcount
+    - attrition_rate_pct
+    - time_to_fill
+    - engagement_score
+    - compensation_ratio
+    - training_hours
+    - promotion_rate_pct
+    - diversity_index
+    - offer_acceptance_rate_pct
+    - internal_mobility_rate_pct
+    - span_of_control
+    - enps
