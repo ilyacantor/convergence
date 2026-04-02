@@ -275,23 +275,29 @@ class TripleStore:
                 conn.commit()
                 return cur.rowcount
 
-    def upsert_tenant_run(self, tenant_id: str, new_run_id: str) -> None:
+    def upsert_tenant_run(
+        self, tenant_id: str, new_run_id: str,
+        snapshot_name: str | None = None,
+    ) -> None:
         """Atomically set current_run_id for a tenant. Saves previous run for rollback.
 
         This is the O(1) replacement for deactivate_tenant_triples on the ingest
         hot path. Single-row UPSERT — no table scan, no lock contention.
         """
         sql = """
-            INSERT INTO convergence_tenant_runs (tenant_id, current_run_id, previous_run_id, updated_at)
-            VALUES (%s, %s, NULL, now())
+            INSERT INTO convergence_tenant_runs (tenant_id, current_run_id, previous_run_id,
+                                                 current_snapshot_name, previous_snapshot_name, updated_at)
+            VALUES (%s, %s, NULL, %s, NULL, now())
             ON CONFLICT (tenant_id) DO UPDATE
-              SET previous_run_id = convergence_tenant_runs.current_run_id,
-                  current_run_id  = EXCLUDED.current_run_id,
-                  updated_at      = now()
+              SET previous_run_id          = convergence_tenant_runs.current_run_id,
+                  current_run_id           = EXCLUDED.current_run_id,
+                  previous_snapshot_name   = convergence_tenant_runs.current_snapshot_name,
+                  current_snapshot_name    = EXCLUDED.current_snapshot_name,
+                  updated_at               = now()
         """
         with get_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute(sql, (tenant_id, new_run_id))
+                cur.execute(sql, (tenant_id, new_run_id, snapshot_name))
                 conn.commit()
 
     def get_current_run_id(self, tenant_id: str) -> str:
