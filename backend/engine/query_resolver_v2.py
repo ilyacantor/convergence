@@ -42,10 +42,32 @@ def _to_float(value) -> float:
 class TripleQueryResolver:
     """Resolves financial queries against convergence_triples in PG."""
 
-    def __init__(self, tenant_id: str, pipeline_run_id: str):
-        """Store tenant/run context. All queries scoped to these."""
+    def __init__(self, tenant_id: str, pipeline_run_id: str | None = None):
+        """Store tenant/run context. All queries scoped to these.
+
+        When pipeline_run_id is provided, queries filter by exact run_id.
+        When None, queries filter by is_active=true (all current triples
+        regardless of which batch run_id they carry). This matches how
+        the merge overview queries data and supports multi-batch ingests
+        where triples are spread across multiple run_ids.
+        """
         self.tenant_id = tenant_id
         self.pipeline_run_id = pipeline_run_id
+
+    @property
+    def _run_clause(self) -> str:
+        """SQL WHERE fragment for run scoping."""
+        return "AND run_id = %s" if self.pipeline_run_id else "AND is_active = true"
+
+    @property
+    def _run_params(self) -> list:
+        """SQL params for the run filter (empty when using is_active)."""
+        return [self.pipeline_run_id] if self.pipeline_run_id else []
+
+    @property
+    def _run_label(self) -> str:
+        """Human-readable run identifier for error messages."""
+        return f"pipeline_run_id='{self.pipeline_run_id}'" if self.pipeline_run_id else "is_active=true"
 
     def _query(self, sql: str, params: list) -> list[dict]:
         """Execute a parameterized query and return rows as dicts."""
@@ -74,23 +96,23 @@ class TripleQueryResolver:
                   "currency": str, "unit": str, "source_system": str, "confidence_score": float}
         Raises ValueError if not found (NO silent fallback to None/0).
         """
-        sql = """
+        sql = f"""
             SELECT DISTINCT ON (entity_id, concept, property, period)
                    concept, entity_id, period, value, currency, unit,
                    source_system, confidence_score
             FROM convergence_triples
             WHERE tenant_id = %s
-              AND run_id = %s
+              {self._run_clause}
               AND concept = %s AND entity_id = %s AND period = %s
               AND property = 'amount'
             ORDER BY entity_id, concept, property, period, created_at DESC
         """
-        rows = self._query(sql, [self.tenant_id, self.pipeline_run_id, concept, entity_id, period])
+        rows = self._query(sql, [self.tenant_id, *self._run_params, concept, entity_id, period])
         if not rows:
             raise ValueError(
                 f"Metric not found: concept='{concept}', entity_id='{entity_id}', "
                 f"period='{period}' — no matching triple in convergence_triples for "
-                f"tenant_id='{self.tenant_id}', run_id='{self.pipeline_run_id}'"
+                f"tenant_id='{self.tenant_id}', {self._run_label}"
             )
         row = rows[0]
         return {
@@ -123,32 +145,32 @@ class TripleQueryResolver:
                        source_system, confidence_score
                 FROM convergence_triples
                 WHERE tenant_id = %s
-                  AND run_id = %s
+                  {self._run_clause}
                   AND concept = %s AND entity_id = %s AND property = 'amount'
                   AND period IN ({placeholders})
                 ORDER BY entity_id, concept, property, period, created_at DESC
             """
-            params = [self.tenant_id, self.pipeline_run_id, concept, entity_id] + periods
+            params = [self.tenant_id, *self._run_params, concept, entity_id] + periods
         else:
-            sql = """
+            sql = f"""
                 SELECT DISTINCT ON (entity_id, concept, property, period)
                        concept, entity_id, period, value, currency, unit,
                        source_system, confidence_score
                 FROM convergence_triples
                 WHERE tenant_id = %s
-                  AND run_id = %s
+                  {self._run_clause}
                   AND concept = %s AND entity_id = %s AND property = 'amount'
                   AND period IS NOT NULL
                 ORDER BY entity_id, concept, property, period, created_at DESC
             """
-            params = [self.tenant_id, self.pipeline_run_id, concept, entity_id]
+            params = [self.tenant_id, *self._run_params, concept, entity_id]
 
         rows = self._query(sql, params)
         if not rows:
             raise ValueError(
                 f"Timeseries not found: concept='{concept}', entity_id='{entity_id}' — "
                 f"no matching triples in convergence_triples for "
-                f"tenant_id='{self.tenant_id}', run_id='{self.pipeline_run_id}'"
+                f"tenant_id='{self.tenant_id}', {self._run_label}"
             )
         return [
             {
@@ -181,14 +203,14 @@ class TripleQueryResolver:
         """
         if _is_year_period(period):
             quarters = _quarter_periods(period)
-            sql = """
+            sql = f"""
                 WITH latest AS (
                     SELECT DISTINCT ON (entity_id, concept, property, period)
                            concept, entity_id, period, value, currency, unit,
                            source_system, confidence_score
                     FROM convergence_triples
                     WHERE tenant_id = %s
-                      AND run_id = %s
+                      {self._run_clause}
                       AND concept LIKE %s
                       AND entity_id = %s AND period = ANY(%s) AND property = 'amount'
                     ORDER BY entity_id, concept, property, period, created_at DESC
@@ -202,20 +224,20 @@ class TripleQueryResolver:
                 FROM latest
                 GROUP BY concept
             """
-            rows = self._query(sql, [self.tenant_id, self.pipeline_run_id, f"{domain}.%", entity_id, quarters])
+            rows = self._query(sql, [self.tenant_id, *self._run_params, f"{domain}.%", entity_id, quarters])
         else:
-            sql = """
+            sql = f"""
                 SELECT DISTINCT ON (entity_id, concept, property, period)
                        concept, entity_id, period, value, currency, unit,
                        source_system, confidence_score
                 FROM convergence_triples
                 WHERE tenant_id = %s
-                  AND run_id = %s
+                  {self._run_clause}
                   AND concept LIKE %s
                   AND entity_id = %s AND period = %s AND property = 'amount'
                 ORDER BY entity_id, concept, property, period, created_at DESC
             """
-            rows = self._query(sql, [self.tenant_id, self.pipeline_run_id, f"{domain}.%", entity_id, period])
+            rows = self._query(sql, [self.tenant_id, *self._run_params, f"{domain}.%", entity_id, period])
         return [
             {
                 "concept": r["concept"],
@@ -255,13 +277,13 @@ class TripleQueryResolver:
 
         if _is_year_period(period):
             quarters = _quarter_periods(period)
-            sql = """
+            sql = f"""
                 WITH latest AS (
                     SELECT DISTINCT ON (entity_id, concept, property, period)
                            concept, value
                     FROM convergence_triples
                     WHERE tenant_id = %s
-                      AND run_id = %s
+                      {self._run_clause}
                       AND concept LIKE ANY(%s)
                       AND entity_id = %s AND period = ANY(%s) AND property = 'amount'
                     ORDER BY entity_id, concept, property, period, created_at DESC
@@ -270,19 +292,19 @@ class TripleQueryResolver:
                 FROM latest
                 GROUP BY concept
             """
-            rows = self._query(sql, [self.tenant_id, self.pipeline_run_id, like_patterns, entity_id, quarters])
+            rows = self._query(sql, [self.tenant_id, *self._run_params, like_patterns, entity_id, quarters])
         else:
-            sql = """
+            sql = f"""
                 SELECT DISTINCT ON (entity_id, concept, property, period)
                        concept, value
                 FROM convergence_triples
                 WHERE tenant_id = %s
-                  AND run_id = %s
+                  {self._run_clause}
                   AND concept LIKE ANY(%s)
                   AND entity_id = %s AND period = %s AND property = 'amount'
                 ORDER BY entity_id, concept, property, period, created_at DESC
             """
-            rows = self._query(sql, [self.tenant_id, self.pipeline_run_id, like_patterns, entity_id, period])
+            rows = self._query(sql, [self.tenant_id, *self._run_params, like_patterns, entity_id, period])
 
         result: dict[str, dict[str, float]] = {d: {} for d in domains}
         for row in rows:
@@ -365,7 +387,7 @@ class TripleQueryResolver:
             raise ValueError(
                 f"Income statement incomplete for entity_id='{entity_id}', period='{period}': "
                 f"missing {', '.join(missing)} in convergence_triples for "
-                f"tenant_id='{self.tenant_id}', run_id='{self.pipeline_run_id}'"
+                f"tenant_id='{self.tenant_id}', {self._run_label}"
             )
 
         computed_ebitda = rev_total - cogs_total - opex_total
@@ -419,7 +441,7 @@ class TripleQueryResolver:
             raise ValueError(
                 f"Balance sheet incomplete for entity_id='{entity_id}', period='{period}': "
                 f"missing {', '.join(missing)} in convergence_triples for "
-                f"tenant_id='{self.tenant_id}', run_id='{self.pipeline_run_id}'"
+                f"tenant_id='{self.tenant_id}', {self._run_label}"
             )
 
         rhs = l_total + e_total
@@ -465,7 +487,7 @@ class TripleQueryResolver:
             raise ValueError(
                 f"Cash flow incomplete for entity_id='{entity_id}', period='{period}': "
                 f"missing {', '.join(missing)} in convergence_triples for "
-                f"tenant_id='{self.tenant_id}', run_id='{self.pipeline_run_id}'"
+                f"tenant_id='{self.tenant_id}', {self._run_label}"
             )
 
         computed = op_total + inv_total + fin_total
@@ -505,7 +527,7 @@ class TripleQueryResolver:
             raise ValueError(
                 f"Combining statement requires at least 2 entities, "
                 f"found {len(entities)}: {entities} for "
-                f"tenant_id='{self.tenant_id}', run_id='{self.pipeline_run_id}'"
+                f"tenant_id='{self.tenant_id}', {self._run_label}"
             )
 
         entity_a = entities[0]
@@ -549,18 +571,18 @@ class TripleQueryResolver:
         customer.pipeline.closed_won are excluded — they represent structural
         metadata, not actual entity overlaps.
         """
-        sql = """
+        sql = f"""
             SELECT concept
             FROM convergence_triples
             WHERE tenant_id = %s
-              AND run_id = %s
+              {self._run_clause}
               AND concept LIKE %s
               AND concept NOT LIKE %s
             GROUP BY concept
             HAVING COUNT(DISTINCT entity_id) > 1
             ORDER BY concept
         """
-        rows = self._query(sql, [self.tenant_id, self.pipeline_run_id, f"{domain}.%", f"{domain}.%.%"])
+        rows = self._query(sql, [self.tenant_id, *self._run_params, f"{domain}.%", f"{domain}.%.%"])
         return [r["concept"] for r in rows]
 
     # ------------------------------------------------------------------
@@ -570,25 +592,26 @@ class TripleQueryResolver:
     def get_provenance(self, concept: str, entity_id: str, period: str) -> dict:
         """
         Get full provenance for a value: source_system, source_table, source_field,
-        pipe_id, confidence_score, confidence_tier, run_id.
+        pipe_id, confidence_score, confidence_tier, dcl_ingest_id.
         """
-        sql = """
+        sql = f"""
             SELECT DISTINCT ON (entity_id, concept, property, period)
                    source_system, source_table, source_field,
-                   pipe_id, confidence_score, confidence_tier, run_id
+                   pipe_id, confidence_score, confidence_tier,
+                   run_id AS dcl_ingest_id
             FROM convergence_triples
             WHERE tenant_id = %s
-              AND run_id = %s
+              {self._run_clause}
               AND concept = %s AND entity_id = %s AND period = %s
               AND property = 'amount'
             ORDER BY entity_id, concept, property, period, created_at DESC
         """
-        rows = self._query(sql, [self.tenant_id, self.pipeline_run_id, concept, entity_id, period])
+        rows = self._query(sql, [self.tenant_id, *self._run_params, concept, entity_id, period])
         if not rows:
             raise ValueError(
                 f"Provenance not found: concept='{concept}', entity_id='{entity_id}', "
                 f"period='{period}' — no matching triple in convergence_triples for "
-                f"tenant_id='{self.tenant_id}', run_id='{self.pipeline_run_id}'"
+                f"tenant_id='{self.tenant_id}', {self._run_label}"
             )
         row = rows[0]
         return {
@@ -598,5 +621,5 @@ class TripleQueryResolver:
             "pipe_id": str(row["pipe_id"]) if row["pipe_id"] else None,
             "confidence_score": float(row["confidence_score"]) if row["confidence_score"] is not None else 0.0,
             "confidence_tier": row["confidence_tier"],
-            "pipeline_run_id": str(row["run_id"]),
+            "dcl_ingest_id": str(row["dcl_ingest_id"]),
         }

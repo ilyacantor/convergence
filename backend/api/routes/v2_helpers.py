@@ -33,40 +33,33 @@ def resolve_tenant_id(tenant_id: str | None) -> str:
     )
 
 
-def resolve_pipeline_run_id(pipeline_run_id: str | None) -> str:
-    """Validate pipeline_run_id is explicitly provided. 422 if missing."""
-    if pipeline_run_id:
-        return pipeline_run_id
-    raise HTTPException(
-        status_code=422,
-        detail={
-            "error": "MISSING_REQUIRED_FIELD",
-            "field": "pipeline_run_id",
-            "message": (
-                "pipeline_run_id is required. Pass ?pipeline_run_id=<UUID> explicitly. "
-                "No implicit resolution — the caller must specify which pipeline run to query."
-            ),
-        },
-    )
+def resolve_pipeline_run_id(pipeline_run_id: str | None) -> str | None:
+    """Return pipeline_run_id if provided, None otherwise.
+
+    When None, callers use is_active=true filtering instead of run_id scoping.
+    This supports multi-batch ingests where triples are spread across
+    multiple run_ids but all share is_active=true.
+    """
+    return pipeline_run_id if pipeline_run_id else None
 
 
 def resolve_tenant_and_run(
     tenant_id: str | None,
     pipeline_run_id: str | None,
-) -> tuple[str, str]:
-    """Validate both tenant_id and pipeline_run_id. 422 if either missing."""
+) -> tuple[str, str | None]:
+    """Validate tenant_id (required). pipeline_run_id is optional."""
     tid = resolve_tenant_id(tenant_id)
     rid = resolve_pipeline_run_id(pipeline_run_id)
     return tid, rid
 
 
-def build_identity_context(tenant_id: str, pipeline_run_id: str) -> dict:
+def build_identity_context(tenant_id: str, pipeline_run_id: str | None) -> dict:
     """Build the identity context dict required on every API response (I2).
 
     Returns tenant_id, pipeline_run_id, engagement_id, entity_pair, run_name.
     """
     eng = get_active_engagement()
-    run_name = f"{eng.short_name}-{pipeline_run_id[:4]}"
+    run_name = f"{eng.short_name}-{pipeline_run_id[:4]}" if pipeline_run_id else eng.short_name
     return {
         "tenant_id": tenant_id,
         "pipeline_run_id": pipeline_run_id,
