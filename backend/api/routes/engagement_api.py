@@ -105,7 +105,7 @@ async def list_engagements():
 
     # ORDER BY created_at DESC
     engagements.sort(key=lambda e: e["created_at"] or "", reverse=True)
-    return {"engagements": engagements}
+    return engagements
 
 
 @router.post("/maestra/cofa-chat")
