@@ -62,6 +62,16 @@ class WhatIfEngineV2:
         self.pipeline_run_id = pipeline_run_id
         self._resolver = TripleQueryResolver(tenant_id, pipeline_run_id)
 
+    @property
+    def _run_clause(self) -> str:
+        """SQL WHERE fragment for run scoping (for whatif_scenarios table)."""
+        return "run_id = %s" if self.pipeline_run_id else "1=1"
+
+    @property
+    def _run_params(self) -> list:
+        """SQL params for the run filter (empty when no run_id)."""
+        return [self.pipeline_run_id] if self.pipeline_run_id else []
+
     def get_baseline(self, entity_id: str, period: str) -> dict:
         """
         Get baseline financial metrics from triples.
@@ -273,13 +283,13 @@ class WhatIfEngineV2:
         with get_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    """
+                    f"""
                     SELECT id, name, entity_id, period, adjustments, created_at
                     FROM whatif_scenarios
-                    WHERE tenant_id = %s AND run_id = %s
+                    WHERE tenant_id = %s AND {self._run_clause}
                     ORDER BY created_at DESC
                     """,
-                    [self.tenant_id, self.pipeline_run_id],
+                    [self.tenant_id, *self._run_params],
                 )
                 columns = [desc[0] for desc in cur.description]
                 rows = [dict(zip(columns, row)) for row in cur.fetchall()]
@@ -303,19 +313,19 @@ class WhatIfEngineV2:
         with get_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    """
+                    f"""
                     SELECT name, entity_id, period, adjustments
                     FROM whatif_scenarios
-                    WHERE id = %s AND tenant_id = %s AND run_id = %s
+                    WHERE id = %s AND tenant_id = %s AND {self._run_clause}
                     """,
-                    [scenario_id, self.tenant_id, self.pipeline_run_id],
+                    [scenario_id, self.tenant_id, *self._run_params],
                 )
                 row = cur.fetchone()
 
         if row is None:
             raise ValueError(
                 f"Scenario not found: id='{scenario_id}' for "
-                f"tenant_id='{self.tenant_id}', run_id='{self.pipeline_run_id}'"
+                f"tenant_id='{self.tenant_id}', pipeline_run_id='{self.pipeline_run_id}'"
             )
 
         name, entity_id, period, adjustments = row

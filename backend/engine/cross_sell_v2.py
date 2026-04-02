@@ -58,6 +58,16 @@ class CrossSellEngineV2:
         self.pipeline_run_id = pipeline_run_id
         self._overlap_engine = OverlapEngineV2(tenant_id, pipeline_run_id)
 
+    @property
+    def _run_clause(self) -> str:
+        """SQL WHERE fragment for run scoping."""
+        return "run_id = %s" if self.pipeline_run_id else "is_active = true"
+
+    @property
+    def _run_params(self) -> list:
+        """SQL params for the run filter (empty when using is_active)."""
+        return [self.pipeline_run_id] if self.pipeline_run_id else []
+
     def _query(self, sql: str, params: list) -> list[dict]:
         """Execute a parameterized query and return rows as dicts."""
         with get_connection() as conn:
@@ -76,16 +86,16 @@ class CrossSellEngineV2:
         Returns list of {"concept": str, "typical_acv": float, "description": str,
                          "delivery_model": str}.
         """
-        sql = """
+        sql = f"""
             SELECT DISTINCT ON (concept, property)
                    concept, property, value
             FROM convergence_triples
-            WHERE tenant_id = %s AND run_id = %s
+            WHERE tenant_id = %s AND {self._run_clause}
               AND concept LIKE 'service.%%'
               AND entity_id = %s
             ORDER BY concept, property, created_at DESC
         """
-        rows = self._query(sql, [self.tenant_id, self.pipeline_run_id, entity_id])
+        rows = self._query(sql, [self.tenant_id, *self._run_params, entity_id])
 
         # Group by concept
         services: dict[str, dict] = {}
@@ -116,11 +126,11 @@ class CrossSellEngineV2:
         Returns dict keyed by top-level customer concept:
             {"customer.accenture": {"revenue": "12.0", "industry": "...", ...}}
         """
-        sql = """
+        sql = f"""
             SELECT DISTINCT ON (st.concept, st.property)
                    st.concept, st.property, st.value
             FROM convergence_triples st
-            WHERE st.tenant_id = %s AND st.run_id = %s
+            WHERE st.tenant_id = %s AND st.{self._run_clause}
               AND st.concept LIKE 'customer.%%'
               AND st.concept NOT LIKE 'customer.%%.%%'
               AND st.entity_id = %s
@@ -128,7 +138,7 @@ class CrossSellEngineV2:
               AND NOT EXISTS (
                   SELECT 1
                   FROM convergence_triples other
-                  WHERE other.tenant_id = %s AND other.run_id = %s
+                  WHERE other.tenant_id = %s AND other.{self._run_clause}
                     AND other.concept = st.concept
                     AND other.concept LIKE 'customer.%%'
                     AND other.concept NOT LIKE 'customer.%%.%%'
@@ -136,7 +146,7 @@ class CrossSellEngineV2:
               )
             ORDER BY st.concept, st.property, st.created_at DESC
         """
-        rows = self._query(sql, [self.tenant_id, self.pipeline_run_id, entity_id, self.tenant_id, self.pipeline_run_id, other_entity_id])
+        rows = self._query(sql, [self.tenant_id, *self._run_params, entity_id, self.tenant_id, *self._run_params, other_entity_id])
 
         customers: dict[str, dict] = {}
         for row in rows:

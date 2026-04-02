@@ -47,6 +47,16 @@ class EntityResolutionV2:
         self.tenant_id = tenant_id
         self.pipeline_run_id = pipeline_run_id
 
+    @property
+    def _run_clause(self) -> str:
+        """SQL WHERE fragment for run scoping on convergence_triples."""
+        return "run_id = %s" if self.pipeline_run_id else "is_active = true"
+
+    @property
+    def _run_params(self) -> list:
+        """SQL params for the run filter (empty when using is_active)."""
+        return [self.pipeline_run_id] if self.pipeline_run_id else []
+
     def _get_conn(self):
         """Get a database connection or raise."""
         conn_ctx = get_connection()
@@ -119,10 +129,10 @@ class EntityResolutionV2:
         Excludes subcategory concepts (e.g. customer.pipeline.closed_won) which
         represent structural metadata, not actual entity overlaps.
         """
-        sql = """
+        sql = f"""
             SELECT concept
             FROM convergence_triples
-            WHERE tenant_id = %s AND run_id = %s
+            WHERE tenant_id = %s AND {self._run_clause}
               AND concept LIKE %s
               AND concept NOT LIKE %s
               AND entity_id != 'combined'
@@ -130,7 +140,7 @@ class EntityResolutionV2:
             HAVING COUNT(DISTINCT entity_id) > 1
             ORDER BY concept
         """
-        rows = self._query(sql, [self.tenant_id, self.pipeline_run_id, f"{domain}.%", f"{domain}.%.%"])
+        rows = self._query(sql, [self.tenant_id, *self._run_params, f"{domain}.%", f"{domain}.%.%"])
         return [r["concept"] for r in rows]
 
     def _batch_create_workspaces(self, concepts: list[str], domain: str) -> int:
@@ -186,7 +196,7 @@ class EntityResolutionV2:
         if not _is_valid_uuid(workspace_id):
             raise ValueError(
                 f"Workspace not found: workspace_id='{workspace_id}' "
-                f"for tenant_id='{self.tenant_id}', run_id='{self.pipeline_run_id}'"
+                f"for tenant_id='{self.tenant_id}', pipeline_run_id='{self.pipeline_run_id}'"
             )
 
         sql = """
@@ -197,7 +207,7 @@ class EntityResolutionV2:
         if not rows:
             raise ValueError(
                 f"Workspace not found: workspace_id='{workspace_id}' "
-                f"for tenant_id='{self.tenant_id}', run_id='{self.pipeline_run_id}'"
+                f"for tenant_id='{self.tenant_id}', pipeline_run_id='{self.pipeline_run_id}'"
             )
         return self._row_to_workspace(rows[0])
 
@@ -247,7 +257,7 @@ class EntityResolutionV2:
         if not rows:
             raise ValueError(
                 f"Workspace not found: workspace_id='{workspace_id}' "
-                f"for tenant_id='{self.tenant_id}', run_id='{self.pipeline_run_id}'"
+                f"for tenant_id='{self.tenant_id}', pipeline_run_id='{self.pipeline_run_id}'"
             )
         return self._row_to_workspace(rows[0])
 
@@ -267,7 +277,7 @@ class EntityResolutionV2:
         if not rows:
             raise ValueError(
                 f"Workspace not found: workspace_id='{workspace_id}' "
-                f"for tenant_id='{self.tenant_id}', run_id='{self.pipeline_run_id}'"
+                f"for tenant_id='{self.tenant_id}', pipeline_run_id='{self.pipeline_run_id}'"
             )
         return self._row_to_workspace(rows[0])
 
@@ -294,7 +304,7 @@ class EntityResolutionV2:
         if not rows:
             raise ValueError(
                 f"Workspace not found: workspace_id='{workspace_id}' "
-                f"for tenant_id='{self.tenant_id}', run_id='{self.pipeline_run_id}'"
+                f"for tenant_id='{self.tenant_id}', pipeline_run_id='{self.pipeline_run_id}'"
             )
         return self._row_to_workspace(rows[0])
 
@@ -326,17 +336,16 @@ class EntityResolutionV2:
         total = sum(status_counts.values())
 
         # Distinct entity_ids from triples (for NLQ EntityRegistry discovery).
-        # Not filtered by run_id — entities may span multiple pipeline runs.
         # Excludes synthetic 'combined' aggregate.
-        sql_entities = """
+        sql_entities = f"""
             SELECT DISTINCT entity_id
             FROM convergence_triples
-            WHERE tenant_id = %s AND run_id = %s
+            WHERE tenant_id = %s AND {self._run_clause}
               AND entity_id IS NOT NULL
               AND entity_id != 'combined'
             ORDER BY entity_id
         """
-        entity_rows = self._query(sql_entities, [self.tenant_id, self.pipeline_run_id])
+        entity_rows = self._query(sql_entities, [self.tenant_id, *self._run_params])
         entities = [r["entity_id"] for r in entity_rows]
 
         return {

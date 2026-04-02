@@ -26,6 +26,16 @@ class MaterializedViews:
         self.tenant_id = tenant_id
         self.pipeline_run_id = pipeline_run_id
 
+    @property
+    def _run_clause(self) -> str:
+        """SQL WHERE fragment for run scoping."""
+        return "run_id = %s" if self.pipeline_run_id else "is_active = true"
+
+    @property
+    def _run_params(self) -> list:
+        """SQL params for the run filter (empty when using is_active)."""
+        return [self.pipeline_run_id] if self.pipeline_run_id else []
+
     def _query(self, sql: str, params: list) -> list[dict]:
         """Execute a parameterized query and return rows as dicts."""
         with get_connection() as conn:
@@ -38,7 +48,7 @@ class MaterializedViews:
         """
         Returns: total triples, period range, domain counts, concept list.
         """
-        sql = """
+        sql = f"""
             SELECT
                 COUNT(*) AS total_triples,
                 MIN(period) AS period_min,
@@ -47,10 +57,10 @@ class MaterializedViews:
                 COUNT(DISTINCT split_part(concept, '.', 1)) AS domain_count
             FROM convergence_triples
             WHERE tenant_id = %s
-              AND run_id = %s
+              AND {self._run_clause}
               AND entity_id = %s
         """
-        rows = self._query(sql, [self.tenant_id, self.pipeline_run_id, entity_id])
+        rows = self._query(sql, [self.tenant_id, *self._run_params, entity_id])
         if not rows or rows[0]["total_triples"] == 0:
             raise ValueError(
                 f"Entity summary not found: entity_id='{entity_id}' — "
@@ -59,26 +69,26 @@ class MaterializedViews:
             )
         row = rows[0]
 
-        domain_sql = """
+        domain_sql = f"""
             SELECT split_part(concept, '.', 1) AS domain, COUNT(*) AS cnt
             FROM convergence_triples
             WHERE tenant_id = %s
-              AND run_id = %s
+              AND {self._run_clause}
               AND entity_id = %s
             GROUP BY domain ORDER BY domain
         """
-        domain_rows = self._query(domain_sql, [self.tenant_id, self.pipeline_run_id, entity_id])
+        domain_rows = self._query(domain_sql, [self.tenant_id, *self._run_params, entity_id])
         domain_counts = {r["domain"]: r["cnt"] for r in domain_rows}
 
-        concept_sql = """
+        concept_sql = f"""
             SELECT DISTINCT concept
             FROM convergence_triples
             WHERE tenant_id = %s
-              AND run_id = %s
+              AND {self._run_clause}
               AND entity_id = %s
             ORDER BY concept
         """
-        concept_rows = self._query(concept_sql, [self.tenant_id, self.pipeline_run_id, entity_id])
+        concept_rows = self._query(concept_sql, [self.tenant_id, *self._run_params, entity_id])
         concepts = [r["concept"] for r in concept_rows]
 
         return {
@@ -96,12 +106,12 @@ class MaterializedViews:
         """
         Returns: all financial totals (revenue, cogs, opex, ebitda, assets, liabilities, equity).
         """
-        totals_sql = """
+        totals_sql = f"""
             SELECT DISTINCT ON (entity_id, concept, period)
                    concept, value
             FROM convergence_triples
             WHERE tenant_id = %s
-              AND run_id = %s
+              AND {self._run_clause}
               AND entity_id = %s AND period = %s AND property = 'amount'
               AND concept IN (
                   'revenue.total', 'cogs.total', 'opex.total', 'pnl.ebitda',
@@ -109,7 +119,7 @@ class MaterializedViews:
               )
             ORDER BY entity_id, concept, period, created_at DESC
         """
-        rows = self._query(totals_sql, [self.tenant_id, self.pipeline_run_id, entity_id, period])
+        rows = self._query(totals_sql, [self.tenant_id, *self._run_params, entity_id, period])
         if not rows:
             raise ValueError(
                 f"Period summary not found: entity_id='{entity_id}', period='{period}' — "
@@ -135,27 +145,27 @@ class MaterializedViews:
 
     def get_all_periods(self) -> list[str]:
         """Returns sorted list of all distinct quarterly periods (YYYY-QN format)."""
-        sql = """
+        sql = f"""
             SELECT DISTINCT period
             FROM convergence_triples
             WHERE tenant_id = %s
-              AND run_id = %s
+              AND {self._run_clause}
               AND period IS NOT NULL
-              AND period ~ '^[0-9]{4}-Q[1-4]$'
+              AND period ~ '^[0-9]{{4}}-Q[1-4]$'
             ORDER BY period
         """
-        rows = self._query(sql, [self.tenant_id, self.pipeline_run_id])
+        rows = self._query(sql, [self.tenant_id, *self._run_params])
         return [r["period"] for r in rows]
 
     def get_all_entities(self) -> list[str]:
         """Returns list of all distinct entity_ids."""
-        sql = """
+        sql = f"""
             SELECT DISTINCT entity_id
             FROM convergence_triples
             WHERE tenant_id = %s
-              AND run_id = %s
+              AND {self._run_clause}
               AND entity_id != 'combined'
             ORDER BY entity_id
         """
-        rows = self._query(sql, [self.tenant_id, self.pipeline_run_id])
+        rows = self._query(sql, [self.tenant_id, *self._run_params])
         return [r["entity_id"] for r in rows]

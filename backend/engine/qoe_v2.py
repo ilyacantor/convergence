@@ -46,6 +46,16 @@ class QualityOfEarningsV2:
         self.pipeline_run_id = pipeline_run_id
         self._bridge_engine = EBITDABridgeV2(tenant_id, pipeline_run_id)
 
+    @property
+    def _run_clause(self) -> str:
+        """SQL WHERE fragment for run scoping."""
+        return "run_id = %s" if self.pipeline_run_id else "is_active = true"
+
+    @property
+    def _run_params(self) -> list:
+        """SQL params for the run filter (empty when using is_active)."""
+        return [self.pipeline_run_id] if self.pipeline_run_id else []
+
     def _query(self, sql: str, params: list) -> list[dict]:
         """Execute a parameterized query and return rows as dicts."""
         with get_connection() as conn:
@@ -56,16 +66,16 @@ class QualityOfEarningsV2:
 
     def _get_metric(self, concept: str, entity_id: str, period: str) -> float | None:
         """Get a single metric value, returning None if not found."""
-        sql = """
+        sql = f"""
             SELECT DISTINCT ON (entity_id, concept, period)
                    value
             FROM convergence_triples
-            WHERE tenant_id = %s AND run_id = %s
+            WHERE tenant_id = %s AND {self._run_clause}
               AND concept = %s AND entity_id = %s AND period = %s
               AND property = 'amount'
             ORDER BY entity_id, concept, period, created_at DESC
         """
-        rows = self._query(sql, [self.tenant_id, self.pipeline_run_id, concept, entity_id, period])
+        rows = self._query(sql, [self.tenant_id, *self._run_params, concept, entity_id, period])
         if not rows:
             return None
         return _to_float(rows[0]["value"])
@@ -81,7 +91,7 @@ class QualityOfEarningsV2:
                 SELECT DISTINCT ON (entity_id, concept, period)
                        concept, period, value
                 FROM convergence_triples
-                WHERE tenant_id = %s AND run_id = %s
+                WHERE tenant_id = %s AND {self._run_clause}
                   AND concept LIKE 'revenue.%%'
                   AND entity_id = %s
                   AND property = 'amount'
@@ -93,23 +103,23 @@ class QualityOfEarningsV2:
             GROUP BY concept
             ORDER BY SUM((value #>> '{{}}')::float) DESC
         """
-        params = [self.tenant_id, self.pipeline_run_id, entity_id] + _ANNUAL_PERIODS
+        params = [self.tenant_id, *self._run_params, entity_id] + _ANNUAL_PERIODS
         return self._query(sql, params)
 
     def _get_margin_trend(self, entity_id: str) -> list[dict]:
         """Get EBITDA margin trend across all available periods."""
         # Get revenue.total and pnl.ebitda for each period
-        sql = """
+        sql = f"""
             SELECT DISTINCT ON (entity_id, concept, period)
                    period, concept, value
             FROM convergence_triples
-            WHERE tenant_id = %s AND run_id = %s
+            WHERE tenant_id = %s AND {self._run_clause}
               AND concept IN ('revenue.total', 'pnl.ebitda')
               AND entity_id = %s
               AND property = 'amount'
             ORDER BY entity_id, concept, period, created_at DESC
         """
-        rows = self._query(sql, [self.tenant_id, self.pipeline_run_id, entity_id])
+        rows = self._query(sql, [self.tenant_id, *self._run_params, entity_id])
 
         # Group by period
         by_period: dict[str, dict[str, float]] = {}
@@ -361,17 +371,17 @@ class QualityOfEarningsV2:
         all_periods = sorted(set(margin_map_a.keys()) | set(margin_map_b.keys()))
 
         # Batch-fetch raw revenue and EBITDA for both entities in one query
-        sql = """
+        sql = f"""
             SELECT DISTINCT ON (entity_id, concept, period)
                    entity_id, concept, period, value
             FROM convergence_triples
-            WHERE tenant_id = %s AND run_id = %s
+            WHERE tenant_id = %s AND {self._run_clause}
               AND concept IN ('revenue.total', 'pnl.ebitda')
               AND entity_id IN (%s, %s)
               AND property = 'amount'
             ORDER BY entity_id, concept, period, created_at DESC
         """
-        rows = self._query(sql, [self.tenant_id, self.pipeline_run_id, entity_a, entity_b])
+        rows = self._query(sql, [self.tenant_id, *self._run_params, entity_a, entity_b])
 
         metric_map: dict[tuple[str, str, str], float] = {}
         for row in rows:

@@ -48,6 +48,16 @@ class OverlapEngineV2:
         self.tenant_id = tenant_id
         self.pipeline_run_id = pipeline_run_id
 
+    @property
+    def _run_clause(self) -> str:
+        """SQL WHERE fragment for run scoping."""
+        return "run_id = %s" if self.pipeline_run_id else "is_active = true"
+
+    @property
+    def _run_params(self) -> list:
+        """SQL params for the run filter (empty when using is_active)."""
+        return [self.pipeline_run_id] if self.pipeline_run_id else []
+
     def _query(self, sql: str, params: list) -> list[dict]:
         """Execute a parameterized query and return rows as dicts."""
         with get_connection() as conn:
@@ -63,14 +73,14 @@ class OverlapEngineV2:
 
     def _count_concepts_for_entity(self, domain: str, entity_id: str) -> int:
         """Count distinct concepts in a domain for a specific entity."""
-        sql = """
+        sql = f"""
             SELECT COUNT(DISTINCT concept) as cnt
             FROM convergence_triples
-            WHERE tenant_id = %s AND run_id = %s
+            WHERE tenant_id = %s AND {self._run_clause}
               AND concept LIKE %s
               AND entity_id = %s
         """
-        rows = self._query(sql, [self.tenant_id, self.pipeline_run_id, f"{domain}.%", entity_id])
+        rows = self._query(sql, [self.tenant_id, *self._run_params, f"{domain}.%", entity_id])
         return rows[0]["cnt"] if rows else 0
 
     def _find_overlapping_concepts(self, domain: str) -> list[str]:
@@ -79,17 +89,17 @@ class OverlapEngineV2:
         Excludes subcategory concepts (e.g. customer.pipeline.closed_won) which
         represent structural metadata, not actual entity overlaps.
         """
-        sql = """
+        sql = f"""
             SELECT concept
             FROM convergence_triples
-            WHERE tenant_id = %s AND run_id = %s
+            WHERE tenant_id = %s AND {self._run_clause}
               AND concept LIKE %s
               AND concept NOT LIKE %s
             GROUP BY concept
             HAVING COUNT(DISTINCT entity_id) > 1
             ORDER BY concept
         """
-        rows = self._query(sql, [self.tenant_id, self.pipeline_run_id, f"{domain}.%", f"{domain}.%.%"])
+        rows = self._query(sql, [self.tenant_id, *self._run_params, f"{domain}.%", f"{domain}.%.%"])
         return [r["concept"] for r in rows]
 
     def get_overlap_summary(self) -> dict:
@@ -154,11 +164,11 @@ class OverlapEngineV2:
         sql = f"""
             SELECT concept, entity_id, property, value
             FROM convergence_triples
-            WHERE tenant_id = %s AND run_id = %s
+            WHERE tenant_id = %s AND {self._run_clause}
               AND concept IN ({placeholders})
             ORDER BY concept, entity_id, property
         """
-        params = [self.tenant_id, self.pipeline_run_id] + overlapping
+        params = [self.tenant_id, *self._run_params] + overlapping
         rows = self._query(sql, params)
 
         # Organize by concept → entity → properties
@@ -198,15 +208,15 @@ class OverlapEngineV2:
 
         overlapping_set = set(self._find_overlapping_concepts(domain))
 
-        sql = """
+        sql = f"""
             SELECT DISTINCT concept
             FROM convergence_triples
-            WHERE tenant_id = %s AND run_id = %s
+            WHERE tenant_id = %s AND {self._run_clause}
               AND concept LIKE %s
               AND entity_id = %s
             ORDER BY concept
         """
-        rows = self._query(sql, [self.tenant_id, self.pipeline_run_id, f"{domain}.%", entity_id])
+        rows = self._query(sql, [self.tenant_id, *self._run_params, f"{domain}.%", entity_id])
         all_concepts = [r["concept"] for r in rows]
 
         return [c for c in all_concepts if c not in overlapping_set]
@@ -232,12 +242,12 @@ class OverlapEngineV2:
         sql = f"""
             SELECT concept, entity_id, value
             FROM convergence_triples
-            WHERE tenant_id = %s AND run_id = %s
+            WHERE tenant_id = %s AND {self._run_clause}
               AND concept IN ({placeholders})
               AND property = %s
             ORDER BY concept, entity_id
         """
-        params = [self.tenant_id, self.pipeline_run_id] + overlapping + [property_name]
+        params = [self.tenant_id, *self._run_params] + overlapping + [property_name]
         rows = self._query(sql, params)
 
         # Group by concept

@@ -99,6 +99,16 @@ class EBITDABridgeV2:
         self.tenant_id = tenant_id
         self.pipeline_run_id = pipeline_run_id
 
+    @property
+    def _run_clause(self) -> str:
+        """SQL WHERE fragment for run scoping."""
+        return "run_id = %s" if self.pipeline_run_id else "is_active = true"
+
+    @property
+    def _run_params(self) -> list:
+        """SQL params for the run filter (empty when using is_active)."""
+        return [self.pipeline_run_id] if self.pipeline_run_id else []
+
     def _query(self, sql: str, params: list) -> list[dict]:
         """Execute a parameterized query and return rows as dicts."""
         with get_connection() as conn:
@@ -119,20 +129,20 @@ class EBITDABridgeV2:
             SELECT DISTINCT ON (entity_id, concept, period)
                    period, value
             FROM convergence_triples
-            WHERE tenant_id = %s AND run_id = %s
+            WHERE tenant_id = %s AND {self._run_clause}
               AND concept = 'pnl.ebitda' AND entity_id = %s
               AND property = 'amount'
               AND period IN ({placeholders})
             ORDER BY entity_id, concept, period, created_at DESC
         """
-        params = [self.tenant_id, self.pipeline_run_id, entity_id] + _ANNUAL_PERIODS
+        params = [self.tenant_id, *self._run_params, entity_id] + _ANNUAL_PERIODS
         rows = self._query(sql, params)
 
         if not rows:
             raise ValueError(
                 f"No pnl.ebitda triples found for entity_id='{entity_id}' "
                 f"in periods {_ANNUAL_PERIODS} — "
-                f"tenant_id='{self.tenant_id}', run_id='{self.pipeline_run_id}'"
+                f"tenant_id='{self.tenant_id}', pipeline_run_id='{self.pipeline_run_id}'"
             )
 
         if len(rows) != len(_ANNUAL_PERIODS):
@@ -159,21 +169,21 @@ class EBITDABridgeV2:
         # DISTINCT ON deduplicates across runs per (entity, full-concept, property).
         # The full 3-segment concept distinguishes lifecycle stages, so each
         # stage's properties are returned separately.
-        sql = """
+        sql = f"""
             SELECT DISTINCT ON (entity_id, concept, property)
                    concept, property, value, period
             FROM convergence_triples
-            WHERE tenant_id = %s AND run_id = %s
+            WHERE tenant_id = %s AND {self._run_clause}
               AND concept LIKE 'ebitda_adjustment.%%'
               AND entity_id = %s
             ORDER BY entity_id, concept, property, created_at DESC
         """
-        rows = self._query(sql, [self.tenant_id, self.pipeline_run_id, entity_id])
+        rows = self._query(sql, [self.tenant_id, *self._run_params, entity_id])
 
         if not rows:
             raise ValueError(
                 f"No ebitda_adjustment triples found for entity_id='{entity_id}' — "
-                f"tenant_id='{self.tenant_id}', run_id='{self.pipeline_run_id}'. "
+                f"tenant_id='{self.tenant_id}', pipeline_run_id='{self.pipeline_run_id}'. "
                 f"EBITDA adjustment triples must be seeded before bridge can be produced."
             )
 
@@ -421,22 +431,22 @@ class EBITDABridgeV2:
         entity_a, entity_b = self._get_entities()
 
         # Query all stages for this base concept (match 3-segment concepts)
-        sql = """
+        sql = f"""
             SELECT DISTINCT ON (entity_id, concept, property)
                    entity_id, concept, property, value
             FROM convergence_triples
-            WHERE tenant_id = %s AND run_id = %s
+            WHERE tenant_id = %s AND {self._run_clause}
               AND (concept = %s OR concept LIKE %s)
               AND entity_id != 'combined'
             ORDER BY entity_id, concept, property, created_at DESC
         """
         like_pattern = adjustment_concept + ".%"
-        rows = self._query(sql, [self.tenant_id, self.pipeline_run_id, adjustment_concept, like_pattern])
+        rows = self._query(sql, [self.tenant_id, *self._run_params, adjustment_concept, like_pattern])
 
         if not rows:
             raise ValueError(
                 f"No triples found for adjustment concept '{adjustment_concept}' — "
-                f"tenant_id='{self.tenant_id}', run_id='{self.pipeline_run_id}'"
+                f"tenant_id='{self.tenant_id}', pipeline_run_id='{self.pipeline_run_id}'"
             )
 
         # Group by entity -> stage -> {property: value}
