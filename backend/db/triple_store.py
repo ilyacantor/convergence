@@ -300,6 +300,19 @@ class TripleStore:
                 cur.execute(sql, (tenant_id, new_run_id, snapshot_name))
                 conn.commit()
 
+    def get_active_tenant_id(self) -> str | None:
+        """Return the tenant_id from convergence_tenant_runs.
+
+        With a single active engagement there is exactly one row.
+        Returns None if the table is empty (no pipeline has run yet).
+        """
+        sql = "SELECT tenant_id FROM convergence_tenant_runs LIMIT 1"
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql)
+                row = cur.fetchone()
+        return str(row[0]) if row else None
+
     def get_current_run_id(self, tenant_id: str) -> str:
         """Return current_run_id for tenant.
 

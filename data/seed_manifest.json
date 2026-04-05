@@ -1,11 +1,11 @@
 {
   "seed_date": "2026-03-31",
-  "run_id": "55862dad-77e6-49b4-b5a3-aea4112670b9",
-  "farm_run_id": "triples_14332491f071",
+  "run_id": "c19da2f8-0373-4691-9edf-6632987e5042",
+  "farm_run_id": "triples_ecdf35c80c1e",
   "tenant_id": "69688df3-fc8e-51f8-a77c-9c13f9b3a784",
   "entity_a_id": "meridian",
   "entity_b_id": "cascadia",
-  "total_triples": 33527,
+  "total_triples": 36035,
   "concept_summary": {
     "customer_service": 14208,
     "gl": 8229,

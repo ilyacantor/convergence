@@ -131,14 +131,25 @@ async def cofa_chat(request: Request):
 async def get_engagement(tenant_id: str = Query(None)):
     """Return the active engagement config as JSON.
 
-    Called by DCL's maestra.py and NLQ's report proxy over HTTP.
-    Fails loudly if no engagement is configured — no silent fallback.
+    Called by DCL's maestra.py, NLQ's report proxy, and the Convergence
+    ReportPortal frontend over HTTP. Fails loudly if no engagement is
+    configured — no silent fallback.
 
-    When tenant_id is provided, includes current_pipeline_run_id from
-    convergence_tenant_runs so callers can pass it to v2 report endpoints.
+    Always includes tenant_id from convergence_tenant_runs so frontends
+    can pass it to v2 report endpoints without hardcoding UUIDs.
+    When tenant_id is explicitly provided as a param, uses that for the
+    pipeline_run_id lookup; otherwise discovers it from the tenant_runs table.
     """
     eng = get_active_engagement()
+
+    # Resolve tenant_id: use explicit param if provided, otherwise discover
+    # from convergence_tenant_runs (there should be exactly one active tenant)
+    resolved_tenant_id = tenant_id
+    if not resolved_tenant_id:
+        resolved_tenant_id = _triple_store.get_active_tenant_id()
+
     result = {
+        "tenant_id": resolved_tenant_id,
         "engagement_id": eng.engagement_id,
         "engagement_short_name": eng.short_name,
         "deal_name": eng.deal_name,
@@ -160,9 +171,9 @@ async def get_engagement(tenant_id: str = Query(None)):
         "deal_parameters": eng.deal_parameters,
         "synergy_targets": eng.synergy_targets,
     }
-    if tenant_id:
+    if resolved_tenant_id:
         try:
-            result["current_pipeline_run_id"] = _triple_store.get_current_run_id(tenant_id)
+            result["current_pipeline_run_id"] = _triple_store.get_current_run_id(resolved_tenant_id)
         except ValueError as exc:
             raise HTTPException(
                 status_code=422,

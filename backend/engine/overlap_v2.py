@@ -72,15 +72,25 @@ class OverlapEngineV2:
         return eng.entity_ids()
 
     def _count_concepts_for_entity(self, domain: str, entity_id: str) -> int:
-        """Count distinct concepts in a domain for a specific entity."""
-        sql = f"""
-            SELECT COUNT(DISTINCT concept) as cnt
-            FROM convergence_triples
-            WHERE tenant_id = %s AND {self._run_clause}
-              AND concept LIKE %s
-              AND entity_id = %s
+        """Count distinct entity-level concepts in a domain for a specific entity.
+
+        Excludes subcategory concepts and domain-level KPIs (single-property
+        aggregate metrics like customer.acv) — counts only actual business
+        entities (companies, vendors, employees).
         """
-        rows = self._query(sql, [self.tenant_id, *self._run_params, f"{domain}.%", entity_id])
+        sql = f"""
+            SELECT COUNT(*) as cnt FROM (
+                SELECT concept
+                FROM convergence_triples
+                WHERE tenant_id = %s AND {self._run_clause}
+                  AND concept LIKE %s
+                  AND concept NOT LIKE %s
+                  AND entity_id = %s
+                GROUP BY concept
+                HAVING COUNT(DISTINCT property) > 1
+            ) sub
+        """
+        rows = self._query(sql, [self.tenant_id, *self._run_params, f"{domain}.%", f"{domain}.%.%", entity_id])
         return rows[0]["cnt"] if rows else 0
 
     def _find_overlapping_concepts(self, domain: str) -> list[str]:
@@ -88,6 +98,9 @@ class OverlapEngineV2:
 
         Excludes subcategory concepts (e.g. customer.pipeline.closed_won) which
         represent structural metadata, not actual entity overlaps.
+        Also excludes domain-level KPI concepts (e.g. customer.acv, customer.nps)
+        which have only a single property and represent aggregate metrics,
+        not actual business entities.
         """
         sql = f"""
             SELECT concept
@@ -97,6 +110,7 @@ class OverlapEngineV2:
               AND concept NOT LIKE %s
             GROUP BY concept
             HAVING COUNT(DISTINCT entity_id) > 1
+              AND COUNT(DISTINCT property) > 1
             ORDER BY concept
         """
         rows = self._query(sql, [self.tenant_id, *self._run_params, f"{domain}.%", f"{domain}.%.%"])
@@ -209,14 +223,17 @@ class OverlapEngineV2:
         overlapping_set = set(self._find_overlapping_concepts(domain))
 
         sql = f"""
-            SELECT DISTINCT concept
+            SELECT concept
             FROM convergence_triples
             WHERE tenant_id = %s AND {self._run_clause}
               AND concept LIKE %s
+              AND concept NOT LIKE %s
               AND entity_id = %s
+            GROUP BY concept
+            HAVING COUNT(DISTINCT property) > 1
             ORDER BY concept
         """
-        rows = self._query(sql, [self.tenant_id, *self._run_params, f"{domain}.%", entity_id])
+        rows = self._query(sql, [self.tenant_id, *self._run_params, f"{domain}.%", f"{domain}.%.%", entity_id])
         all_concepts = [r["concept"] for r in rows]
 
         return [c for c in all_concepts if c not in overlapping_set]

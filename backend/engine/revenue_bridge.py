@@ -64,11 +64,20 @@ class RevenueBridgeV2:
         total_change = round(to_total - from_total, 2)
         pct_change = round(total_change / from_total * 100, 2) if from_total != 0 else 0.0
 
-        # Build by-stream breakdown (all revenue sub-concepts except total)
+        # Build by-stream breakdown using only direct revenue children
+        # (revenue.X where X contains no dots). Excludes:
+        #   - revenue.total (it's the aggregate, not a driver)
+        #   - revenue.by_practice.*, revenue.by_region.* (dimensional breakdowns
+        #     that re-slice the same revenue — including them double-counts)
+        #   - revenue.new_logo.by_region.* (subcategory breakdowns)
         all_concepts = sorted(set(from_dict.keys()) | set(to_dict.keys()))
         by_stream: list[dict] = []
         for concept in all_concepts:
             if concept == "revenue.total":
+                continue
+            # Only include first-level children: revenue.X (no further dots)
+            suffix = concept.split(".", 1)[1] if "." in concept else ""
+            if "." in suffix:
                 continue
             f_val = from_dict.get(concept, 0.0)
             t_val = to_dict.get(concept, 0.0)

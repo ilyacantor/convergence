@@ -34,6 +34,7 @@ from backend.api.routes.reports_combining_v2 import router as reports_combining_
 from backend.api.routes.reports_overlap_v2 import router as reports_overlap_v2_router
 from backend.api.routes.reports_bridge_v2 import router as reports_bridge_v2_router
 from backend.api.routes.reports_whatif_v2 import router as reports_whatif_v2_router
+from backend.api.routes.reports_detail_v2 import router as reports_detail_v2_router
 from backend.api.routes.cofa_validation import router as cofa_validation_router
 from backend.api.routes.cofa_mapping import router as cofa_mapping_router
 from backend.api.routes.merge_overview import router as merge_overview_router
@@ -129,6 +130,7 @@ app.include_router(reports_combining_v2_router)
 app.include_router(reports_overlap_v2_router)
 app.include_router(reports_bridge_v2_router)
 app.include_router(reports_whatif_v2_router)
+app.include_router(reports_detail_v2_router)
 app.include_router(cofa_validation_router)
 app.include_router(cofa_mapping_router)
 app.include_router(merge_overview_router)

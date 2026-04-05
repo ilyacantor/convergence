@@ -349,7 +349,7 @@ class TripleQueryResolver:
             elif isinstance(bv, dict):
                 result[key] = bv.copy()
             else:
-                result[key] = (av or 0.0) + (bv or 0.0)
+                result[key] = round((av or 0.0) + (bv or 0.0), 2)
         return result
 
     # ------------------------------------------------------------------
@@ -569,7 +569,9 @@ class TripleQueryResolver:
         Returns list of entity-level concept names (domain.entity_name) that
         have rows for both entities. Subcategory concepts like
         customer.pipeline.closed_won are excluded — they represent structural
-        metadata, not actual entity overlaps.
+        metadata, not actual entity overlaps. Domain-level KPI concepts
+        (e.g. customer.acv, customer.nps) with only a single property are
+        also excluded — they represent aggregate metrics, not business entities.
         """
         sql = f"""
             SELECT concept
@@ -580,6 +582,7 @@ class TripleQueryResolver:
               AND concept NOT LIKE %s
             GROUP BY concept
             HAVING COUNT(DISTINCT entity_id) > 1
+              AND COUNT(DISTINCT property) > 1
             ORDER BY concept
         """
         rows = self._query(sql, [self.tenant_id, *self._run_params, f"{domain}.%", f"{domain}.%.%"])
@@ -592,13 +595,13 @@ class TripleQueryResolver:
     def get_provenance(self, concept: str, entity_id: str, period: str) -> dict:
         """
         Get full provenance for a value: source_system, source_table, source_field,
-        pipe_id, confidence_score, confidence_tier, dcl_ingest_id.
+        pipe_id, confidence_score, confidence_tier, pipeline_run_id.
         """
         sql = f"""
             SELECT DISTINCT ON (entity_id, concept, property, period)
                    source_system, source_table, source_field,
                    pipe_id, confidence_score, confidence_tier,
-                   run_id AS dcl_ingest_id
+                   run_id AS pipeline_run_id
             FROM convergence_triples
             WHERE tenant_id = %s
               {self._run_clause}
@@ -621,5 +624,5 @@ class TripleQueryResolver:
             "pipe_id": str(row["pipe_id"]) if row["pipe_id"] else None,
             "confidence_score": float(row["confidence_score"]) if row["confidence_score"] is not None else 0.0,
             "confidence_tier": row["confidence_tier"],
-            "dcl_ingest_id": str(row["dcl_ingest_id"]),
+            "pipeline_run_id": str(row["pipeline_run_id"]),
         }

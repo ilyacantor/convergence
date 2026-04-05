@@ -128,6 +128,9 @@ class EntityResolutionV2:
 
         Excludes subcategory concepts (e.g. customer.pipeline.closed_won) which
         represent structural metadata, not actual entity overlaps.
+        Also excludes domain-level KPI concepts (e.g. customer.acv, customer.nps)
+        which have only a single property and represent aggregate metrics,
+        not actual business entities.
         """
         sql = f"""
             SELECT concept
@@ -138,6 +141,7 @@ class EntityResolutionV2:
               AND entity_id != 'combined'
             GROUP BY concept
             HAVING COUNT(DISTINCT entity_id) > 1
+              AND COUNT(DISTINCT property) > 1
             ORDER BY concept
         """
         rows = self._query(sql, [self.tenant_id, *self._run_params, f"{domain}.%", f"{domain}.%.%"])
