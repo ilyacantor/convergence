@@ -20,6 +20,7 @@ import type {
   UpsellData,
   RevenueByCustomerData,
   EBITDABridgeData,
+  BridgeAdjustment,
   WhatIfResult,
   QofEData,
   PipelineReportData,
@@ -730,12 +731,80 @@ export async function fetchRevenueByCustomer(entityId: string): Promise<RevenueB
 
 export async function fetchEBITDABridge(): Promise<EBITDABridgeData> {
   const params = await withTenant()
-  const res = await fetch(`${CONVERGENCE_REPORTS_BASE}/bridge?${params}`)
+  const res = await fetch(`${CONVERGENCE_REPORTS_BASE}/bridge/comparison?${params}`)
   if (!res.ok) {
     const errText = await res.text().catch(() => 'Unknown error')
     throw new Error(`EBITDA bridge query failed (HTTP ${res.status}): ${sanitizeErrorMessage(errText.slice(0, 500))}`)
   }
-  return res.json()
+  const raw = await res.json()
+
+  const bridgeA = raw.entity_a
+  const bridgeB = raw.entity_b
+  const combined = raw.combined
+  const [eA, eB] = raw.entity_pair || ['entity_a', 'entity_b']
+
+  function confTier(c: number): string {
+    if (c >= 0.85) return 'high'
+    if (c >= 0.65) return 'medium'
+    return 'low'
+  }
+
+  function mapAdj(a: Record<string, unknown>): BridgeAdjustment {
+    return {
+      name: String(a.name || ''),
+      category: String(a.lever || 'normalization'),
+      entity: 'combined',
+      confidence: confTier(typeof a.confidence === 'number' ? a.confidence : 0),
+      amount: Number(a.amount) || 0,
+      amount_low: Number(a.amount_low) || 0,
+      amount_high: Number(a.amount_high) || 0,
+      lever: a.lever ? String(a.lever) : null,
+      support_reference: String(a.support_reference || ''),
+      rationale: String(a.rationale || ''),
+    }
+  }
+
+  const allAdj = (combined.adjustments || []).map(mapAdj)
+  const entityAdjustments = allAdj.filter((a: BridgeAdjustment) => a.category !== 'synergy')
+  const combinationSynergies = allAdj.filter((a: BridgeAdjustment) => a.category === 'synergy')
+
+  const entityAdjTotal = entityAdjustments.reduce((s: number, a: BridgeAdjustment) => s + a.amount, 0)
+  const synergyTotal = combinationSynergies.reduce((s: number, a: BridgeAdjustment) => s + a.amount, 0)
+  const synergyLow = combinationSynergies.reduce((s: number, a: BridgeAdjustment) => s + a.amount_low, 0)
+  const synergyHigh = combinationSynergies.reduce((s: number, a: BridgeAdjustment) => s + a.amount_high, 0)
+
+  const reportedCombined: number = combined.reported_ebitda
+  const entityAdjCombined = Math.round((reportedCombined + entityAdjTotal) * 100) / 100
+  const entityAdjA = Math.round((bridgeA.reported_ebitda + (bridgeA.by_lever?.normalization || 0) + (bridgeA.by_lever?.cost_reduction || 0)) * 100) / 100
+  const entityAdjB = Math.round((bridgeB.reported_ebitda + (bridgeB.by_lever?.normalization || 0) + (bridgeB.by_lever?.cost_reduction || 0)) * 100) / 100
+
+  const pfCurrent = Math.round((entityAdjCombined + synergyTotal) * 100) / 100
+  const pfLow = Math.round((entityAdjCombined + synergyLow) * 100) / 100
+  const pfHigh = Math.round((entityAdjCombined + synergyHigh) * 100) / 100
+
+  const EV_MULTIPLE = 12.5
+
+  return {
+    reported_ebitda: Object.assign(
+      { combined_reported: reportedCombined },
+      { [eA]: bridgeA.reported_ebitda, [eB]: bridgeB.reported_ebitda },
+    ) as EBITDABridgeData['reported_ebitda'],
+    entity_adjustments: entityAdjustments,
+    entity_adjusted_ebitda: Object.assign(
+      { combined: entityAdjCombined },
+      { [eA]: entityAdjA, [eB]: entityAdjB },
+    ) as EBITDABridgeData['entity_adjusted_ebitda'],
+    combination_synergies: combinationSynergies,
+    pro_forma_ebitda: {
+      year_1: { low: pfLow, high: pfHigh, current: pfCurrent },
+      steady_state: { low: pfLow, high: pfHigh, current: pfCurrent },
+    },
+    ev_impact: {
+      multiple: EV_MULTIPLE,
+      year_1_ev: { low: Math.round(pfLow * EV_MULTIPLE * 100) / 100, high: Math.round(pfHigh * EV_MULTIPLE * 100) / 100, current: Math.round(pfCurrent * EV_MULTIPLE * 100) / 100 },
+      steady_state_ev: { low: Math.round(pfLow * EV_MULTIPLE * 100) / 100, high: Math.round(pfHigh * EV_MULTIPLE * 100) / 100, current: Math.round(pfCurrent * EV_MULTIPLE * 100) / 100 },
+    },
+  }
 }
 
 // ── What-If Engine ───────────────────────────────────────────────────────────
@@ -757,7 +826,7 @@ export async function fetchWhatIf(
 ): Promise<WhatIfResult> {
   const ctx = await getEngagementContext()
   const resolvedEntityId = entityId || ctx.entity_a.id
-  const resolvedPeriod = period || '2025-Q1'
+  const resolvedPeriod = period || '2025-Q4'
 
   const adjustments: Array<{ concept: string; type: string; value: number }> = []
   if (levers) {

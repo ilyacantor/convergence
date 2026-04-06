@@ -134,7 +134,7 @@ class CrossSellEngineV2:
               AND st.concept LIKE 'customer.%%'
               AND st.concept NOT LIKE 'customer.%%.%%'
               AND st.entity_id = %s
-              AND st.property IN ('revenue', 'industry', 'segment', 'size', 'match_confidence')
+              AND st.property IN ('revenue', 'industry', 'segment', 'size', 'match_confidence', 'avg_service_spend')
               AND NOT EXISTS (
                   SELECT 1
                   FROM convergence_triples other
@@ -353,6 +353,13 @@ class CrossSellEngineV2:
                 customer_props, svc["typical_acv"], svc.get("delivery_model", ""),
             )
 
+            # Estimated ACV from customer's actual spending pattern (Farm-generated),
+            # falling back to service typical ACV if not available
+            estimated_acv = round(
+                _safe_float(customer_props.get("avg_service_spend"), svc["typical_acv"]),
+                2,
+            )
+
             return {
                 "customer": customer_name,
                 "customer_id": customer_name,
@@ -362,7 +369,7 @@ class CrossSellEngineV2:
                 "service": service_name,
                 "recommended_service": service_name.replace("_", " ").title(),
                 "typical_acv": svc["typical_acv"],
-                "estimated_acv": svc["typical_acv"],
+                "estimated_acv": estimated_acv,
                 **scores,
                 "customer_engagement_M": round(revenue, 2),
                 "industry": industry,
@@ -375,7 +382,7 @@ class CrossSellEngineV2:
                     f"(typical ACV ${svc['typical_acv']}M). "
                     f"{customer_name.replace('_', ' ').title()} is an exclusive "
                     f"{opportunity_entity} client with ${revenue}M engagement — "
-                    f"cross-sell opportunity via {current_entity} service capabilities."
+                    f"estimated ${estimated_acv}M based on spending pattern."
                 ),
             }
 

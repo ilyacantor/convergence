@@ -415,7 +415,7 @@ function StatementTable({ data, pyData, showVariance = true, entityId, period, f
             </th>
             {showVariance && pyData && (
               <>
-                <th style={{ textAlign: "right", padding: "10px 16px", color: COLORS.textMuted, fontWeight: 500, fontSize: 15, letterSpacing: "0.06em", textTransform: "uppercase" }}>PY</th>
+                <th style={{ textAlign: "right", padding: "10px 16px", color: COLORS.textMuted, fontWeight: 500, fontSize: 15, letterSpacing: "0.06em", textTransform: "uppercase" }}>{pyData.metadata.quarter}</th>
                 <th style={{ textAlign: "right", padding: "10px 16px", color: COLORS.textMuted, fontWeight: 500, fontSize: 15, letterSpacing: "0.06em", textTransform: "uppercase" }}>Var $</th>
                 <th style={{ textAlign: "right", padding: "10px 16px", color: COLORS.textMuted, fontWeight: 500, fontSize: 15, letterSpacing: "0.06em", textTransform: "uppercase" }}>Var %</th>
               </>
@@ -774,6 +774,13 @@ function CrossSellTab() {
             </tr>
           </thead>
           <tbody>
+            {candidates.length === 0 && (
+              <tr>
+                <td colSpan={6} style={{ padding: "32px 16px", textAlign: "center", color: COLORS.textMuted, fontSize: 15, fontFamily: "'IBM Plex Sans',sans-serif" }}>
+                  No cross-sell opportunities found. Customer and service data may not be ingested yet.
+                </td>
+              </tr>
+            )}
             {candidates.map((c) => {
               const isExp = expanded === c.customer_id;
               return (
@@ -908,6 +915,13 @@ function UpsellTab() {
             </tr>
           </thead>
           <tbody>
+            {candidates.length === 0 && (
+              <tr>
+                <td colSpan={6} style={{ padding: "32px 16px", textAlign: "center", color: COLORS.textMuted, fontSize: 15, fontFamily: "'IBM Plex Sans',sans-serif" }}>
+                  No upsell opportunities found. Customer and service data may not be ingested yet.
+                </td>
+              </tr>
+            )}
             {candidates.map((c, idx) => {
               const rowKey = `${c.customer_id}-${c.gap_service}-${idx}`;
               const isExp = expanded === rowKey;
@@ -1465,7 +1479,7 @@ function PipelineTab({ period }: { period: string }) {
 // WHAT-IF TAB
 // ============================================================
 
-function WhatIfTab() {
+function WhatIfTab({ period }: { period: string }) {
   const [result, setResult] = useState<WhatIfResult | null>(null);
   const [levers, setLevers] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
@@ -1473,16 +1487,18 @@ function WhatIfTab() {
   const [wiKpi, setWiKpi] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchWhatIf()
+    setLoading(true);
+    setError(null);
+    fetchWhatIf(undefined, undefined, undefined, period)
       .then((r) => { setResult(r); setLevers(r.levers); })
       .catch((err) => setError(err instanceof Error ? err.message : String(err)))
       .finally(() => setLoading(false));
-  }, []);
+  }, [period]);
 
   const applyPreset = useCallback(async (preset: string) => {
     setLoading(true);
     try {
-      const r = await fetchWhatIf(undefined, preset);
+      const r = await fetchWhatIf(undefined, preset, undefined, period);
       setResult(r);
       setLevers(r.levers);
     } catch (err) {
@@ -1490,20 +1506,20 @@ function WhatIfTab() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [period]);
 
   const applyLevers = useCallback(async (newLevers: Record<string, number>) => {
     setLevers(newLevers);
     try {
-      const r = await fetchWhatIf(newLevers);
+      const r = await fetchWhatIf(newLevers, undefined, undefined, period);
       setResult(r);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
-  }, []);
+  }, [period]);
 
   if (loading && !result) return <LoadingState message="Loading what-if engine..." />;
-  if (error && !result) return <ErrorState error={error} onRetry={() => { setLoading(true); setError(null); fetchWhatIf().then((r) => { setResult(r); setLevers(r.levers); }).catch((e) => setError(String(e))).finally(() => setLoading(false)); }} />;
+  if (error && !result) return <ErrorState error={error} onRetry={() => { setLoading(true); setError(null); fetchWhatIf(undefined, undefined, undefined, period).then((r) => { setResult(r); setLevers(r.levers); }).catch((e) => setError(String(e))).finally(() => setLoading(false)); }} />;
   if (!result) return null;
 
   const defs = result.lever_definitions || [];
@@ -2172,11 +2188,9 @@ export function ReportPortal({ onClose: _onClose }: { onClose: () => void }) {
   // Dimension state — fetched from API on mount
   const [dimensions, setDimensions] = useState<{ periods: PeriodDimension[]; segments: string[] } | null>(null);
   const [dimensionsError, setDimensionsError] = useState<string | null>(null);
-  const [dimensionsLoading, setDimensionsLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
-    setDimensionsLoading(true);
     fetchReportDimensions()
       .then((dims) => {
         if (!cancelled) {
@@ -2188,8 +2202,7 @@ export function ReportPortal({ onClose: _onClose }: { onClose: () => void }) {
         if (!cancelled) {
           setDimensionsError(err.message || "Failed to load report dimensions");
         }
-      })
-      .finally(() => { if (!cancelled) setDimensionsLoading(false); });
+      });
     return () => { cancelled = true; };
   }, []);
 
@@ -2311,18 +2324,19 @@ export function ReportPortal({ onClose: _onClose }: { onClose: () => void }) {
 
   const seg = segment === "all" ? null : segment;
   const isStatementTab = tab === "pl" || tab === "bs" || tab === "cf";
+  const isPeriodTab = isStatementTab || tab === "pipeline" || tab === "whatif";
 
-  // Determine the quarter to pass to the API based on the variant
-  const effectiveQuarter = useMemo(() => {
-    if (variant === "act_vs_py") return `${lastFullYear}-Q4`;
+  // Determine the period to pass to the API based on the variant.
+  // FY variants send year-level periods (e.g. "2025") — the backend
+  // TripleQueryResolver expands these to Q1-Q4 SUM (or Q4 snapshot for BS).
+  // Quarterly variants send quarter-level periods (e.g. "2025-Q3").
+  const effectivePeriod = useMemo(() => {
+    if (variant === "act_vs_py") return String(lastFullYear);
     if (variant === "q_act_vs_py") return quarter;
-    if (variant === "cf_vs_py") {
-      const cq = Math.ceil((wallClockDate().getMonth() + 1) / 3);
-      return `${wallClockDate().getFullYear()}-Q${cq}`;
-    }
+    if (variant === "cf_vs_py") return String(wallClockDate().getFullYear());
     if (variant === "q_cf_vs_py") return quarter || cfQuarters[0];
     if (variant === "quarterly") return quarter;
-    return `${lastFullYear}-Q4`;
+    return String(lastFullYear);
   }, [variant, quarter, lastFullYear, cfQuarters]);
 
   // Combining period mirrors IS variant logic
@@ -2364,20 +2378,29 @@ export function ReportPortal({ onClose: _onClose }: { onClose: () => void }) {
 
     const statement = tabToStatement(tab);
     const apiVariant = mapVariant(variant);
+    const needsPY = variant !== "quarterly";
+
+    // Compute prior-year period: "2025" → "2024", "2025-Q3" → "2024-Q3"
+    let pyPeriod: string | undefined;
+    if (needsPY) {
+      const qMatch = effectivePeriod.match(/^(\d{4})(-Q\d)?$/);
+      if (qMatch) {
+        pyPeriod = String(Number(qMatch[1]) - 1) + (qMatch[2] || "");
+      }
+    }
 
     try {
-      const result = await fetchReport(statement, apiVariant, effectiveQuarter, seg, entity);
+      // Fetch current and PY periods in parallel
+      const [result, pyResult] = await Promise.all([
+        fetchReport(statement, apiVariant, effectivePeriod, seg, entity),
+        needsPY && pyPeriod
+          ? fetchReport(statement, apiVariant, pyPeriod, seg, entity).catch(() => null)
+          : Promise.resolve(null),
+      ]);
       if (fetchIdRef.current !== fetchId) return; // stale response — discard
       setCurrentData(result.reportData);
       setRawFSData(result.rawFSData);
-
-      // PY data is already extracted from the same backend response (periods[1])
-      // No need for a second API call — the backend returns both CY and PY.
-      if (variant !== "quarterly") {
-        setPyData(result.pyReportData);
-      } else {
-        setPyData(null);
-      }
+      setPyData(pyResult ? pyResult.reportData : null);
     } catch (err) {
       if (fetchIdRef.current !== fetchId) return; // stale error — discard
       setError(err instanceof Error ? err.message : String(err));
@@ -2389,7 +2412,7 @@ export function ReportPortal({ onClose: _onClose }: { onClose: () => void }) {
         setLoading(false);
       }
     }
-  }, [tab, variant, effectiveQuarter, seg, isStatementTab, pyYear, lastFullYear, quarter, cfQuarters, entity, dimensionsError]);
+  }, [tab, variant, effectivePeriod, seg, isStatementTab, pyYear, lastFullYear, quarter, cfQuarters, entity, dimensionsError]);
 
   useEffect(() => {
     if (isStatementTab) {
@@ -2438,14 +2461,14 @@ export function ReportPortal({ onClose: _onClose }: { onClose: () => void }) {
       {/* Filter bar: Deal selector (left) + statement filters (right) */}
       <div style={{ padding: "8px 32px", borderBottom: `1px solid ${COLORS.border}`, display: "flex", justifyContent: "space-between", alignItems: "flex-end", background: COLORS.headerBg, gap: 12 }}>
         <DealSelector selected={entity} onChange={handleEntityChange} onDealLoaded={setEntityNames} />
-        {isStatementTab && !dimensionsError && (
+        {isPeriodTab && !dimensionsError && (
           <div style={{ display: "flex", alignItems: "flex-end", gap: 12 }}>
             <Select value={variant} onChange={setVariant} options={variantOptions} width={180} />
             {showQuarterSelect && <Select value={quarter} onChange={setQuarter} options={quarterOptions} width={120} />}
-            <Select value={segment} onChange={setSegment} width={150} options={[
+            {isStatementTab && <Select value={segment} onChange={setSegment} width={150} options={[
               { value: "all", label: "All Segments" },
               ...availableSegments.map((s) => ({ value: s, label: s })),
-            ]} />
+            ]} />}
           </div>
         )}
       </div>
@@ -2459,11 +2482,7 @@ export function ReportPortal({ onClose: _onClose }: { onClose: () => void }) {
 
         {isStatementTab && (
           <div style={{ maxWidth: CONTENT_MAX_WIDTH, margin: "0 auto" }}>
-            {dimensionsLoading && (
-              <div style={{ padding: "12px 16px", marginBottom: 16, background: "rgba(199,120,64,0.1)", border: `1px solid ${COLORS.accent}`, borderRadius: 6, fontSize: 15, color: COLORS.textMuted }}>
-                Loading available periods and segments...
-              </div>
-            )}
+
             {dimensionsError && (
               <div style={{ padding: "12px 16px", marginBottom: 16, background: "rgba(220,60,60,0.1)", border: "1px solid rgba(220,60,60,0.5)", borderRadius: 6, fontSize: 15, color: "#e55" }}>
                 Failed to load report dimensions: {dimensionsError}. Report filters are unavailable.
@@ -2492,7 +2511,7 @@ export function ReportPortal({ onClose: _onClose }: { onClose: () => void }) {
                     )}
                   </div>
                 </div>
-                <StatementTable data={currentData} pyData={pyData} showVariance={variant !== "quarterly"} entityId={entity} period={effectiveQuarter} fsData={rawFSData} />
+                <StatementTable data={currentData} pyData={pyData} showVariance={variant !== "quarterly"} entityId={entity} period={effectivePeriod} fsData={rawFSData} />
               </div>
             )}
           </div>
@@ -2528,8 +2547,8 @@ export function ReportPortal({ onClose: _onClose }: { onClose: () => void }) {
         {tab === "upsell" && entity === "combined" && (
           <div style={{ maxWidth: CONTENT_MAX_WIDTH, margin: "0 auto" }}><UpsellTab /></div>
         )}
-        {tab === "pipeline" && <PipelineTab period={String(lastFullYear)} />}
-        {tab === "whatif" && entity === "combined" && <WhatIfTab />}
+        {tab === "pipeline" && <PipelineTab period={effectivePeriod} />}
+        {tab === "whatif" && entity === "combined" && <WhatIfTab period={effectivePeriod} />}
         {tab === "qoe" && entity === "combined" && (
           <div style={{ maxWidth: CONTENT_MAX_WIDTH, margin: "0 auto" }}><QofETab /></div>
         )}
