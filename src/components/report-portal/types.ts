@@ -388,10 +388,11 @@ export interface QofEData {
     revenue_mix: {
       recurring_pct: number
       non_recurring_pct: number
-      advisory_consulting_M: number
+      consulting_tm_M: number
       managed_services_M: number
       per_fte_M: number
       per_transaction_M: number
+      fixed_fee_M: number
     }
     cohort_retention: { years_as_client: number; total_revenue_M: number }[]
     cross_sell_penetration: {

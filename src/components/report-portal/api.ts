@@ -963,17 +963,54 @@ function transformQofEResponse(raw: Record<string, unknown>): QofEData {
     grade: susGrade,
   }
 
-  // Revenue quality from entity_a (acquirer is primary)
+  // Revenue quality from combined (merged both entities' customers + streams)
+  const rqRaw = (combined.revenue_quality as Record<string, unknown>) || {}
+  const ccRaw = (rqRaw.customer_concentration as Record<string, unknown>) || {}
+  const cqRaw = (rqRaw.contract_quality as Record<string, unknown>) || {}
+  const rmRaw = (rqRaw.revenue_mix as Record<string, unknown>) || {}
+  const crRaw = (rqRaw.cohort_retention as Array<Record<string, unknown>>) || []
+  const csRaw = (rqRaw.cross_sell_penetration as Record<string, unknown>) || {}
+  const taRaw = (ccRaw.threshold_alerts as Array<Record<string, unknown>>) || []
+
   const revenue_quality: QofEData['revenue_quality'] = {
     customer_concentration: {
-      hhi: 0, top_10_pct: 0, top_20_pct: 0, top_50_pct: 0,
-      threshold_alerts: [],
-      total_customers: 0,
+      hhi: (ccRaw.hhi as number) || 0,
+      top_10_pct: (ccRaw.top_10_pct as number) || 0,
+      top_20_pct: (ccRaw.top_20_pct as number) || 0,
+      top_50_pct: (ccRaw.top_50_pct as number) || 0,
+      threshold_alerts: taRaw.map(a => ({
+        customer: (a.customer as string) || '',
+        pct: (a.pct as number) || 0,
+        threshold: (a.threshold as string) || '',
+      })),
+      total_customers: (ccRaw.total_customers as number) || 0,
     },
-    contract_quality: { msa_pct: 0, sow_pct: 0, t_and_m_pct: 0, avg_tenure_years: 0 },
-    revenue_mix: { recurring_pct: 0, non_recurring_pct: 0, advisory_consulting_M: 0, managed_services_M: 0, per_fte_M: 0, per_transaction_M: 0 },
-    cohort_retention: [],
-    cross_sell_penetration: { total_candidates: 0, total_pipeline_acv_M: 0, converted_count: 0, converted_acv_M: 0, conversion_rate_pct: 0 },
+    contract_quality: {
+      msa_pct: (cqRaw.msa_pct as number) || 0,
+      sow_pct: (cqRaw.sow_pct as number) || 0,
+      t_and_m_pct: (cqRaw.t_and_m_pct as number) || 0,
+      avg_tenure_years: (cqRaw.avg_tenure_years as number) || 0,
+    },
+    revenue_mix: {
+      recurring_pct: (rmRaw.recurring_pct as number) || 0,
+      non_recurring_pct: (rmRaw.non_recurring_pct as number) || 0,
+      consulting_tm_M: (rmRaw.consulting_tm_M as number) || 0,
+      managed_services_M: (rmRaw.managed_services_M as number) || 0,
+      per_fte_M: (rmRaw.per_fte_M as number) || 0,
+      per_transaction_M: (rmRaw.per_transaction_M as number) || 0,
+      fixed_fee_M: (rmRaw.fixed_fee_M as number) || 0,
+    },
+    cohort_retention: crRaw.map(c => ({
+      years_as_client: (c.years_as_client as number) || 0,
+      total_revenue_M: (c.total_revenue_M as number) || 0,
+    })),
+    cross_sell_penetration: {
+      total_candidates: (csRaw.total_candidates as number) || 0,
+      total_pipeline_acv_M: (csRaw.total_pipeline_acv_M as number) || 0,
+      converted_count: (csRaw.converted_count as number) || 0,
+      converted_acv_M: (csRaw.converted_acv_M as number) || 0,
+      conversion_rate_pct: (csRaw.conversion_rate_pct as number) || 0,
+    },
   }
 
   // Margin trend from combined

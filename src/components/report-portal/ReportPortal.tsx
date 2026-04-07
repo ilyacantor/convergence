@@ -1952,12 +1952,13 @@ function QofETab() {
 
       {subView === "revenue" && (() => {
         const revMixStreams = [
+          { name: "Consulting / T&M", value: rq.revenue_mix.consulting_tm_M },
           { name: "Managed Services", value: rq.revenue_mix.managed_services_M },
           { name: "Per-FTE", value: rq.revenue_mix.per_fte_M },
           { name: "Per-Transaction", value: rq.revenue_mix.per_transaction_M },
-          { name: "Advisory & Consulting", value: rq.revenue_mix.advisory_consulting_M },
+          { name: "Fixed Fee", value: rq.revenue_mix.fixed_fee_M },
         ].filter(d => d.value > 0);
-        const revMixColors = [COLORS.accent, COLORS.green, COLORS.blue, "#A78BFA"];
+        const revMixColors = [COLORS.accent, COLORS.green, COLORS.blue, "#A78BFA", "#F59E0B"];
         const hasConcentrationData = rq.customer_concentration.total_customers > 0;
         const hasContractData = rq.contract_quality.msa_pct > 0 || rq.contract_quality.sow_pct > 0 || rq.contract_quality.t_and_m_pct > 0;
         const placeholderStyle: React.CSSProperties = { fontSize: 14, color: COLORS.textDim, fontStyle: "italic", padding: "8px 0" };
@@ -1988,12 +1989,12 @@ function QofETab() {
                     <div>
                       <div style={{ fontSize: 14, color: COLORS.textDim }}>Recurring</div>
                       <div style={{ fontSize: 20, fontWeight: 700, color: COLORS.green, fontFamily: "'IBM Plex Mono',monospace" }}>{rq.revenue_mix.recurring_pct}%</div>
-                      <div style={{ fontSize: 13, color: COLORS.textMuted }}>Managed ${rq.revenue_mix.managed_services_M}M · Per-FTE ${rq.revenue_mix.per_fte_M}M · Per-Txn ${rq.revenue_mix.per_transaction_M}M</div>
+                      <div style={{ fontSize: 13, color: COLORS.textMuted }}>{[rq.revenue_mix.consulting_tm_M > 0 && `T&M $${rq.revenue_mix.consulting_tm_M}M`, rq.revenue_mix.managed_services_M > 0 && `Managed $${rq.revenue_mix.managed_services_M}M`, rq.revenue_mix.per_fte_M > 0 && `Per-FTE $${rq.revenue_mix.per_fte_M}M`, rq.revenue_mix.per_transaction_M > 0 && `Per-Txn $${rq.revenue_mix.per_transaction_M}M`].filter(Boolean).join(" · ")}</div>
                     </div>
                     <div>
                       <div style={{ fontSize: 14, color: COLORS.textDim }}>Non-Recurring</div>
                       <div style={{ fontSize: 20, fontWeight: 700, color: COLORS.accent, fontFamily: "'IBM Plex Mono',monospace" }}>{rq.revenue_mix.non_recurring_pct}%</div>
-                      <div style={{ fontSize: 13, color: COLORS.textMuted }}>Advisory & Consulting ${rq.revenue_mix.advisory_consulting_M}M</div>
+                      <div style={{ fontSize: 13, color: COLORS.textMuted }}>{rq.revenue_mix.fixed_fee_M > 0 ? `Fixed Fee $${rq.revenue_mix.fixed_fee_M}M` : "—"}</div>
                     </div>
                   </div>
                   {/* Legend */}

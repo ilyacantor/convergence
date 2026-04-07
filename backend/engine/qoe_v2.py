@@ -12,6 +12,7 @@ All data sourced from convergence_triples in PG — no JSON files.
 
 from backend.core.db import get_connection
 from backend.engine.ebitda_bridge_v2 import EBITDABridgeV2
+from backend.engine.cross_sell_v2 import CrossSellEngineV2
 from backend.utils.log_utils import get_logger
 
 logger = get_logger(__name__)
@@ -23,6 +24,9 @@ _ALL_PERIODS = [
 
 # 2025 quarters for annual revenue
 _ANNUAL_PERIODS = ["2025-Q1", "2025-Q2", "2025-Q3", "2025-Q4"]
+
+# Current year for tenure calculations
+_CURRENT_YEAR = 2026
 
 
 def _to_float(value) -> float:
@@ -141,6 +145,237 @@ class QualityOfEarningsV2:
 
         return trend
 
+    def _get_all_customer_data(self, entity_id: str) -> list[dict]:
+        """Get all customer.* triples for an entity, grouped by concept.
+
+        Queries customer.% NOT LIKE customer.%.% to get top-level customer
+        concepts only (not customer_service subcategories).
+
+        Returns list of dicts, each with properties for one customer:
+        {"concept": str, "revenue": float, "industry": str, ...}
+        """
+        sql = f"""
+            SELECT DISTINCT ON (concept, property)
+                   concept, property, value
+            FROM convergence_triples
+            WHERE tenant_id = %s AND {self._run_clause}
+              AND concept LIKE 'customer.%%'
+              AND concept NOT LIKE 'customer.%%.%%'
+              AND entity_id = %s
+            ORDER BY concept, property, created_at DESC
+        """
+        rows = self._query(sql, [self.tenant_id, *self._run_params, entity_id])
+
+        customers: dict[str, dict] = {}
+        for row in rows:
+            concept = row["concept"]
+            if concept not in customers:
+                customers[concept] = {"concept": concept}
+            customers[concept][row["property"]] = row["value"]
+
+        return list(customers.values())
+
+    def _get_customer_service_data(self, entity_id: str) -> list[dict]:
+        """Get customer_service.* triples for engagement data.
+
+        Returns list of dicts with per-engagement properties:
+        {"concept": str, "engagement_start_year": float, "contract_type": str, ...}
+        """
+        sql = f"""
+            SELECT DISTINCT ON (concept, property)
+                   concept, property, value
+            FROM convergence_triples
+            WHERE tenant_id = %s AND {self._run_clause}
+              AND concept LIKE 'customer_service.%%'
+              AND entity_id = %s
+            ORDER BY concept, property, created_at DESC
+        """
+        rows = self._query(sql, [self.tenant_id, *self._run_params, entity_id])
+
+        engagements: dict[str, dict] = {}
+        for row in rows:
+            concept = row["concept"]
+            if concept not in engagements:
+                engagements[concept] = {"concept": concept}
+            engagements[concept][row["property"]] = row["value"]
+
+        return list(engagements.values())
+
+    def _compute_full_revenue_quality(
+        self,
+        entity_id: str,
+        revenue_streams: list[dict],
+        total_revenue: float,
+        *,
+        customers: list[dict] | None = None,
+        cs_engagements: list[dict] | None = None,
+    ) -> dict:
+        """Compute the full revenue_quality shape matching the frontend QofEData type.
+
+        Computes customer concentration, contract quality, revenue mix,
+        cohort retention, and cross-sell penetration from convergence_triples.
+
+        Pass pre-computed customers/cs_engagements to override the default
+        single-entity query (used by the combined summary to merge both entities).
+        """
+        if customers is None:
+            customers = self._get_all_customer_data(entity_id)
+        if cs_engagements is None:
+            cs_engagements = self._get_customer_service_data(entity_id)
+
+        # ── Customer Concentration ──
+        revenues = sorted(
+            [
+                float(c["revenue"])
+                for c in customers
+                if c.get("revenue") is not None and float(c["revenue"]) > 0
+            ],
+            reverse=True,
+        )
+        total_cust_rev = sum(revenues)
+        top_10_rev = sum(revenues[:10])
+        top_20_rev = sum(revenues[:20])
+        top_50_rev = sum(revenues[:50])
+        top_10_pct = (top_10_rev / total_cust_rev * 100) if total_cust_rev > 0 else 0
+        top_20_pct = (top_20_rev / total_cust_rev * 100) if total_cust_rev > 0 else 0
+        top_50_pct = (top_50_rev / total_cust_rev * 100) if total_cust_rev > 0 else 0
+
+        # HHI: sum of squared market shares (each share as a percentage)
+        shares = [(r / total_cust_rev * 100) for r in revenues] if total_cust_rev > 0 else []
+        hhi = sum(s * s for s in shares)
+
+        # Concentration threshold alerts
+        threshold_alerts = []
+        for c in customers:
+            rev = float(c.get("revenue", 0)) if c.get("revenue") is not None else 0
+            if total_cust_rev > 0 and rev > 0:
+                pct = rev / total_cust_rev * 100
+                # Extract customer name from concept (customer.{name})
+                cust_name = c["concept"].split(".", 1)[1] if "." in c["concept"] else c["concept"]
+                if pct >= 10:
+                    threshold_alerts.append({"customer": cust_name, "pct": round(pct, 2), "threshold": "10%"})
+                elif pct >= 5:
+                    threshold_alerts.append({"customer": cust_name, "pct": round(pct, 2), "threshold": "5%"})
+
+        # ── Contract Quality ──
+        # Triple data uses contract_type values: recurring, project, retainer
+        # Map to frontend categories: MSA (recurring), SOW (project), T&M (retainer)
+        _CT_MAP = {"recurring": "MSA", "project": "SOW", "retainer": "T&M"}
+        contract_counts: dict[str, int] = {"MSA": 0, "SOW": 0, "T&M": 0}
+        tenure_years_list: list[int] = []
+
+        for eng in cs_engagements:
+            raw_ct = str(eng.get("contract_type", "")) if eng.get("contract_type") is not None else ""
+            ct = _CT_MAP.get(raw_ct, raw_ct)
+            if ct in contract_counts:
+                contract_counts[ct] += 1
+            start_year = eng.get("engagement_start_year")
+            if start_year is not None:
+                try:
+                    yrs = _CURRENT_YEAR - int(float(start_year))
+                    if yrs > 0:
+                        tenure_years_list.append(yrs)
+                except (TypeError, ValueError):
+                    pass
+
+        total_contracts = sum(contract_counts.values()) or 1
+        msa_pct = contract_counts["MSA"] / total_contracts * 100
+        sow_pct = contract_counts["SOW"] / total_contracts * 100
+        t_and_m_pct = contract_counts["T&M"] / total_contracts * 100
+        avg_tenure = sum(tenure_years_list) / len(tenure_years_list) if tenure_years_list else 0
+
+        # ── Revenue Mix ──
+        # Map stream concepts to the frontend fields
+        stream_map: dict[str, float] = {}
+        for s in revenue_streams:
+            stream_map[s["concept"]] = round(float(s["total_value"]), 2)
+
+        managed_services_M = stream_map.get("revenue.managed_services", 0.0)
+        per_fte_M = stream_map.get("revenue.per_fte", 0.0)
+        per_transaction_M = stream_map.get("revenue.per_transaction", 0.0)
+        # T&M / consulting is recurring (ongoing client engagements)
+        consulting_tm_M = (
+            stream_map.get("revenue.consulting", 0.0)
+            or stream_map.get("revenue.advisory", 0.0)
+            or stream_map.get("revenue.advisory_consulting", 0.0)
+        )
+        # Fixed-fee is non-recurring (project-based)
+        fixed_fee_M = stream_map.get("revenue.fixed_fee", 0.0)
+
+        recurring_rev = consulting_tm_M + managed_services_M + per_fte_M + per_transaction_M
+        non_recurring_rev = fixed_fee_M
+        total_mix = recurring_rev + non_recurring_rev
+        recurring_pct = (recurring_rev / total_mix * 100) if total_mix > 0 else 0
+        non_recurring_pct = (non_recurring_rev / total_mix * 100) if total_mix > 0 else 0
+
+        # ── Cohort Retention ──
+        cohorts: dict[int, float] = {}
+        for c in customers:
+            rev = float(c.get("revenue", 0)) if c.get("revenue") is not None else 0
+            if rev <= 0:
+                continue
+            # Find engagement_start_year from customer_service data for this customer
+            cust_norm = c["concept"].split(".", 1)[1] if "." in c["concept"] else ""
+            # Look for customer_service.{cust_norm}.* entries
+            for eng in cs_engagements:
+                parts = eng["concept"].split(".", 2)
+                if len(parts) >= 2 and parts[1] == cust_norm:
+                    start_year = eng.get("engagement_start_year")
+                    if start_year is not None:
+                        try:
+                            yrs = _CURRENT_YEAR - int(float(start_year))
+                            if yrs > 0:
+                                cohorts.setdefault(yrs, 0)
+                                cohorts[yrs] += rev
+                        except (TypeError, ValueError):
+                            pass
+                    break  # one tenure per customer is enough
+
+        cohort_retention = [
+            {"years_as_client": yr, "total_revenue_M": round(rev, 2)}
+            for yr, rev in sorted(cohorts.items())
+        ]
+
+        # ── Cross-sell Penetration ──
+        cross_sell_engine = CrossSellEngineV2(self.tenant_id, self.pipeline_run_id)
+        cs_summary = cross_sell_engine.get_cross_sell_summary()
+        total_candidates = cs_summary["total_opportunities"]
+        total_pipeline_acv_M = round(cs_summary["total_potential_acv"], 2)
+
+        return {
+            "customer_concentration": {
+                "hhi": round(hhi, 1),
+                "top_10_pct": round(top_10_pct, 2),
+                "top_20_pct": round(top_20_pct, 2),
+                "top_50_pct": round(top_50_pct, 2),
+                "threshold_alerts": threshold_alerts[:10],
+                "total_customers": len(customers),
+            },
+            "contract_quality": {
+                "msa_pct": round(msa_pct, 1),
+                "sow_pct": round(sow_pct, 1),
+                "t_and_m_pct": round(t_and_m_pct, 1),
+                "avg_tenure_years": round(avg_tenure, 1),
+            },
+            "revenue_mix": {
+                "recurring_pct": round(recurring_pct, 1),
+                "non_recurring_pct": round(non_recurring_pct, 1),
+                "consulting_tm_M": round(consulting_tm_M, 2),
+                "managed_services_M": round(managed_services_M, 2),
+                "per_fte_M": round(per_fte_M, 2),
+                "per_transaction_M": round(per_transaction_M, 2),
+                "fixed_fee_M": round(fixed_fee_M, 2),
+            },
+            "cohort_retention": cohort_retention,
+            "cross_sell_penetration": {
+                "total_candidates": total_candidates,
+                "total_pipeline_acv_M": total_pipeline_acv_M,
+                "converted_count": 0,
+                "converted_acv_M": 0,
+                "conversion_rate_pct": 0,
+            },
+        }
+
     def get_qoe_summary(self, entity_id: str) -> dict:
         """QoE summary for one entity (fetches its own bridge)."""
         bridge = self._bridge_engine.get_bridge(entity_id)
@@ -182,6 +417,14 @@ class QualityOfEarningsV2:
         for item in by_stream:
             item["pct"] = round(item["value"] / total_revenue * 100, 2) if total_revenue != 0 else 0.0
 
+        # Full revenue quality with concentration, contract, mix, cohort, cross-sell
+        full_revenue_quality = self._compute_full_revenue_quality(
+            entity_id, streams, total_revenue
+        )
+        # Preserve total_revenue and by_stream for backward compatibility
+        full_revenue_quality["total_revenue"] = total_revenue
+        full_revenue_quality["by_stream"] = by_stream
+
         margin_trend = self._get_margin_trend(entity_id)
         risk_factors = self._compute_risk_factors(bridge, adjustment_pct, margin_trend)
         adjustment_lifecycle = self._build_adjustment_lifecycle(bridge)
@@ -195,10 +438,7 @@ class QualityOfEarningsV2:
             "adjusted_ebitda": adjusted,
             "adjustment_pct": adjustment_pct,
             "confidence_weighted_ebitda": confidence_weighted_ebitda,
-            "revenue_quality": {
-                "total_revenue": total_revenue,
-                "by_stream": by_stream,
-            },
+            "revenue_quality": full_revenue_quality,
             "margin_trend": margin_trend,
             "risk_factors": risk_factors,
             "adjustment_lifecycle": adjustment_lifecycle,
@@ -409,12 +649,45 @@ class QualityOfEarningsV2:
             bridge, combined_trend
         )
 
+        # Combined revenue quality: merge streams from both entities, use all
+        # customer data from both entities for concentration/contract analysis
+        streams_a = self._get_revenue_streams(entity_a)
+        streams_b = self._get_revenue_streams(entity_b)
+        total_rev_a = sum(
+            float(s["total_value"]) for s in streams_a if s["concept"] == "revenue.total"
+        )
+        total_rev_b = sum(
+            float(s["total_value"]) for s in streams_b if s["concept"] == "revenue.total"
+        )
+        combined_total_revenue = total_rev_a + total_rev_b
+
+        # Merge revenue streams (sum values for same concepts)
+        stream_merge: dict[str, float] = {}
+        for s in streams_a + streams_b:
+            concept = s["concept"]
+            stream_merge[concept] = stream_merge.get(concept, 0) + float(s["total_value"])
+        merged_streams = [
+            {"concept": c, "total_value": v} for c, v in stream_merge.items()
+        ]
+
+        # Merge customers from both entities for combined concentration analysis
+        customers_a = self._get_all_customer_data(entity_a)
+        customers_b = self._get_all_customer_data(entity_b)
+        cs_engagements_a = self._get_customer_service_data(entity_a)
+        cs_engagements_b = self._get_customer_service_data(entity_b)
+        combined_revenue_quality = self._compute_full_revenue_quality(
+            entity_a, merged_streams, combined_total_revenue,
+            customers=customers_a + customers_b,
+            cs_engagements=cs_engagements_a + cs_engagements_b,
+        )
+
         return {
             "entity_id": "combined",
             "reported_ebitda": reported,
             "adjusted_ebitda": adjusted,
             "adjustment_pct": adjustment_pct,
             "confidence_weighted_ebitda": confidence_weighted_ebitda,
+            "revenue_quality": combined_revenue_quality,
             "margin_trend": combined_trend,
             "risk_factors": risk_factors,
             "adjustment_lifecycle": adjustment_lifecycle,
