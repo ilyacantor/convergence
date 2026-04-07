@@ -3794,6 +3794,33 @@ concepts:
       cto: 1.0
       cfo: 0.5
 
+  - id: event_stream
+    concept_id: IT-012
+    name: Event Stream Metrics
+    description: "Streaming infrastructure throughput, lag, and capacity"
+    domain: it_infra
+    cluster: Infra
+    example_fields:
+      - message_throughput
+      - consumer_lag
+      - topic_count
+      - partition_count
+      - event_volume
+      - producer_rate
+      - consumer_rate
+      - retention_hours
+    aliases:
+      - streaming_metrics
+      - kafka_metrics
+      - event_bus_metrics
+      - message_bus
+    expected_type: float
+    typical_source_systems: [confluent, kafka, eventbridge, rabbitmq, pulsar, azure_event_hubs]
+    persona_relevance:
+      cto: 1.0
+      coo: 0.6
+      cfo: 0.4
+
   - id: operations
     concept_id: OPS-101
     name: Operations
