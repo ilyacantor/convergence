@@ -112,6 +112,7 @@ interface MaestraEngagement {
 
 interface MergeData {
   engagement_id: string | null;
+  run_name: string | null;
   source_run_tag: string | Record<string, string> | null;
   acquirer: EntityInfo;
   target: EntityInfo;
@@ -193,7 +194,7 @@ export function MergePanel() {
           const elapsed = Math.floor((Date.now() - mergeStartRef.current) / 1000);
           setMergeElapsed(elapsed);
           if (elapsed >= 60) {
-            setMergeStatus('Writing mapping results to DCL...');
+            setMergeStatus('Writing mapping results to Convergence...');
           } else if (elapsed >= 30) {
             setMergeStatus('Mapping accounts and identifying conflicts...');
           } else if (elapsed >= 10) {
@@ -307,7 +308,7 @@ export function MergePanel() {
         body: JSON.stringify({
           session_id: `merge-${selectedEngagementId}`,
           engagement_id: selectedEngagementId,
-          message: 'Run COFA unification — map all chart-of-accounts entries, identify conflicts, and write results to DCL.',
+          message: 'Run COFA unification — map all chart-of-accounts entries, identify conflicts, and write results to Convergence.',
         }),
       });
 
@@ -337,7 +338,7 @@ export function MergePanel() {
     }
 
     // Step 2: Poll for results (max 120s — Maestra LLM + write should complete within this)
-    setMergeStatus('Waiting for DCL to receive mapping triples...');
+    setMergeStatus('Waiting for Convergence to receive mapping triples...');
     const POLL_TIMEOUT_MS = 120_000;
     const pollForResults = () => {
       pollRef.current = setTimeout(async () => {
@@ -376,7 +377,7 @@ export function MergePanel() {
             return;
           }
 
-          setMergeStatus(`Waiting for DCL to receive mapping triples... (${Math.floor(elapsed / 1000)}s)`);
+          setMergeStatus(`Waiting for Convergence to receive mapping triples... (${Math.floor(elapsed / 1000)}s)`);
         } catch {
           if (pollRef.current) clearTimeout(pollRef.current);
           setMergeError('Lost connection while waiting for results. Check services and try again.');
@@ -697,9 +698,9 @@ export function MergePanel() {
             ) : (
               <span className="text-xs text-muted-foreground">Loading engagements...</span>
             )}
-            {getRunTag() && (
+            {(data?.run_name || getRunTag()) && (
               <span className="text-xs font-mono font-semibold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded shrink-0">
-                {getRunTag()}
+                {data?.run_name || getRunTag()}
               </span>
             )}
             {mergeFinishedIn !== null && !mergeRunning && (

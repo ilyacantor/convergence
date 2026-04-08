@@ -215,6 +215,25 @@ def merge_overview(
             else:
                 source_run_tag = None
 
+            # --- Run name (human-readable, from tenant pointer table) ---
+            # convergence_tenant_runs is keyed by tenant_id. Resolve tenant
+            # from the entity triples we already know exist, then PK lookup.
+            cur.execute(
+                "SELECT tenant_id FROM convergence_triples "
+                "WHERE is_active = true AND entity_id = %s LIMIT 1",
+                (acq_id,),
+            )
+            _tid_row = cur.fetchone()
+            run_name = None
+            if _tid_row:
+                cur.execute(
+                    "SELECT current_snapshot_name FROM convergence_tenant_runs "
+                    "WHERE tenant_id = %s",
+                    (str(_tid_row[0]),),
+                )
+                _rn_row = cur.fetchone()
+                run_name = _rn_row[0] if _rn_row else None
+
             # --- Section 1: Overview stats ---
             # Count both coa (source accounts) and cofa-prefixed (mapping results) triples.
             cur.execute(
@@ -564,6 +583,7 @@ def merge_overview(
 
     return {
         "engagement_id": eng_id,
+        "run_name": run_name,
         "source_run_tag": source_run_tag,
         "acquirer": {"entity_id": acq_id, "display_name": _entity_display_name(acq_id)},
         "target": {"entity_id": tgt_id, "display_name": _entity_display_name(tgt_id)},
