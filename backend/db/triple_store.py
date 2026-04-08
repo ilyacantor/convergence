@@ -629,3 +629,84 @@ class TripleStore:
                 cur.execute(sql, (run_id,))
                 conn.commit()
                 return cur.rowcount
+
+    def get_coa_accounts(self, tenant_id: str, entity_id: str) -> list[dict]:
+        """Return CoA accounts for an entity within the tenant's current run.
+
+        Each row is {account_number, account_name}, sorted by account_number.
+        Empty list when the entity has no coa.* triples in the current run.
+
+        Pulls one triple per (entity_id, concept) — concept format is
+        coa.{account_number} and the account_name is in the property column.
+        """
+        if not tenant_id:
+            raise ValueError("get_coa_accounts requires tenant_id")
+        if not entity_id:
+            raise ValueError("get_coa_accounts requires entity_id")
+
+        sql = (
+            "SELECT split_part(concept, '.', 2) AS account_number, value AS account_name "
+            "FROM convergence_triples "
+            "WHERE tenant_id = %s "
+            "  AND run_id = (SELECT current_run_id FROM convergence_tenant_runs WHERE tenant_id = %s) "
+            "  AND entity_id = %s "
+            "  AND concept LIKE 'coa.%%' "
+            "  AND property = 'account_name' "
+            "ORDER BY split_part(concept, '.', 2)"
+        )
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql, (tenant_id, tenant_id, entity_id))
+                rows = cur.fetchall()
+        # value column is jsonb — strip surrounding quotes if present.
+        accounts = []
+        for r in rows:
+            num = r[0]
+            name = r[1]
+            if isinstance(name, str) and len(name) > 2 and name.startswith('"') and name.endswith('"'):
+                name = name[1:-1]
+            accounts.append({"account_number": num, "account_name": name})
+        return accounts
+
+    def get_tenant_run_state(self, tenant_id: str) -> dict | None:
+        """Return run-state row for a tenant from convergence_tenant_runs.
+
+        Returns None if no row exists. Caller decides whether to 404.
+        """
+        if not tenant_id:
+            raise ValueError("get_tenant_run_state requires tenant_id")
+        sql = (
+            "SELECT tenant_id, current_run_id, previous_run_id, "
+            "       current_snapshot_name, previous_snapshot_name, updated_at "
+            "FROM convergence_tenant_runs "
+            "WHERE tenant_id = %s"
+        )
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql, (tenant_id,))
+                row = cur.fetchone()
+                if row is None:
+                    return None
+                columns = [desc[0] for desc in cur.description]
+                return dict(zip(columns, row))
+
+    def get_active_tenant_run_state(self) -> dict | None:
+        """Return the most recently updated row from convergence_tenant_runs.
+
+        Replaces the SQL fallback in Maestra's _resolve_tenant_id().
+        Returns None if the table is empty.
+        """
+        sql = (
+            "SELECT tenant_id, current_run_id, previous_run_id, "
+            "       current_snapshot_name, previous_snapshot_name, updated_at "
+            "FROM convergence_tenant_runs "
+            "ORDER BY updated_at DESC LIMIT 1"
+        )
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql)
+                row = cur.fetchone()
+                if row is None:
+                    return None
+                columns = [desc[0] for desc in cur.description]
+                return dict(zip(columns, row))

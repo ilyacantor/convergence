@@ -10,13 +10,15 @@ import os
 import httpx
 from fastapi import APIRouter, HTTPException, Query, Request
 
+from backend.api.clients import maestra_client
 from backend.db.triple_store import TripleStore
 from backend.engine.engagement import get_active_engagement
 from backend.utils.log_utils import get_logger
 
 logger = get_logger(__name__)
 
-PLATFORM_URL = "http://localhost:8006"
+# Kept for the cofa-chat proxy below — engagement reads use maestra_client.
+PLATFORM_URL = maestra_client.PLATFORM_URL
 
 router = APIRouter(prefix="/api/convergence", tags=["engagement"])
 
@@ -69,18 +71,49 @@ async def get_engagement_by_id(engagement_id: str):
 async def list_engagements():
     """List engagements with identity fields. ORDER BY created_at DESC.
 
-    Returns engagement_id, engagement_short_name, entity_pair, status, created_at.
-    Enriches Platform data with engagement config.
+    Returns a flat array (legacy contract — frontend depends on it).
+    Internally calls Maestra with required tenant_id and unwraps the
+    {tenant_id, engagements[], count} response.
+
+    Resolves tenant_id from convergence_tenant_runs.  If no row exists,
+    returns an empty list — there is no active dataset to enrich.
     """
+    tenant_id = _triple_store.get_active_tenant_id()
+    if not tenant_id:
+        # No tenant_runs row → no live data → empty list (no fake fallback,
+        # no demo data, no error: there's just nothing to show yet).
+        return []
+
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.get(f"{PLATFORM_URL}/api/maestra/engagements")
-            resp.raise_for_status()
-    except httpx.HTTPError as e:
+        wrapped = await maestra_client.get_engagements(tenant_id)
+    except httpx.HTTPStatusError as exc:
         raise HTTPException(
             status_code=502,
-            detail=f"Cannot reach Platform at {PLATFORM_URL}/api/maestra/engagements — {e}",
+            detail=(
+                f"Maestra returned {exc.response.status_code} for "
+                f"GET /api/maestra/engagements?tenant_id={tenant_id} — "
+                f"{exc.response.text}"
+            ),
         )
+    except httpx.TimeoutException as exc:
+        raise HTTPException(
+            status_code=504,
+            detail=(
+                f"Maestra timed out at {maestra_client.PLATFORM_URL}/api/maestra/engagements "
+                f"(tenant_id={tenant_id}) — {exc}"
+            ),
+        )
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                f"Cannot reach Maestra at {maestra_client.PLATFORM_URL}/api/maestra/engagements "
+                f"(tenant_id={tenant_id}) — {exc}"
+            ),
+        )
+
+    # Unwrap wrapped response → flat array (frontend contract).
+    items = wrapped.get("engagements", [])
 
     # Enrich with engagement config for short_name and entity roles
     eng = get_active_engagement()
@@ -91,7 +124,7 @@ async def list_engagements():
     acquirer_id, target_id = _resolve_entity_roles(eng)
 
     engagements = []
-    for item in resp.json():
+    for item in items:
         engagements.append({
             "engagement_id": item["engagement_id"],
             "engagement_short_name": short_name,

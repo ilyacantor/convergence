@@ -18,9 +18,11 @@ test.describe('MergePanel', () => {
     const targetLabel = page.locator('text=Target').first();
     await expect(targetLabel).toBeVisible();
 
-    // Entity display names from the merge overview
-    await expect(page.locator('text=Meridian')).toBeVisible();
-    await expect(page.locator('text=Cascadia')).toBeVisible();
+    // Entity display names from the merge overview.
+    // Use exact match because the run_name badge (e.g. me-meridian-cascadia-d14f)
+    // also contains "meridian"/"cascadia" and would otherwise match.
+    await expect(page.getByText('Meridian', { exact: true })).toBeVisible();
+    await expect(page.getByText('Cascadia', { exact: true })).toBeVisible();
   });
 
   test('shows triple counts for both entities', async ({ page }) => {
@@ -61,12 +63,24 @@ test.describe('MergePanel', () => {
     await expect(page.locator('th', { hasText: 'Annual Impact' })).toBeVisible();
   });
 
-  test('engagement error shows Platform auth requirement', async ({ page }) => {
-    // Platform requires authentication — MergePanel should surface this clearly
+  test('engagements load from Platform via HTTP contract', async ({ page }) => {
+    // After Maestra↔Convergence HTTP migration, Platform's engagements
+    // endpoint is reachable from Convergence. The MergePanel must populate
+    // its dropdown and not surface an engagement error.
     await expect(page.locator('h2', { hasText: 'COFA Merge' })).toBeVisible({ timeout: 15_000 });
 
-    // Should show "No engagements" with a clear error about Platform auth
-    await expect(page.locator('text=No engagements')).toBeVisible({ timeout: 10_000 });
+    // Wait for the engagements API call to complete with 200.
+    await page.waitForResponse(resp =>
+      resp.url().includes('/api/convergence/engagements') && resp.status() === 200,
+      { timeout: 15_000 }
+    );
+
+    // No "No engagements" error message should be visible.
+    await expect(page.locator('text=No engagements')).not.toBeVisible();
+
+    // Engagement dropdown should be populated (at least one option).
+    const dropdown = page.locator('select').first();
+    await expect(dropdown).toBeVisible();
   });
 
   test('no "not found" or error state visible', async ({ page }) => {

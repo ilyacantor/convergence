@@ -7,15 +7,20 @@ GET /api/convergence/merge/overview  — COFA triples for acquirer vs target
 from datetime import datetime
 from decimal import Decimal
 
+import httpx
 from fastapi import APIRouter, HTTPException, Query
 from typing import Optional
 
+from backend.api.clients import maestra_client
 from backend.core.db import get_connection
+from backend.db.triple_store import TripleStore
 from backend.utils.log_utils import get_logger
 
 logger = get_logger(__name__)
 
 router = APIRouter(tags=["Merge Overview"])
+
+_triple_store = TripleStore()
 
 
 def _entity_display_name(entity_id: str) -> str:
@@ -73,16 +78,75 @@ def _get_cofa_entity_ids(cur) -> list[str]:
     return [r[0] for r in cur.fetchall()]
 
 
-def _resolve_entities(cur, acquirer_id: Optional[str], target_id: Optional[str]) -> tuple[str, str, Optional[str]]:
+async def _fetch_engagement_from_maestra(
+    tenant_id: Optional[str],
+) -> tuple[Optional[str], Optional[str], Optional[str]]:
+    """Fetch active engagement (engagement_id, entity_a_id, entity_b_id) from Maestra.
+
+    Returns (None, None, None) when:
+      - tenant_id is unknown (no convergence_tenant_runs row yet)
+      - Maestra has no active engagement for this tenant (404)
+
+    Raises HTTPException(502) when Maestra is unreachable — no silent fallback.
+    """
+    if not tenant_id:
+        return (None, None, None)
+
+    try:
+        eng = await maestra_client.get_active_engagement(tenant_id)
+    except httpx.HTTPStatusError as exc:
+        # 404 = no active engagement (valid empty state, not an error)
+        if exc.response.status_code == 404:
+            return (None, None, None)
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                f"Maestra returned {exc.response.status_code} for "
+                f"GET /api/maestra/engagements/active?tenant_id={tenant_id} — "
+                f"merge overview cannot resolve engagement. {exc.response.text}"
+            ),
+        )
+    except httpx.TimeoutException as exc:
+        raise HTTPException(
+            status_code=504,
+            detail=(
+                f"Maestra timed out at {maestra_client.PLATFORM_URL} for "
+                f"engagement lookup (tenant_id={tenant_id}) — {exc}"
+            ),
+        )
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                f"Cannot reach Maestra at {maestra_client.PLATFORM_URL} for "
+                f"engagement lookup (tenant_id={tenant_id}) — {exc}"
+            ),
+        )
+
+    return (
+        eng.get("engagement_id"),
+        eng.get("entity_a_id"),
+        eng.get("entity_b_id"),
+    )
+
+
+def _resolve_entities(
+    cur,
+    acquirer_id: Optional[str],
+    target_id: Optional[str],
+    eng_id: Optional[str],
+    engagement_a: Optional[str],
+    engagement_b: Optional[str],
+) -> tuple[str, str, Optional[str]]:
     """Resolve acquirer and target entity IDs plus engagement_id.
 
     Priority:
     1. Explicit query params (validated against triple store)
-    2. engagement_state table, mapped to actual COFA entity_ids
+    2. Engagement from Maestra (passed in by caller), mapped to COFA entity_ids
     3. Distinct entities from COFA triples (alphabetical)
 
     Returns (acquirer_id, target_id, engagement_id).
-    engagement_id is None when entities were resolved without engagement_state.
+    engagement_id is None when entities were resolved without an engagement.
 
     Raises HTTPException if fewer than 2 entities have COFA triples.
     """
@@ -97,26 +161,6 @@ def _resolve_entities(cur, acquirer_id: Optional[str], target_id: Optional[str])
                 f"Ingest COFA data for both entities first, or set an engagement via the engagement API."
             ),
         )
-
-    # Look up engagement_state — prefer active engagement, then most recent
-    eng_id, engagement_a, engagement_b = None, None, None
-    try:
-        cur.execute(
-            "SELECT engagement_id, entity_a_id, entity_b_id FROM engagement_state "
-            "WHERE status = 'active' "
-            "ORDER BY created_at DESC LIMIT 1"
-        )
-        row = cur.fetchone()
-        if not row:
-            cur.execute(
-                "SELECT engagement_id, entity_a_id, entity_b_id FROM engagement_state "
-                "ORDER BY created_at DESC LIMIT 1"
-            )
-            row = cur.fetchone()
-        if row and row[1] and row[2]:
-            eng_id, engagement_a, engagement_b = row[0], row[1], row[2]
-    except Exception as e:
-        logger.debug(f"[merge] engagement_state lookup failed (non-fatal): {e}")
 
     # 1. Explicit params — validate they exist in triple store
     if acquirer_id and target_id:
@@ -151,20 +195,20 @@ def _resolve_entities(cur, acquirer_id: Optional[str], target_id: Optional[str])
 
         # Engagement IDs don't match triple store — log clearly and fall through
         logger.warning(
-            f"[merge] engagement_state entity IDs ('{engagement_a}', '{engagement_b}') "
+            f"[merge] Maestra engagement entity IDs ('{engagement_a}', '{engagement_b}') "
             f"do not match any COFA entity_ids in the triple store: {cofa_entities}. "
             f"Falling through to COFA entity discovery. "
             f"Fix: ensure engagement entity IDs match the entity_id values used during Farm ingestion."
         )
 
-    # 2.5. File-based engagement config — authoritative when no DB engagement exists
+    # 2.5. File-based engagement config — authoritative when Maestra has none
     try:
         from backend.engine.engagement import get_active_engagement
         file_eng = get_active_engagement()
         a_id, b_id = file_eng.entity_a.id, file_eng.entity_b.id
         if a_id in cofa_entities and b_id in cofa_entities:
             logger.info(
-                f"[merge] No engagement_state row — using file config: "
+                f"[merge] No Maestra engagement — using file config: "
                 f"engagement_id={file_eng.engagement_id}, "
                 f"acquirer={a_id}, target={b_id}"
             )
@@ -181,15 +225,23 @@ def _resolve_entities(cur, acquirer_id: Optional[str], target_id: Optional[str])
 # ---------------------------------------------------------------------------
 
 @router.get("/api/convergence/merge/overview")
-def merge_overview(
+async def merge_overview(
     acquirer_id: Optional[str] = Query(None),
     target_id: Optional[str] = Query(None),
 ):
     """COFA merge overview — side-by-side comparison of two entities."""
+    # Resolve tenant_id from convergence_tenant_runs, then ask Maestra
+    # for the active engagement.  Engagement state lives in Maestra now —
+    # we never query engagement_state directly.
+    tenant_id = _triple_store.get_active_tenant_id()
+    eng_id, engagement_a, engagement_b = await _fetch_engagement_from_maestra(tenant_id)
+
     with get_connection() as conn:
         with conn.cursor() as cur:
             # --- Entity resolution ---
-            acq_id, tgt_id, eng_id = _resolve_entities(cur, acquirer_id, target_id)
+            acq_id, tgt_id, eng_id = _resolve_entities(
+                cur, acquirer_id, target_id, eng_id, engagement_a, engagement_b,
+            )
 
             # --- Source run tag (provenance from upstream system) ---
             cur.execute(

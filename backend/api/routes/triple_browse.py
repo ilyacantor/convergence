@@ -147,6 +147,7 @@ class BrowseBatchRequest(BaseModel):
     domains: list[str]
     entity_ids: Optional[list[str]] = None
     period: Optional[str] = None
+    per_domain_limit: Optional[int] = None
 
 
 @router.post("/browse-batch")
@@ -158,6 +159,10 @@ async def browse_triples_batch(
     """Batch browse convergence triples by domain list.
 
     Response schema matches DCL's POST /api/dcl/triples/browse-batch exactly.
+
+    When ``per_domain_limit`` is set, each domain returns at most that many
+    rows ordered by period DESC (most recent first). Without a limit the full
+    result set is returned, which can be expensive for large tenants.
     """
     base_clause, base_params = _run_id_clause(tenant_id, pipeline_run_id)
 
@@ -181,11 +186,20 @@ async def browse_triples_batch(
                         params.append(body.period)
 
                     where = " AND ".join(clauses)
-                    sql = (
-                        f"SELECT DISTINCT ON (entity_id, concept, property, period) * "
-                        f"FROM convergence_triples WHERE {where} "
-                        f"ORDER BY entity_id, concept, property, period, created_at DESC"
-                    )
+                    if body.per_domain_limit is not None:
+                        sql = (
+                            f"SELECT DISTINCT ON (entity_id, concept, property, period) * "
+                            f"FROM convergence_triples WHERE {where} "
+                            f"ORDER BY entity_id, concept, property, period, period DESC, created_at DESC "
+                            f"LIMIT %s"
+                        )
+                        params = params + [body.per_domain_limit]
+                    else:
+                        sql = (
+                            f"SELECT DISTINCT ON (entity_id, concept, property, period) * "
+                            f"FROM convergence_triples WHERE {where} "
+                            f"ORDER BY entity_id, concept, property, period, created_at DESC"
+                        )
                     cur.execute(sql, params)
                     columns = [desc[0] for desc in cur.description]
                     rows = [
@@ -286,7 +300,7 @@ async def triples_overview(
 
                 # Last ingest from convergence_ingest_log
                 cur.execute(
-                    "SELECT id, created_at, triples_written FROM convergence_ingest_log "
+                    "SELECT run_id, created_at, triples_written FROM convergence_ingest_log "
                     "WHERE tenant_id = %s ORDER BY created_at DESC LIMIT 1",
                     [tenant_id],
                 )
@@ -294,7 +308,7 @@ async def triples_overview(
                 last_ingest = None
                 if ingest_row:
                     last_ingest = {
-                        "dcl_ingest_id": _serialize_value(ingest_row[0]),
+                        "convergence_ingest_id": _serialize_value(ingest_row[0]),
                         "timestamp": _serialize_value(ingest_row[1]),
                         "triple_count": ingest_row[2],
                     }

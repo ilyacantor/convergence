@@ -221,9 +221,11 @@ test.describe('Reports Portal — Entity Switching (B17 Gate)', () => {
   });
 
   test('switching from Combined to Target reloads P&L data', async ({ page }) => {
-    // Start on P&L with Combined (default)
+    // Start on P&L with Combined (default) — use the same wait pattern as the
+    // Combined Entity Tabs describe block: wait for Loading Income to clear.
     await page.getByRole('button', { name: 'P&L' }).click();
-    await expect(page.locator('text=Revenue').first()).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator('text=/Loading Income/i')).not.toBeVisible({ timeout: 30_000 });
+    await expect(page.locator('text=Revenue').first()).toBeVisible({ timeout: 10_000 });
 
     // Switch to Target
     await page.getByRole('button', { name: 'Target' }).click();

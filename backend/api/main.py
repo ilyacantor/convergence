@@ -44,6 +44,8 @@ from backend.api.routes.ingest_triples import router as ingest_triples_router
 from backend.api.routes.verify import router as verify_router
 from backend.api.routes.triple_browse import router as triple_browse_router
 from backend.api.routes.semantic_catalog import router as semantic_catalog_router
+from backend.api.routes.coa_accounts import router as coa_accounts_router
+from backend.api.routes.tenants import router as tenants_router
 
 logger = get_logger(__name__)
 
@@ -57,10 +59,38 @@ CORS_ORIGINS = [
 ]
 
 
+def _log_startup_targets() -> None:
+    """Log resolved DB target and HTTP partner URLs at startup.
+
+    Makes "wrong DB" or "wrong port" failures trivial to spot in logs.
+    Masks credentials from DATABASE_URL.
+    """
+    from urllib.parse import urlparse
+
+    db_url = os.environ.get("DATABASE_URL", "")
+    if db_url:
+        try:
+            parsed = urlparse(db_url)
+            user = parsed.username or "unknown"
+            host = parsed.hostname or "unknown"
+            port = parsed.port or 5432
+            db = parsed.path.lstrip("/") if parsed.path else "unknown"
+            db_target = f"postgresql://{user}@{host}:{port}/{db}"
+        except Exception:
+            db_target = "(failed to parse DATABASE_URL)"
+    else:
+        db_target = "(DATABASE_URL not set)"
+
+    from backend.api.clients.maestra_client import PLATFORM_URL
+    logger.info(f"[startup] DB target: {db_target}")
+    logger.info(f"[startup] HTTP partners: maestra={PLATFORM_URL}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup and shutdown lifecycle for Convergence."""
     logger.info("=== Convergence (ME) Starting ===")
+    _log_startup_targets()
 
     # Run migration assertions (verify tables exist, no schema creation)
     try:
@@ -140,6 +170,8 @@ app.include_router(ingest_triples_router)
 app.include_router(verify_router)
 app.include_router(triple_browse_router)
 app.include_router(semantic_catalog_router)
+app.include_router(coa_accounts_router)
+app.include_router(tenants_router)
 
 
 # =============================================================================
