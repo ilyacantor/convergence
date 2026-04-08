@@ -615,7 +615,7 @@ async def execute_query(
 async def list_ingest_runs():
     """List all ingestion run receipts from convergence_ingest_log.
 
-    Response schema matches DCL's GET /api/dcl/ingest/runs.
+    Response shape mirrors DCL's ingest runs endpoint for viewer compatibility.
     """
     try:
         with get_connection() as conn:
@@ -652,7 +652,7 @@ async def list_ingest_runs():
     runs = []
     for r in rows:
         runs.append({
-            "dcl_ingest_id": str(r["id"]),
+            "convergence_ingest_id": str(r["run_id"]),
             "dispatch_id": "",
             "pipe_id": str(r["run_id"]),
             "source_system": r["source_systems"][0] if r.get("source_systems") else "unknown",
