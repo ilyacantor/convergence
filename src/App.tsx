@@ -1,5 +1,5 @@
-import React from 'react';
-import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
+import React, { useEffect } from 'react';
+import { BrowserRouter, Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
 import { MergePanel } from './components/MergePanel';
 
 const ReportPortal = React.lazy(() =>
@@ -32,9 +32,63 @@ function NavBar() {
   );
 }
 
+// ── Parent-frame bridge ────────────────────────────────────────────────
+// Listens for postMessage commands from the AOS Platform demo shell.
+// Supported actions:
+//   { action: 'reportNavigate', entity: 'combined'|'meridian'|'cascadia', tab: 'pl'|... }
+//
+// On reportNavigate we must (a) route to /reports so the ReportPortal lazy
+// component mounts, and (b) dispatch the 'aos-report-navigate' CustomEvent
+// that ReportPortal's own handler already listens for (lines ~2270-2287).
+//
+// Must live INSIDE <BrowserRouter> because useNavigate() requires router
+// context. No silent fallback — unknown actions log a warning and stop.
+function IframeMessageBridge() {
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      const data = event.data;
+      if (!data || typeof data !== 'object' || !data.action) return;
+
+      console.log('[Convergence] postMessage received:', data);
+
+      switch (data.action) {
+        case 'reportNavigate': {
+          const dispatchDetail = () => {
+            window.dispatchEvent(
+              new CustomEvent('aos-report-navigate', {
+                detail: { entity: data.entity, tab: data.tab },
+              }),
+            );
+          };
+          if (!location.pathname.startsWith('/reports')) {
+            navigate('/reports');
+            // ReportPortal is React.lazy — give it a tick to mount before
+            // firing the CustomEvent its useEffect handler listens for.
+            setTimeout(dispatchDetail, 150);
+          } else {
+            dispatchDetail();
+          }
+          break;
+        }
+        default:
+          console.warn(`[Convergence] Unknown postMessage action: ${data.action}`);
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, [navigate, location.pathname]);
+
+  return null;
+}
+
 function App() {
   return (
     <BrowserRouter>
+      <IframeMessageBridge />
       <div className="h-screen w-screen flex flex-col overflow-hidden bg-background text-foreground">
         <NavBar />
         <div className="flex-1 overflow-hidden">
