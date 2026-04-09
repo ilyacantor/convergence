@@ -149,7 +149,12 @@ class QualityOfEarningsV2:
         """Get all customer.* triples for an entity, grouped by concept.
 
         Queries customer.% NOT LIKE customer.%.% to get top-level customer
-        concepts only (not customer_service subcategories).
+        concepts only (not customer_service subcategories). Filters by
+        property whitelist to exclude domain-level KPI concepts like
+        customer.acv, customer.nps, customer.ltv_cac_ratio — these share
+        the customer.* namespace but are aggregate metrics (single property
+        like 'amount'/'rate'/'score'), not customer records. Matches the
+        filter pattern used by cross_sell_v2._get_exclusive_customer_data.
 
         Returns list of dicts, each with properties for one customer:
         {"concept": str, "revenue": float, "industry": str, ...}
@@ -162,6 +167,7 @@ class QualityOfEarningsV2:
               AND concept LIKE 'customer.%%'
               AND concept NOT LIKE 'customer.%%.%%'
               AND entity_id = %s
+              AND property IN ('revenue', 'industry', 'segment', 'size', 'avg_service_spend', 'match_confidence', 'match_type')
             ORDER BY concept, property, created_at DESC
         """
         rows = self._query(sql, [self.tenant_id, *self._run_params, entity_id])
@@ -223,13 +229,25 @@ class QualityOfEarningsV2:
         if cs_engagements is None:
             cs_engagements = self._get_customer_service_data(entity_id)
 
+        # A1: every customer must carry revenue. A missing value means Console's
+        # convergence_overlay stage did not push customer.* triples and concentration
+        # metrics would silently collapse to zero.
+        missing_revenue = [c["concept"] for c in customers if c.get("revenue") is None]
+        if missing_revenue:
+            raise ValueError(
+                f"QualityOfEarningsV2: {len(missing_revenue)} customer(s) missing "
+                f"'revenue' property for entity_id='{entity_id}', "
+                f"tenant_id='{self.tenant_id}' (e.g. {missing_revenue[:3]}). "
+                f"Verify Farm generated customer.* triples and Console's "
+                f"convergence_overlay stage pushed them into convergence_triples."
+            )
+
         # ── Customer Concentration ──
+        # Filter to customers with positive revenue for HHI calculation — zero
+        # revenue means an inactive/historical account that cannot contribute
+        # to market concentration.
         revenues = sorted(
-            [
-                float(c["revenue"])
-                for c in customers
-                if c.get("revenue") is not None and float(c["revenue"]) > 0
-            ],
+            [float(c["revenue"]) for c in customers if float(c["revenue"]) > 0],
             reverse=True,
         )
         total_cust_rev = sum(revenues)
@@ -247,7 +265,7 @@ class QualityOfEarningsV2:
         # Concentration threshold alerts
         threshold_alerts = []
         for c in customers:
-            rev = float(c.get("revenue", 0)) if c.get("revenue") is not None else 0
+            rev = float(c["revenue"])
             if total_cust_rev > 0 and rev > 0:
                 pct = rev / total_cust_rev * 100
                 # Extract customer name from concept (customer.{name})
@@ -311,7 +329,7 @@ class QualityOfEarningsV2:
         # ── Cohort Retention ──
         cohorts: dict[int, float] = {}
         for c in customers:
-            rev = float(c.get("revenue", 0)) if c.get("revenue") is not None else 0
+            rev = float(c["revenue"])
             if rev <= 0:
                 continue
             # Find engagement_start_year from customer_service data for this customer

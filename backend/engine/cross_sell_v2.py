@@ -23,16 +23,6 @@ from backend.utils.log_utils import get_logger
 logger = get_logger(__name__)
 
 
-def _safe_float(value, default: float = 0.0) -> float:
-    """Convert a JSONB value to float. Returns default for None/unconvertible."""
-    if value is None:
-        return default
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return default
-
-
 def _to_float(value, context: str = "") -> float:
     """Convert a JSONB value to float. Raises on failure — financial data must not silently become zero."""
     if value is None:
@@ -134,7 +124,7 @@ class CrossSellEngineV2:
               AND st.concept LIKE 'customer.%%'
               AND st.concept NOT LIKE 'customer.%%.%%'
               AND st.entity_id = %s
-              AND st.property IN ('revenue', 'industry', 'segment', 'size', 'match_confidence', 'avg_service_spend')
+              AND st.property IN ('revenue', 'industry', 'segment', 'size', 'avg_service_spend')
               AND NOT EXISTS (
                   SELECT 1
                   FROM convergence_triples other
@@ -157,6 +147,52 @@ class CrossSellEngineV2:
 
         return customers
 
+    @staticmethod
+    def _validate_customer_props(
+        customer_concept: str,
+        props: dict,
+        entity_id: str,
+        tenant_id: str,
+    ) -> None:
+        """
+        Ensure every customer carries the properties propensity scoring requires.
+
+        Raises ValueError with full identity context when any are absent — we refuse
+        to silently default to moderate scores (A1). A missing property here means
+        Farm's CustomerProfileTripleGenerator did not run (or did not reach
+        convergence_triples), which Console's `convergence_overlay` stage is
+        responsible for ensuring.
+        """
+        # Cross-sell operates on entity-exclusive customers (customers in one
+        # entity but not the other). match_confidence is an overlap-only
+        # property (written by Farm's OverlapTripleGenerator for shared
+        # customers) — it does NOT exist for exclusives by construction.
+        # Requiring it here would mean cross-sell can never run. Propensity
+        # scoring derives relationship_strength from `segment` instead.
+        required_numeric = ("revenue", "size")
+        required_string = ("industry", "segment")
+        missing = [
+            k for k in (*required_numeric, *required_string)
+            if props.get(k) in (None, "")
+        ]
+        if missing:
+            raise ValueError(
+                f"CrossSellEngineV2: customer '{customer_concept}' "
+                f"(entity_id='{entity_id}', tenant_id='{tenant_id}') is missing "
+                f"required scoring properties: {missing}. "
+                f"Verify Farm generated customer.* triples and Console's "
+                f"convergence_overlay stage pushed them into convergence_triples."
+            )
+        for k in required_numeric:
+            try:
+                float(props[k])
+            except (TypeError, ValueError) as e:
+                raise ValueError(
+                    f"CrossSellEngineV2: customer '{customer_concept}' "
+                    f"(entity_id='{entity_id}', tenant_id='{tenant_id}') has "
+                    f"non-numeric '{k}'={props[k]!r}: {e}"
+                )
+
     def _compute_propensity_score(
         self,
         customer_props: dict,
@@ -166,18 +202,23 @@ class CrossSellEngineV2:
         """
         Compute propensity sub-scores from customer triple properties.
 
+        Assumes customer_props has already passed _validate_customer_props.
+
         Scoring rubric:
           industry_match (0-25): Enterprise customers in services-aligned industries score higher
           size_match (0-20): Larger customers (by employee count) are better targets
           behavioral_score (0-30): Higher current engagement revenue = stronger signal
           engagement_fit (0-15): Service ACV relative to customer engagement
-          relationship_strength (0-10): Based on overlap match_confidence
+          relationship_strength (0-10): Segment-based — enterprise customers
+              have deeper, multi-stakeholder relationships that convert more
+              easily to cross-sell than SMB customers. Segment is the right
+              signal here because cross-sell targets entity-exclusive
+              customers, where match_confidence (overlap-only) does not apply.
         """
-        revenue = _safe_float(customer_props.get("revenue"), 0.0)
-        size = _safe_float(customer_props.get("size"), 0.0)
-        match_conf = _safe_float(customer_props.get("match_confidence"), 0.5)
-        segment = str(customer_props.get("segment", "")).lower()
-        industry = str(customer_props.get("industry", ""))
+        revenue = float(customer_props["revenue"])
+        size = float(customer_props["size"])
+        segment = str(customer_props["segment"]).lower()
+        industry = str(customer_props["industry"])
 
         # industry_match (0-25): known service industries score higher
         services_industries = {
@@ -188,10 +229,8 @@ class CrossSellEngineV2:
         ind_lower = industry.lower()
         if any(si in ind_lower for si in services_industries):
             industry_match = 20
-        elif industry:
-            industry_match = 12
         else:
-            industry_match = 5
+            industry_match = 12
         # Enterprise segment bonus
         if segment == "enterprise":
             industry_match = min(25, industry_match + 5)
@@ -235,8 +274,17 @@ class CrossSellEngineV2:
         if delivery_model in ("team_based", "hybrid_onshore_nearshore"):
             engagement_fit = min(15, engagement_fit + 2)
 
-        # relationship_strength (0-10): from overlap match_confidence
-        relationship_strength = round(match_conf * 10)
+        # relationship_strength (0-10): segment depth — enterprise customers
+        # have multi-stakeholder relationships (stronger cross-sell propensity)
+        # than SMB customers.
+        if segment == "enterprise":
+            relationship_strength = 10
+        elif segment == "mid-market":
+            relationship_strength = 6
+        elif segment == "smb":
+            relationship_strength = 3
+        else:
+            relationship_strength = 5
 
         total = industry_match + size_match + behavioral_score + engagement_fit + relationship_strength
 
@@ -343,20 +391,24 @@ class CrossSellEngineV2:
             svc: dict,
             customer_props: dict,
         ) -> dict:
+            self._validate_customer_props(
+                customer_concept, customer_props, opportunity_entity, self.tenant_id,
+            )
             customer_name = customer_concept.split(".", 1)[1] if "." in customer_concept else customer_concept
             service_name = svc["concept"].split(".", 1)[1] if "." in svc["concept"] else svc["concept"]
-            revenue = _safe_float(customer_props.get("revenue"), 0.0)
-            industry = str(customer_props.get("industry", ""))
-            segment = str(customer_props.get("segment", ""))
+            revenue = float(customer_props["revenue"])
+            industry = str(customer_props["industry"])
+            segment = str(customer_props["segment"])
 
             scores = self._compute_propensity_score(
                 customer_props, svc["typical_acv"], svc.get("delivery_model", ""),
             )
 
             # Estimated ACV from customer's actual spending pattern (Farm-generated),
-            # falling back to service typical ACV if not available
+            # falling back to service typical ACV if the customer has no spend history yet
+            spend_raw = customer_props.get("avg_service_spend")
             estimated_acv = round(
-                _safe_float(customer_props.get("avg_service_spend"), svc["typical_acv"]),
+                float(spend_raw) if spend_raw not in (None, "") else svc["typical_acv"],
                 2,
             )
 
@@ -391,9 +443,8 @@ class CrossSellEngineV2:
             if svc["concept"] not in a_only:
                 continue
             for customer_concept in sorted(b_exclusive):
-                customer_props = b_customers.get(customer_concept, {})
                 opportunities.append(_build_opportunity(
-                    customer_concept, entity_a, entity_b, svc, customer_props,
+                    customer_concept, entity_a, entity_b, svc, b_customers[customer_concept],
                 ))
 
         # Direction b_to_a: Entity B's unique services → entity A's exclusive clients
@@ -401,9 +452,8 @@ class CrossSellEngineV2:
             if svc["concept"] not in b_only:
                 continue
             for customer_concept in sorted(a_exclusive):
-                customer_props = a_customers.get(customer_concept, {})
                 opportunities.append(_build_opportunity(
-                    customer_concept, entity_b, entity_a, svc, customer_props,
+                    customer_concept, entity_b, entity_a, svc, a_customers[customer_concept],
                 ))
 
         # Sort by propensity score descending

@@ -324,13 +324,23 @@ class UpsellEngineV2:
 
             customer_display = customer_norm.replace("_", " ").title()
 
-            # Get match_type from customer.* triple properties
+            # Get match_type from customer.* triple properties.
+            # Fail loud (A1) if Console's convergence_overlay stage did not push
+            # a match_type on either side — silently defaulting to "exact" masks
+            # upstream data gaps.
             cust_concept = f"customer.{customer_norm}"
             a_cust_props = a_customer_props.get(cust_concept, {})
             b_cust_props = b_customer_props.get(cust_concept, {})
-            match_type = str(
-                a_cust_props.get("match_type", b_cust_props.get("match_type", "exact"))
-            )
+            raw_match_type = a_cust_props.get("match_type") or b_cust_props.get("match_type")
+            if not raw_match_type:
+                raise ValueError(
+                    f"UpsellEngineV2: shared customer '{cust_concept}' "
+                    f"(tenant_id='{self.tenant_id}') has no match_type on either "
+                    f"entity_id='{entity_a}' or entity_id='{entity_b}'. "
+                    f"Verify Console's convergence_overlay stage ran and "
+                    f"Farm's OverlapTripleGenerator wrote customer.match_type."
+                )
+            match_type = str(raw_match_type)
 
             # Direction: entity_a has service, entity_b does not → source=a, target=b
             for gap_svc in sorted(a_gaps_for_b):

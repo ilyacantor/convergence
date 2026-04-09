@@ -94,6 +94,37 @@ test.describe('Reports Portal — Combined Entity Tabs (B17 Gate)', () => {
     await waitForDataAndNoErrors(page);
   });
 
+  test('X-Sell scores form a distribution, not clustered at one value', async ({ page }) => {
+    // Regression guard: before Console's convergence_overlay stage pushed
+    // customer.* triples, every opportunity scored ~31/100 because the
+    // propensity engine saw empty inputs and fell through to silent defaults.
+    // After the fix, scores must span a real range.
+    // Hit the API directly (the table view only paginates 50 rows at a time,
+    // which is too thin a slice to prove distribution).
+    const resp = await page.request.get(
+      '/api/convergence/reports/v2/cross-sell?tenant_id=69688df3-fc8e-51f8-a77c-9c13f9b3a784',
+    );
+    expect(resp.status()).toBe(200);
+    const body = await resp.json();
+    const opps = body.opportunities ?? [];
+    expect(opps.length).toBeGreaterThan(100);
+
+    const scores = opps.map((o: { propensity_score: number }) => o.propensity_score);
+    const unique = new Set(scores);
+    // More than one score bucket means the engine is actually scoring
+    expect(unique.size).toBeGreaterThan(10);
+
+    const min = Math.min(...scores);
+    const max = Math.max(...scores);
+    // Spread must be wider than the 1-point wobble a broken engine would show
+    expect(max - min).toBeGreaterThan(20);
+
+    // Verify we render the tab too — this is still a B17 gate
+    await page.getByRole('button', { name: 'X-Sell' }).click();
+    await expect(page.locator('text=/Loading cross-sell/i')).not.toBeVisible({ timeout: 30_000 });
+    await waitForDataAndNoErrors(page);
+  });
+
   test('Upsell tab renders upsell opportunities with summary cards', async ({ page }) => {
     await page.getByRole('button', { name: 'Upsell' }).click();
     await expect(page.locator('text=/Loading upsell/i')).not.toBeVisible({ timeout: 30_000 });

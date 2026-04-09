@@ -31,9 +31,6 @@ ALLOWED_ENTITY_TYPES = {"company", "customer", "vendor", "people"}
 SCENARIO_FILE = Path("data/entity_test_scenarios.json")
 
 
-CROSS_ENTITY_OVERLAP_FILE = Path("data/entity_overlap.json")
-
-
 class SourceRecord(BaseModel):
     """A record from a source system."""
     source_system: str
@@ -100,7 +97,6 @@ class EntityResolutionStore:
         self._merge_history: List[MergeHistoryEntry] = []
         self._cross_entity_matches: List[Dict[str, Any]] = []
         self._seed_from_scenarios()
-        self._seed_cross_entity_overlap()
 
     def _seed_from_scenarios(self):
         """Load source records from entity_test_scenarios.json."""
@@ -137,231 +133,6 @@ class EntityResolutionStore:
 
         logger.info(f"Loaded {len(self._source_records)} source records from scenarios")
 
-    def _seed_cross_entity_overlap(self):
-        """Load cross-entity overlap data from entity_overlap.json.
-
-        This populates pre-computed cross-entity matches (customer, vendor, people)
-        produced by Farm's EntityOverlapGenerator. These matches represent entities
-        that exist in both engagement entities — they are pre-matched by Farm
-        using domain knowledge (exact names, fuzzy names, shared identifiers).
-        """
-        if not CROSS_ENTITY_OVERLAP_FILE.exists():
-            logger.info("No cross-entity overlap file found — skipping")
-            return
-
-        with open(CROSS_ENTITY_OVERLAP_FILE) as f:
-            data = json.load(f)
-
-        eng = get_active_engagement()
-        entity_a_id = eng.entity_a.id
-        entity_b_id = eng.entity_b.id
-        entity_a_display = eng.entity_a.display_name
-        entity_b_display = eng.entity_b.display_name
-        a_crm = eng.entity_a.source_systems.get("crm", "salesforce_crm")
-        b_crm = eng.entity_b.source_systems.get("crm", "oracle_erp")
-        a_erp = eng.entity_a.source_systems.get("erp", "sap_erp")
-        b_erp = eng.entity_b.source_systems.get("erp", "oracle_erp")
-        a_hcm = eng.entity_a.source_systems.get("hcm", "workday_hcm")
-        b_hcm = eng.entity_b.source_systems.get("hcm", "bamboohr_hcm")
-
-        loaded = 0
-
-        # Customer overlaps → SourceRecords from each entity's CRM
-        for match in data.get("customer_overlap", {}).get("matches", []):
-            a_name = match.get(f"{entity_a_id}_name", "")
-            b_name = match.get(f"{entity_b_id}_name", "")
-            canonical = match.get("canonical_name", a_name)
-            match_type = match.get("match_type", "exact")
-            confidence = match.get("confidence", 1.0)
-
-            rec_a = SourceRecord(
-                source_system=a_crm,
-                record_id=f"{entity_a_id}-cust-{loaded}",
-                entity_type="customer",
-                name=a_name,
-                entity_id=entity_a_id,
-                field_values={
-                    "revenue": match.get(f"{entity_a_id}_revenue_M", 0),
-                    "industry": match.get("industry", ""),
-                },
-            )
-            rec_b = SourceRecord(
-                source_system=b_crm,
-                record_id=f"{entity_b_id}-cust-{loaded}",
-                entity_type="customer",
-                name=b_name,
-                entity_id=entity_b_id,
-                field_values={
-                    "revenue": match.get(f"{entity_b_id}_revenue_M", 0),
-                    "industry": match.get("industry", ""),
-                },
-            )
-            self._source_records.extend([rec_a, rec_b])
-
-            # Pre-create match candidate
-            cand = MatchCandidate(
-                id=f"cross-cust-{loaded}",
-                record_a=rec_a,
-                record_b=rec_b,
-                match_type=match_type if match_type in ("exact", "fuzzy", "hard") else "fuzzy",
-                confidence=confidence,
-                shared_keys=["entity_overlap"],
-                status="confirmed" if confidence >= 0.9 else "pending",
-                dcl_global_id=f"cross-cust-global-{loaded}",
-                resolved_by="farm_overlap_engine" if confidence >= 0.9 else None,
-                resolved_at=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ") if confidence >= 0.9 else None,
-            )
-            self._match_candidates[cand.id] = cand
-
-            if confidence >= 0.9:
-                now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-                entity = CanonicalEntity(
-                    dcl_global_id=cand.dcl_global_id,
-                    entity_type="customer",
-                    canonical_name=canonical,
-                    source_records=[rec_a, rec_b],
-                    golden_record={
-                        "canonical_name": canonical,
-                        "combined_revenue_M": match.get("combined_revenue_M", 0),
-                        "concentration_flag": match.get("concentration_flag", False),
-                    },
-                    created_at=now,
-                    updated_at=now,
-                )
-                self._canonical_entities[cand.dcl_global_id] = entity
-
-            loaded += 1
-
-        # Vendor overlaps
-        v_offset = loaded
-        for match in data.get("vendor_overlap", {}).get("matches", []):
-            a_name = match.get(f"{entity_a_id}_name", "")
-            b_name = match.get(f"{entity_b_id}_name", "")
-            canonical = match.get("canonical_name", a_name)
-            confidence = match.get("confidence", 1.0)
-
-            rec_a = SourceRecord(
-                source_system=a_erp,
-                record_id=f"{entity_a_id}-vendor-{loaded}",
-                entity_type="vendor",
-                name=a_name,
-                entity_id=entity_a_id,
-                field_values={
-                    "spend": match.get(f"{entity_a_id}_spend_M", 0),
-                    "category": match.get("category", ""),
-                },
-            )
-            rec_b = SourceRecord(
-                source_system=b_erp,
-                record_id=f"{entity_b_id}-vendor-{loaded}",
-                entity_type="vendor",
-                name=b_name,
-                entity_id=entity_b_id,
-                field_values={
-                    "spend": match.get(f"{entity_b_id}_spend_M", 0),
-                    "category": match.get("category", ""),
-                },
-            )
-            self._source_records.extend([rec_a, rec_b])
-
-            cand = MatchCandidate(
-                id=f"cross-vendor-{loaded}",
-                record_a=rec_a,
-                record_b=rec_b,
-                match_type="deterministic" if confidence >= 0.95 else "fuzzy",
-                confidence=confidence,
-                shared_keys=["entity_overlap"],
-                status="confirmed" if confidence >= 0.9 else "pending",
-                dcl_global_id=f"cross-vendor-global-{loaded}",
-                resolved_by="farm_overlap_engine" if confidence >= 0.9 else None,
-                resolved_at=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ") if confidence >= 0.9 else None,
-            )
-            self._match_candidates[cand.id] = cand
-
-            if confidence >= 0.9:
-                now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-                entity = CanonicalEntity(
-                    dcl_global_id=cand.dcl_global_id,
-                    entity_type="vendor",
-                    canonical_name=canonical,
-                    source_records=[rec_a, rec_b],
-                    golden_record={
-                        "canonical_name": canonical,
-                        "combined_spend_M": match.get("combined_spend_M", 0),
-                    },
-                    created_at=now,
-                    updated_at=now,
-                )
-                self._canonical_entities[cand.dcl_global_id] = entity
-
-            loaded += 1
-
-        # People overlaps (by function, not individual)
-        people_data = data.get("people_overlap", {})
-        people_matches = people_data.get("functions", people_data.get("matches", []))
-        for match in people_matches:
-            func = match.get("function", "Unknown")
-            rec_a = SourceRecord(
-                source_system=a_hcm,
-                record_id=f"{entity_a_id}-people-{loaded}",
-                entity_type="people",
-                name=f"{entity_a_display} {func} Team",
-                entity_id=entity_a_id,
-                field_values={
-                    "function": func,
-                    "headcount": match.get(f"{entity_a_id}_headcount", 0),
-                },
-            )
-            rec_b = SourceRecord(
-                source_system=b_hcm,
-                record_id=f"{entity_b_id}-people-{loaded}",
-                entity_type="people",
-                name=f"{entity_b_display} {func} Team",
-                entity_id=entity_b_id,
-                field_values={
-                    "function": func,
-                    "headcount": match.get(f"{entity_b_id}_headcount", 0),
-                },
-            )
-            self._source_records.extend([rec_a, rec_b])
-
-            cand = MatchCandidate(
-                id=f"cross-people-{loaded}",
-                record_a=rec_a,
-                record_b=rec_b,
-                match_type="deterministic",
-                confidence=1.0,
-                shared_keys=["function"],
-                status="confirmed",
-                dcl_global_id=f"cross-people-global-{loaded}",
-                resolved_by="farm_overlap_engine",
-                resolved_at=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-            )
-            self._match_candidates[cand.id] = cand
-
-            now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-            entity = CanonicalEntity(
-                dcl_global_id=cand.dcl_global_id,
-                entity_type="people",
-                canonical_name=f"Combined {func}",
-                source_records=[rec_a, rec_b],
-                golden_record={
-                    "function": func,
-                    f"{entity_a_id}_headcount": match.get(f"{entity_a_id}_headcount", 0),
-                    f"{entity_b_id}_headcount": match.get(f"{entity_b_id}_headcount", 0),
-                    "combined_headcount": match.get("combined_headcount", 0),
-                },
-                created_at=now,
-                updated_at=now,
-            )
-            self._canonical_entities[cand.dcl_global_id] = entity
-            loaded += 1
-
-        logger.info(
-            f"Loaded {loaded - v_offset} vendor + people cross-entity overlaps, "
-            f"{v_offset} customer overlaps from entity_overlap.json"
-        )
-
     def add_source_record(self, record: SourceRecord):
         """Add a source record to the store."""
         self._source_records.append(record)
@@ -373,11 +144,10 @@ class EntityResolutionStore:
         Pass 1: Deterministic matching on shared keys
         Pass 2: Fuzzy matching on name similarity
         """
-        # Clear existing unconfirmed candidates, but preserve cross-entity
-        # overlap candidates (loaded from Farm's entity_overlap.json at startup).
+        # Clear existing unconfirmed candidates; preserve confirmed/rejected.
         preserved = {
             k: v for k, v in self._match_candidates.items()
-            if v.status in ("confirmed", "rejected") or k.startswith("cross-")
+            if v.status in ("confirmed", "rejected")
         }
         self._match_candidates = preserved
 
