@@ -25,7 +25,6 @@ Usage:
 """
 
 import os
-import select
 import time
 import threading
 from contextlib import contextmanager
@@ -37,7 +36,6 @@ from backend.core.constants import (
     DB_CONNECT_TIMEOUT,
     POOL_RETRY_COOLDOWN,
     POOL_GETCONN_TIMEOUT,
-    INGEST_STATEMENT_TIMEOUT_MS,
 )
 from backend.utils.log_utils import get_logger
 
@@ -96,11 +94,6 @@ def _ensure_pool() -> Optional[ThreadedConnectionPool]:
             maxconn=POOL_MAX_CONN,
             dsn=database_url,
             connect_timeout=DB_CONNECT_TIMEOUT,
-            keepalives=1,
-            keepalives_idle=30,
-            keepalives_interval=10,
-            keepalives_count=5,
-            options=f"-c statement_timeout={INGEST_STATEMENT_TIMEOUT_MS}",
         )
 
         # Startup validation: verify we can actually use the pool
@@ -208,23 +201,9 @@ def get_connection():
     conn = None
     try:
         conn = _getconn_with_timeout(pg_pool, POOL_GETCONN_TIMEOUT)
-        # Detect server-side connection closes without a network round-trip.
-        # When Supabase drops an idle connection it sends a TCP FIN.
-        # select() with timeout=0 checks for pending FIN/RST on the socket
-        # in microseconds — no latency cost. A readable idle connection
-        # means the server closed it; discard and borrow a fresh one.
-        # conn.closed alone cannot detect this (it only reflects local state).
         if conn.closed:
             pg_pool.putconn(conn, close=True)
             conn = _getconn_with_timeout(pg_pool, POOL_GETCONN_TIMEOUT)
-        else:
-            try:
-                fd = conn.fileno()
-                if fd >= 0 and select.select([fd], [], [], 0)[0]:
-                    pg_pool.putconn(conn, close=True)
-                    conn = _getconn_with_timeout(pg_pool, POOL_GETCONN_TIMEOUT)
-            except Exception as exc:
-                logger.warning("Stale connection detection failed: %s", exc)
         yield conn
     except PoolExhausted:
         raise  # Let callers handle pool exhaustion explicitly

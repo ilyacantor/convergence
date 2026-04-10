@@ -23,18 +23,12 @@ from backend.utils.log_utils import get_logger
 logger = get_logger(__name__)
 
 # Platform/Maestra base URL.  PLATFORM_URL is the canonical name; MAESTRA_BASE_URL
-# is supported as an alias for symmetry with the Platform side. Required — no
-# fallback. A missing value would silently route engagement lookups to a bogus
-# host and the resulting errors would look like Platform outages.
+# is supported as an alias for symmetry with the Platform side.
 PLATFORM_URL = (
-    os.environ.get("PLATFORM_URL") or os.environ.get("MAESTRA_BASE_URL") or ""
+    os.environ.get("PLATFORM_URL")
+    or os.environ.get("MAESTRA_BASE_URL")
+    or "http://localhost:8006"
 ).rstrip("/")
-if not PLATFORM_URL:
-    raise RuntimeError(
-        "FATAL: PLATFORM_URL (or MAESTRA_BASE_URL) must be set. "
-        "Convergence cannot read engagement lifecycle state from Maestra "
-        "without a configured Platform endpoint."
-    )
 
 # Per-call timeout for engagement reads. Engagement endpoints are simple
 # DB lookups — anything past 5s is a real failure, not slow normal.
