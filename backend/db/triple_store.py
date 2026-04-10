@@ -151,7 +151,7 @@ class TripleStore:
             if tenant_id is not None:
                 # Use current_run_id pointer — tenant_id already in clauses above
                 clauses.append(
-                    "run_id = (SELECT current_run_id FROM convergence_tenant_runs WHERE tenant_id = %s)"
+                    "run_id IN (SELECT current_run_id FROM convergence_tenant_runs WHERE tenant_id = %s)"
                 )
                 params.append(tenant_id)
             else:
@@ -277,18 +277,19 @@ class TripleStore:
 
     def upsert_tenant_run(
         self, tenant_id: str, new_run_id: str,
+        entity_id: str,
         snapshot_name: str | None = None,
     ) -> None:
-        """Atomically set current_run_id for a tenant. Saves previous run for rollback.
+        """Atomically set current_run_id for a (tenant, entity). Saves previous run for rollback.
 
-        This is the O(1) replacement for deactivate_tenant_triples on the ingest
-        hot path. Single-row UPSERT — no table scan, no lock contention.
+        Entity-scoped: each (tenant_id, entity_id) pair has its own pointer.
+        Single-row UPSERT — no table scan, no lock contention.
         """
         sql = """
-            INSERT INTO convergence_tenant_runs (tenant_id, current_run_id, previous_run_id,
+            INSERT INTO convergence_tenant_runs (tenant_id, entity_id, current_run_id, previous_run_id,
                                                  current_snapshot_name, previous_snapshot_name, updated_at)
-            VALUES (%s, %s, NULL, %s, NULL, now())
-            ON CONFLICT (tenant_id) DO UPDATE
+            VALUES (%s, %s, %s, NULL, %s, NULL, now())
+            ON CONFLICT (tenant_id, entity_id) DO UPDATE
               SET previous_run_id          = convergence_tenant_runs.current_run_id,
                   current_run_id           = EXCLUDED.current_run_id,
                   previous_snapshot_name   = convergence_tenant_runs.current_snapshot_name,
@@ -297,7 +298,7 @@ class TripleStore:
         """
         with get_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute(sql, (tenant_id, new_run_id, snapshot_name))
+                cur.execute(sql, (tenant_id, entity_id, new_run_id, snapshot_name))
                 conn.commit()
 
     def get_active_tenant_id(self) -> str | None:
@@ -313,20 +314,31 @@ class TripleStore:
                 row = cur.fetchone()
         return str(row[0]) if row else None
 
-    def get_current_run_id(self, tenant_id: str) -> str:
-        """Return current_run_id for tenant.
+    def get_current_run_id(
+        self, tenant_id: str, entity_id: str | None = None,
+    ) -> str:
+        """Return current_run_id for a (tenant, entity) pair.
+
+        When entity_id is given, returns the exact pointer for that entity.
+        When omitted, returns the most recently updated pointer for the tenant.
 
         Raises ValueError if no entry exists — no silent empty returns.
         Callers that need a best-effort fallback should catch ValueError.
         """
-        sql = "SELECT current_run_id FROM convergence_tenant_runs WHERE tenant_id = %s"
+        if entity_id:
+            sql = "SELECT current_run_id FROM convergence_tenant_runs WHERE tenant_id = %s AND entity_id = %s"
+            params: tuple = (tenant_id, entity_id)
+        else:
+            sql = "SELECT current_run_id FROM convergence_tenant_runs WHERE tenant_id = %s ORDER BY updated_at DESC LIMIT 1"
+            params = (tenant_id,)
         with get_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute(sql, (tenant_id,))
+                cur.execute(sql, params)
                 row = cur.fetchone()
         if row is None:
             raise ValueError(
-                f"No current_run_id registered for tenant {tenant_id}. "
+                f"No current_run_id registered for tenant {tenant_id}"
+                f"{f', entity {entity_id}' if entity_id else ''}. "
                 f"Run the ingest pipeline first to populate convergence_tenant_runs."
             )
         return str(row[0])
@@ -377,7 +389,7 @@ class TripleStore:
             # Tenant-scoped: use current_run_id pointer (avoids counting stale runs)
             clauses.append("tenant_id = %s")
             clauses.append(
-                "run_id = (SELECT current_run_id FROM convergence_tenant_runs WHERE tenant_id = %s)"
+                "run_id IN (SELECT current_run_id FROM convergence_tenant_runs WHERE tenant_id = %s)"
             )
             params.extend([tenant_id, tenant_id])
         else:
@@ -466,7 +478,7 @@ class TripleStore:
             sql = (
                 "SELECT COUNT(*) FROM convergence_triples "
                 "WHERE tenant_id = %s "
-                "AND run_id = (SELECT current_run_id FROM convergence_tenant_runs WHERE tenant_id = %s)"
+                "AND run_id IN (SELECT current_run_id FROM convergence_tenant_runs WHERE tenant_id = %s)"
             )
             params: tuple = (tenant_id, tenant_id)
         else:
@@ -598,7 +610,7 @@ class TripleStore:
                 "entity_id, COUNT(*) AS triple_count "
                 "FROM convergence_triples "
                 "WHERE tenant_id = %s "
-                "AND run_id = (SELECT current_run_id FROM convergence_tenant_runs WHERE tenant_id = %s) "
+                "AND run_id IN (SELECT current_run_id FROM convergence_tenant_runs WHERE tenant_id = %s) "
                 "GROUP BY source_system, split_part(concept, '.', 1), entity_id "
                 "ORDER BY triple_count DESC"
             )
@@ -648,7 +660,7 @@ class TripleStore:
             "SELECT split_part(concept, '.', 2) AS account_number, value AS account_name "
             "FROM convergence_triples "
             "WHERE tenant_id = %s "
-            "  AND run_id = (SELECT current_run_id FROM convergence_tenant_runs WHERE tenant_id = %s) "
+            "  AND run_id IN (SELECT current_run_id FROM convergence_tenant_runs WHERE tenant_id = %s) "
             "  AND entity_id = %s "
             "  AND concept LIKE 'coa.%%' "
             "  AND property = 'account_name' "

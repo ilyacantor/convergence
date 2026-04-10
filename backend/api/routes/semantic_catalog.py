@@ -500,6 +500,11 @@ async def execute_query(
         )
 
     entity_id = request.entity_id or request.entity
+    if not entity_id:
+        raise HTTPException(
+            status_code=422,
+            detail="entity_id is required — pass entity_id or entity in the request body",
+        )
     grain = request.grain or (metric_def.default_grain if metric_def else "quarter")
 
     try:
@@ -537,7 +542,7 @@ async def execute_query(
         sources: set[str] = set()
         for period in all_periods:
             try:
-                result = resolver.get_metric(concept, entity_id or "", period)
+                result = resolver.get_metric(concept, entity_id, period)
                 if result:
                     data_points.append({
                         "period": period,

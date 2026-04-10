@@ -61,7 +61,7 @@ def _run_id_clause(tenant_id: str, pipeline_run_id: str | None) -> tuple[str, li
     if pipeline_run_id:
         return "tenant_id = %s AND run_id = %s", [tenant_id, pipeline_run_id]
     return (
-        "tenant_id = %s AND run_id = "
+        "tenant_id = %s AND run_id IN "
         "(SELECT current_run_id FROM convergence_tenant_runs WHERE tenant_id = %s)",
         [tenant_id, tenant_id],
     )

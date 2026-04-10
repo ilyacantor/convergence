@@ -280,8 +280,8 @@ async def merge_overview(
             if _tid_row:
                 cur.execute(
                     "SELECT current_snapshot_name FROM convergence_tenant_runs "
-                    "WHERE tenant_id = %s",
-                    (str(_tid_row[0]),),
+                    "WHERE tenant_id = %s AND entity_id = %s",
+                    (str(_tid_row[0]), acq_id),
                 )
                 _rn_row = cur.fetchone()
                 run_name = _rn_row[0] if _rn_row else None

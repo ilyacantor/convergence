@@ -344,16 +344,18 @@ def ingest_triples(
         )
     duration_ms = int((time.monotonic() - start_ts) * 1000)
 
-    # Atomic pointer swap — O(1), single-row UPSERT, no table scan.
+    # Atomic pointer swap — O(1), one UPSERT per entity.
     # Not set for append=true (multi-batch ingest keeps existing pointer).
     if not append:
-        _triple_store.upsert_tenant_run(
-            str(req.tenant_id), str(req.convergence_ingest_id),
-            snapshot_name=req.snapshot_name,
-        )
+        for eid in entity_ids:
+            _triple_store.upsert_tenant_run(
+                str(req.tenant_id), str(req.convergence_ingest_id),
+                entity_id=eid,
+                snapshot_name=req.snapshot_name,
+            )
         logger.info(
             f"[ingest-triples] convergence_tenant_runs updated: tenant_id={req.tenant_id} "
-            f"→ convergence_ingest_id={req.convergence_ingest_id}"
+            f"→ convergence_ingest_id={req.convergence_ingest_id}, entities={entity_ids}"
         )
 
     concept_summary = _triple_store.count_by_domain(req.tenant_id, run_id=req.convergence_ingest_id)
