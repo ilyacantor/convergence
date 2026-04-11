@@ -16,7 +16,7 @@ from backend.utils.log_utils import get_logger
 logger = get_logger(__name__)
 
 # Fixed namespace for deterministic canonical_id generation
-_COFA_NAMESPACE = uuid.UUID("a1b2c3d4-e5f6-7890-abcd-ef1234567890")
+_COFA_NAMESPACE = uuid.UUID("59ba322e-9a62-42a3-8c62-1df46c477a8e")
 
 # Map Maestra's mapping_basis to DB-allowed resolution_method values.
 # DB constraint: deterministic | fuzzy | manual | NULL

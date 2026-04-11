@@ -5,10 +5,15 @@ import { MergePanel } from './components/MergePanel';
 const ReportPortal = React.lazy(() =>
   import('./components/report-portal/ReportPortal').then(m => ({ default: m.ReportPortal }))
 );
+const EngagementMonitor = React.lazy(() => import('./components/EngagementMonitor'));
+const Upload = React.lazy(() => import('./components/Upload'));
 
 function NavBar() {
   const location = useLocation();
+  const isMerge = location.pathname === '/' || location.pathname.startsWith('/merge');
   const isReports = location.pathname.startsWith('/reports');
+  const isEngagements = location.pathname.startsWith('/engagements');
+  const isUpload = location.pathname.startsWith('/upload');
   return (
     <div className="shrink-0 border-b border-border bg-card/50">
       <div className="flex items-center h-12 px-4 gap-6">
@@ -16,15 +21,27 @@ function NavBar() {
         <nav className="flex gap-4 text-sm">
           <Link
             to="/"
-            className={`hover:text-primary transition-colors ${!isReports ? 'text-primary font-medium' : 'text-muted-foreground'}`}
+            className={`hover:text-primary transition-colors ${isMerge ? 'text-primary font-medium' : 'text-muted-foreground'}`}
           >
             Merge
+          </Link>
+          <Link
+            to="/engagements"
+            className={`hover:text-primary transition-colors ${isEngagements ? 'text-primary font-medium' : 'text-muted-foreground'}`}
+          >
+            Engagements
           </Link>
           <Link
             to="/reports"
             className={`hover:text-primary transition-colors ${isReports ? 'text-primary font-medium' : 'text-muted-foreground'}`}
           >
             Reports
+          </Link>
+          <Link
+            to="/upload"
+            className={`hover:text-primary transition-colors ${isUpload ? 'text-primary font-medium' : 'text-muted-foreground'}`}
+          >
+            Upload
           </Link>
         </nav>
       </div>
@@ -94,6 +111,20 @@ function App() {
         <div className="flex-1 overflow-hidden">
           <Routes>
             <Route
+              path="/engagements"
+              element={
+                <React.Suspense
+                  fallback={
+                    <div style={{ color: 'var(--text-muted)', fontSize: '12px', padding: '40px', textAlign: 'center' }}>
+                      Loading Engagements...
+                    </div>
+                  }
+                >
+                  <EngagementMonitor />
+                </React.Suspense>
+              }
+            />
+            <Route
               path="/reports"
               element={
                 <React.Suspense
@@ -104,6 +135,20 @@ function App() {
                   }
                 >
                   <ReportPortal onClose={() => { /* no-op when standalone */ }} />
+                </React.Suspense>
+              }
+            />
+            <Route
+              path="/upload"
+              element={
+                <React.Suspense
+                  fallback={
+                    <div style={{ color: 'hsl(var(--muted-foreground))', fontSize: '12px', padding: '40px', textAlign: 'center' }}>
+                      Loading Upload...
+                    </div>
+                  }
+                >
+                  <Upload />
                 </React.Suspense>
               }
             />

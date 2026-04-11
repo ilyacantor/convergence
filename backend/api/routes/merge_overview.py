@@ -7,12 +7,11 @@ GET /api/convergence/merge/overview  — COFA triples for acquirer vs target
 from datetime import datetime
 from decimal import Decimal
 
-import httpx
 from fastapi import APIRouter, HTTPException, Query
 from typing import Optional
 
-from backend.api.clients import maestra_client
 from backend.core.db import get_connection
+from backend.db import engagement_store
 from backend.db.triple_store import TripleStore
 from backend.utils.log_utils import get_logger
 
@@ -85,43 +84,16 @@ async def _fetch_engagement_from_maestra(
 
     Returns (None, None, None) when:
       - tenant_id is unknown (no convergence_tenant_runs row yet)
-      - Maestra has no active engagement for this tenant (404)
+      - No active engagement for this tenant
 
-    Raises HTTPException(502) when Maestra is unreachable — no silent fallback.
+    Reads directly from Convergence's engagements table (same service).
     """
     if not tenant_id:
         return (None, None, None)
 
-    try:
-        eng = await maestra_client.get_active_engagement(tenant_id)
-    except httpx.HTTPStatusError as exc:
-        # 404 = no active engagement (valid empty state, not an error)
-        if exc.response.status_code == 404:
-            return (None, None, None)
-        raise HTTPException(
-            status_code=502,
-            detail=(
-                f"Maestra returned {exc.response.status_code} for "
-                f"GET /api/maestra/engagements/active?tenant_id={tenant_id} — "
-                f"merge overview cannot resolve engagement. {exc.response.text}"
-            ),
-        )
-    except httpx.TimeoutException as exc:
-        raise HTTPException(
-            status_code=504,
-            detail=(
-                f"Maestra timed out at {maestra_client.PLATFORM_URL} for "
-                f"engagement lookup (tenant_id={tenant_id}) — {exc}"
-            ),
-        )
-    except httpx.HTTPError as exc:
-        raise HTTPException(
-            status_code=502,
-            detail=(
-                f"Cannot reach Maestra at {maestra_client.PLATFORM_URL} for "
-                f"engagement lookup (tenant_id={tenant_id}) — {exc}"
-            ),
-        )
+    eng = engagement_store.get_active_engagement(tenant_id)
+    if not eng:
+        return (None, None, None)
 
     return (
         eng.get("engagement_id"),

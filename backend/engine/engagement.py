@@ -5,23 +5,15 @@ Provides the active engagement config to all engines. Every engine reads
 entity IDs, display names, and deal parameters from this config — never
 from hardcoded strings.
 
-The active engagement is loaded from data/engagements/demo-001.json.
-Switching to a new entity pair = new engagement JSON file.  Zero code changes.
+Loads from the canonical engagements table in Convergence's DB.
 """
 
-import json
+import os
 from dataclasses import dataclass
-from pathlib import Path
 
 from backend.utils.log_utils import get_logger
 
 logger = get_logger(__name__)
-
-_DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
-_ENGAGEMENTS_DIR = _DATA_DIR / "engagements"
-
-# Active engagement file — change this to switch entity pairs
-_ACTIVE_ENGAGEMENT_FILE = "demo-001.json"
 
 
 @dataclass(frozen=True)
@@ -83,48 +75,61 @@ class EngagementConfig:
 _cached_config: EngagementConfig | None = None
 
 
-def _parse_entity(data: dict) -> EngagementEntity:
-    """Parse an entity block from the engagement JSON."""
-    return EngagementEntity(
-        id=data["id"],
-        display_name=data["display_name"],
-        role=data["role"],
-        business_model=data.get("business_model", "unknown"),
-        source_systems=data.get("source_systems", {}),
+def _build_config(row: dict) -> EngagementConfig:
+    """Build EngagementConfig from a DB engagement row dict."""
+    state = row.get("state", {})
+    return EngagementConfig(
+        engagement_id=row["engagement_id"],
+        deal_name=state.get("deal_name", ""),
+        entity_a=EngagementEntity(
+            id=row["acquirer_entity_id"],
+            display_name=state.get("entity_a_name", row["acquirer_entity_id"]),
+            role="acquirer",
+            business_model=state.get("entity_a_business_model", "unknown"),
+            source_systems=state.get("entity_a_source_systems", {}),
+        ),
+        entity_b=EngagementEntity(
+            id=row["target_entity_id"],
+            display_name=state.get("entity_b_name", row["target_entity_id"]),
+            role="target",
+            business_model=state.get("entity_b_business_model", "unknown"),
+            source_systems=state.get("entity_b_source_systems", {}),
+        ),
+        deal_parameters=state.get("deal_parameters", {}),
+        synergy_targets=state.get("synergy_targets", {}),
     )
 
 
-def get_active_engagement() -> EngagementConfig:
+def get_active_engagement(tenant_id: str | None = None) -> EngagementConfig:
     """Load and return the active engagement config.
 
-    Cached after first load.  Call invalidate_engagement() to force reload.
+    Cached after first load. Call invalidate_engagement() to force reload.
 
-    Raises FileNotFoundError if the engagement file is missing.
-    Raises KeyError/ValueError if the file is malformed.
+    tenant_id: if not provided, reads AOS_TENANT_ID from env.
+    Raises RuntimeError if no tenant_id available or no active engagement found.
     """
     global _cached_config
     if _cached_config is not None:
         return _cached_config
 
-    path = _ENGAGEMENTS_DIR / _ACTIVE_ENGAGEMENT_FILE
-    if not path.exists():
-        raise FileNotFoundError(
-            f"Active engagement config not found at {path}. "
-            f"Create data/engagements/{_ACTIVE_ENGAGEMENT_FILE} with entity_a and entity_b definitions."
+    from backend.db import engagement_store
+
+    if not tenant_id:
+        tenant_id = os.environ.get("AOS_TENANT_ID")
+    if not tenant_id:
+        raise RuntimeError(
+            "Cannot load active engagement: no tenant_id provided and "
+            "AOS_TENANT_ID not set in environment."
         )
 
-    with open(path) as f:
-        raw = json.load(f)
+    row = engagement_store.get_active_engagement(tenant_id)
+    if not row:
+        raise RuntimeError(
+            f"No active engagement found for tenant_id={tenant_id}. "
+            f"Create an engagement and set lifecycle_stage='active'."
+        )
 
-    config = EngagementConfig(
-        engagement_id=raw["engagement_id"],
-        deal_name=raw["deal_name"],
-        entity_a=_parse_entity(raw["entity_a"]),
-        entity_b=_parse_entity(raw["entity_b"]),
-        deal_parameters=raw.get("deal_parameters", {}),
-        synergy_targets=raw.get("synergy_targets", {}),
-    )
-
+    config = _build_config(row)
     _cached_config = config
     logger.info(
         "[engagement] Loaded engagement %s: %s (%s) vs %s (%s)",

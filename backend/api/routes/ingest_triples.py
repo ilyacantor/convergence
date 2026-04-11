@@ -361,7 +361,7 @@ def ingest_triples(
     concept_summary = _triple_store.count_by_domain(req.tenant_id, run_id=req.convergence_ingest_id)
 
     # Engagement identity context
-    eng = get_active_engagement()
+    eng = get_active_engagement(tenant_id=req.tenant_id)
     run_name = f"{eng.short_name}-{req.convergence_ingest_id[:4]}"
 
     logger.info(

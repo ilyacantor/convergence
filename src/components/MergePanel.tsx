@@ -106,6 +106,9 @@ interface ConflictData {
 
 interface MaestraEngagement {
   engagement_id: string;
+  engagement_short_name: string | null;
+  acquirer_entity_id: string;
+  target_entity_id: string;
   status: string;
   created_at: string;
 }
@@ -140,6 +143,12 @@ interface MergeData {
     message: string;
   };
 }
+
+// ---------------------------------------------------------------------------
+// Tenant identity — Vite exposes VITE_-prefixed env vars to the frontend.
+// ---------------------------------------------------------------------------
+
+const TENANT_ID = (import.meta.env.VITE_AOS_TENANT_ID as string) || '';
 
 // ---------------------------------------------------------------------------
 // Component
@@ -244,7 +253,7 @@ export function MergePanel() {
 
   const fetchEngagements = useCallback(async () => {
     try {
-      const res = await fetch('/api/convergence/engagements');
+      const res = await fetch(`/api/convergence/engagements?tenant_id=${encodeURIComponent(TENANT_ID)}`);
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         const detail = body.detail || `HTTP ${res.status}`;
@@ -560,7 +569,9 @@ export function MergePanel() {
     lines.push('COFA MERGE REPORT');
     lines.push(hr);
     lines.push(`Generated: ${new Date().toLocaleString()}`);
-    lines.push(`Engagement: ${selectedEngagementId || data.engagement_id || 'N/A'}`);
+    const selEng = engagements.find(e => e.engagement_id === selectedEngagementId);
+    const engLabel = selEng?.engagement_short_name || selectedEngagementId || data.engagement_id || 'N/A';
+    lines.push(`Engagement: ${engLabel}`);
     const runTag = typeof data.source_run_tag === 'string'
       ? data.source_run_tag
       : data.source_run_tag ? JSON.stringify(data.source_run_tag) : 'N/A';
@@ -685,11 +696,11 @@ export function MergePanel() {
                 value={selectedEngagementId || ''}
                 onChange={e => setSelectedEngagementId(e.target.value || null)}
                 className="px-2 py-1 text-xs font-mono rounded border border-border bg-background text-foreground max-w-[220px] truncate"
-                title="Select Maestra engagement"
+                title="Select engagement"
               >
                 {engagements.map((eng, i) => (
                   <option key={eng.engagement_id} value={eng.engagement_id}>
-                    {i === 0 ? '* ' : ''}{eng.engagement_id} ({eng.status})
+                    {i === 0 ? '* ' : ''}{eng.engagement_short_name || `${eng.acquirer_entity_id} + ${eng.target_entity_id}`} ({eng.status})
                   </option>
                 ))}
               </select>

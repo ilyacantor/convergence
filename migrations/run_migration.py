@@ -17,7 +17,9 @@ if not DATABASE_URL:
     sys.exit(1)
 
 REQUIRED_TABLES = [
-    "engagement_state",
+    "engagements",
+    "run_ledger",
+    "human_reviews",
     "resolution_workspaces_v2",
     # semantic_triples is DCL-owned but convergence reads it — verify it exists
     "semantic_triples",
@@ -27,6 +29,7 @@ REQUIRED_TABLES = [
     "convergence_ingest_log",
     # What-if scenario persistence
     "whatif_scenarios",
+    "uploads",
 ]
 
 

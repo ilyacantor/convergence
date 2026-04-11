@@ -46,6 +46,7 @@ from backend.api.routes.triple_browse import router as triple_browse_router
 from backend.api.routes.semantic_catalog import router as semantic_catalog_router
 from backend.api.routes.coa_accounts import router as coa_accounts_router
 from backend.api.routes.tenants import router as tenants_router
+from backend.api.routes.upload import router as upload_router
 
 logger = get_logger(__name__)
 
@@ -81,9 +82,7 @@ def _log_startup_targets() -> None:
     else:
         db_target = "(DATABASE_URL not set)"
 
-    from backend.api.clients.maestra_client import PLATFORM_URL
     logger.info(f"[startup] DB target: {db_target}")
-    logger.info(f"[startup] HTTP partners: maestra={PLATFORM_URL}")
 
 
 @asynccontextmanager
@@ -172,6 +171,7 @@ app.include_router(triple_browse_router)
 app.include_router(semantic_catalog_router)
 app.include_router(coa_accounts_router)
 app.include_router(tenants_router)
+app.include_router(upload_router)
 
 
 # =============================================================================
