@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: aos-convergence
+    name: convergence
     runtime: python
     region: oregon
     plan: starter
