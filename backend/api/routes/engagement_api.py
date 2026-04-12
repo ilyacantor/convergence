@@ -95,22 +95,22 @@ async def create_engagement(req: CreateEngagementRequest):
 
 @router.get("/engagements")
 async def list_engagements(
-    tenant_id: str = Query(..., description="Tenant UUID (required, I2)"),
+    tenant_id: UUID = Query(..., description="Tenant UUID (required, I2)"),
     lifecycle_stage: str | None = Query(None),
 ):
     """List engagements for tenant. Returns flat array."""
     return engagement_store.list_engagements(
-        tenant_id=tenant_id,
+        tenant_id=str(tenant_id),
         lifecycle_stage=lifecycle_stage,
     )
 
 
 @router.get("/engagements/active")
 async def get_active_engagement(
-    tenant_id: str = Query(..., description="Tenant UUID (required, I2)"),
+    tenant_id: UUID = Query(..., description="Tenant UUID (required, I2)"),
 ):
     """Return the active engagement for a tenant. 404 if none, 422 if tenant_id missing."""
-    eng = engagement_store.get_active_engagement(tenant_id)
+    eng = engagement_store.get_active_engagement(str(tenant_id))
     if not eng:
         raise HTTPException(
             status_code=404,

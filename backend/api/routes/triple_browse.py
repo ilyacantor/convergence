@@ -73,7 +73,7 @@ def _run_id_clause(tenant_id: str, pipeline_run_id: str | None) -> tuple[str, li
 
 @router.get("/browse")
 async def browse_triples(
-    tenant_id: str = Query(..., description="Tenant UUID (required, I2)"),
+    tenant_id: UUID = Query(..., description="Tenant UUID (required, I2)"),
     pipeline_run_id: Optional[str] = Query(None, description="Pipeline run UUID — defaults to current run"),
     domain: Optional[str] = Query(None, description="Filter by concept domain prefix"),
     entity_id: Optional[str] = Query(None, description="Filter by entity_id"),
@@ -86,7 +86,7 @@ async def browse_triples(
 
     Response schema matches DCL's GET /api/dcl/triples/browse exactly.
     """
-    base_clause, params = _run_id_clause(tenant_id, pipeline_run_id)
+    base_clause, params = _run_id_clause(str(tenant_id), pipeline_run_id)
     clauses = [base_clause]
 
     filters_applied: dict[str, str] = {}
@@ -153,7 +153,7 @@ class BrowseBatchRequest(BaseModel):
 @router.post("/browse-batch")
 async def browse_triples_batch(
     body: BrowseBatchRequest,
-    tenant_id: str = Query(..., description="Tenant UUID (required, I2)"),
+    tenant_id: UUID = Query(..., description="Tenant UUID (required, I2)"),
     pipeline_run_id: Optional[str] = Query(None, description="Pipeline run UUID — defaults to current run"),
 ):
     """Batch browse convergence triples by domain list.
@@ -164,7 +164,7 @@ async def browse_triples_batch(
     rows ordered by period DESC (most recent first). Without a limit the full
     result set is returned, which can be expensive for large tenants.
     """
-    base_clause, base_params = _run_id_clause(tenant_id, pipeline_run_id)
+    base_clause, base_params = _run_id_clause(str(tenant_id), pipeline_run_id)
 
     triples_by_domain: dict[str, list[dict]] = {}
     total_count = 0
@@ -227,14 +227,15 @@ async def browse_triples_batch(
 
 @router.get("/overview")
 async def triples_overview(
-    tenant_id: str = Query(..., description="Tenant UUID (required, I2)"),
+    tenant_id: UUID = Query(..., description="Tenant UUID (required, I2)"),
     pipeline_run_id: Optional[str] = Query(None, description="Pipeline run UUID — defaults to current run"),
 ):
     """Aggregated overview of convergence triples.
 
     Response schema matches DCL's GET /api/dcl/triples/overview exactly.
     """
-    base_clause, base_params = _run_id_clause(tenant_id, pipeline_run_id)
+    tenant_id_str = str(tenant_id)
+    base_clause, base_params = _run_id_clause(tenant_id_str, pipeline_run_id)
 
     try:
         with get_connection() as conn:
@@ -246,7 +247,7 @@ async def triples_overview(
                 )
                 active_triples = cur.fetchone()[0]
 
-                cur.execute("SELECT COUNT(*) FROM convergence_triples WHERE tenant_id = %s", [tenant_id])
+                cur.execute("SELECT COUNT(*) FROM convergence_triples WHERE tenant_id = %s", [tenant_id_str])
                 total_triples = cur.fetchone()[0]
 
                 # Per-entity breakdown
@@ -302,7 +303,7 @@ async def triples_overview(
                 cur.execute(
                     "SELECT run_id, created_at, triples_written FROM convergence_ingest_log "
                     "WHERE tenant_id = %s ORDER BY created_at DESC LIMIT 1",
-                    [tenant_id],
+                    [tenant_id_str],
                 )
                 ingest_row = cur.fetchone()
                 last_ingest = None
