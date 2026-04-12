@@ -148,7 +148,7 @@ interface MergeData {
 // Tenant identity — Vite exposes VITE_-prefixed env vars to the frontend.
 // ---------------------------------------------------------------------------
 
-const TENANT_ID = (import.meta.env.VITE_AOS_TENANT_ID as string) || '';
+const TENANT_ID = import.meta.env.VITE_AOS_TENANT_ID as string | undefined;
 
 // ---------------------------------------------------------------------------
 // Component
@@ -252,6 +252,13 @@ export function MergePanel() {
   }, []);
 
   const fetchEngagements = useCallback(async () => {
+    if (!TENANT_ID) {
+      setEngagementError(
+        'VITE_AOS_TENANT_ID not set at build time — tenant identity is required (I1/I2). ' +
+        'Rebuild with VITE_AOS_TENANT_ID=<tenant-uuid>.'
+      );
+      return;
+    }
     try {
       const res = await fetch(`/api/convergence/engagements?tenant_id=${encodeURIComponent(TENANT_ID)}`);
       if (!res.ok) {
