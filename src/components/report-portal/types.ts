@@ -93,6 +93,28 @@ export interface OverlapSummary {
   employee: OverlapDomainSummary
 }
 
+export interface OverlapConceptDetail {
+  concept: string
+  entity_a_properties: Record<string, unknown>
+  entity_b_properties: Record<string, unknown>
+}
+
+export interface OverlapDomainDetail {
+  tenant_id: string
+  entity_id: string
+  domain: string
+  overlap_count: number
+  concepts: OverlapConceptDetail[]
+}
+
+export interface OverlapEntityOnlyResult {
+  tenant_id: string
+  domain: string
+  entity_id: string
+  count: number
+  concepts: string[]
+}
+
 // ── Cross-Sell Pipeline ────────────────────────────────────────────────────
 
 export interface CrossSellCandidate {

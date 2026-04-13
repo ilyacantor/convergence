@@ -95,6 +95,32 @@ test.describe('Reports Portal — Combined Entity Tabs (B17 Gate)', () => {
     await waitForDataAndNoErrors(page);
   });
 
+  test('Overlap tab drill-through — click Customers card and entity-only lines', async ({ page }) => {
+    await page.getByRole('button', { name: 'Overlap' }).click();
+    await expect(page.locator('text=/Loading entity overlap/i')).not.toBeVisible({ timeout: 30_000 });
+    await expect(page.locator('text=Overlap Breakdown')).toBeVisible({ timeout: 10_000 });
+
+    // Click Customers KPI card → overlap drill appears with at least one concept row
+    await page.getByRole('button', { name: /Drill into Customers overlap/i }).click();
+    const overlapDrill = page.locator('[data-testid="overlap-drill-customer-overlap"]');
+    await expect(overlapDrill).toBeVisible({ timeout: 15_000 });
+    await expect(overlapDrill.locator('text=/Shared customers — detail/i')).toBeVisible({ timeout: 5_000 });
+    await expect(overlapDrill.locator('tbody tr').first()).toBeVisible({ timeout: 10_000 });
+
+    // Click Meridian-only line on the same card → entity-only drill replaces the overlap drill
+    await page.getByRole('button', { name: /Meridian-only:/ }).first().click();
+    const aOnlyDrill = page.locator('[data-testid="overlap-drill-customer-a_only"]');
+    await expect(aOnlyDrill).toBeVisible({ timeout: 15_000 });
+    await expect(aOnlyDrill.locator('text=/Meridian-only customers/i')).toBeVisible({ timeout: 5_000 });
+    await expect(aOnlyDrill.locator('tbody tr').first()).toBeVisible({ timeout: 10_000 });
+
+    // Close via the Close button → drill disappears
+    await aOnlyDrill.getByRole('button', { name: 'Close' }).click();
+    await expect(aOnlyDrill).not.toBeVisible({ timeout: 5_000 });
+
+    await waitForDataAndNoErrors(page);
+  });
+
   test('X-Sell tab renders cross-sell pipeline with summary cards', async ({ page }) => {
     await page.getByRole('button', { name: 'X-Sell' }).click();
     await expect(page.locator('text=/Loading cross-sell/i')).not.toBeVisible({ timeout: 30_000 });

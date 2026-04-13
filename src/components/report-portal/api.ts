@@ -16,6 +16,8 @@ import type {
   EntitySelection,
   CombiningStatementData,
   OverlapSummary,
+  OverlapDomainDetail,
+  OverlapEntityOnlyResult,
   CrossSellData,
   UpsellData,
   RevenueByCustomerData,
@@ -565,6 +567,41 @@ export async function fetchOverlapSummary(): Promise<OverlapSummary> {
     const errText = await res.text().catch(() => 'Unknown error')
     throw new Error(
       `Entity overlap query failed (HTTP ${res.status}): ${sanitizeErrorMessage(errText.slice(0, 500))}`
+    )
+  }
+
+  return res.json()
+}
+
+export type OverlapDomain = 'customer' | 'vendor' | 'employee'
+
+export async function fetchOverlapDomain(domain: OverlapDomain): Promise<OverlapDomainDetail> {
+  const params = await withTenant()
+  const res = await fetch(`${CONVERGENCE_REPORTS_BASE}/overlap/${domain}?${params}`)
+
+  if (!res.ok) {
+    const errText = await res.text().catch(() => 'Unknown error')
+    throw new Error(
+      `Entity overlap drill failed (HTTP ${res.status}): ${sanitizeErrorMessage(errText.slice(0, 500))}`
+    )
+  }
+
+  return res.json()
+}
+
+export async function fetchOverlapEntityOnly(
+  domain: OverlapDomain,
+  entityId: string,
+): Promise<OverlapEntityOnlyResult> {
+  const params = await withTenant()
+  const res = await fetch(
+    `${CONVERGENCE_REPORTS_BASE}/overlap/${domain}/entity-only/${encodeURIComponent(entityId)}?${params}`,
+  )
+
+  if (!res.ok) {
+    const errText = await res.text().catch(() => 'Unknown error')
+    throw new Error(
+      `Entity-only overlap query failed (HTTP ${res.status}): ${sanitizeErrorMessage(errText.slice(0, 500))}`
     )
   }
 

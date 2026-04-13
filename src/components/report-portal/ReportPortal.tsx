@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { fetchReport, fetchDimensionalDetail, fetchCombiningStatement, fetchCrossSell, fetchUpsell, fetchRevenueByCustomer, fetchEBITDABridge, fetchWhatIf, fetchQofE, fetchReportDimensions, fetchPipelineReport, fetchOverlapSummary, getEngagementContext } from "./api";
+import { fetchReport, fetchDimensionalDetail, fetchCombiningStatement, fetchCrossSell, fetchUpsell, fetchRevenueByCustomer, fetchEBITDABridge, fetchWhatIf, fetchQofE, fetchReportDimensions, fetchPipelineReport, fetchOverlapSummary, fetchOverlapDomain, fetchOverlapEntityOnly, getEngagementContext } from "./api";
+import type { OverlapDomain } from "./api";
 import type { PeriodDimension, DimensionalDetailResponse } from "./api";
 import React from "react";
-import type { ReportData, ReportVariant, EntitySelection, CombiningStatementData, CrossSellData, UpsellData, RevenueByCustomerData, EBITDABridgeData, BridgeAdjustment, WhatIfResult, QofEData, FinancialStatementData, FinancialStatementLineItem, PipelineReportData, OverlapSummary } from "./types";
+import type { ReportData, ReportVariant, EntitySelection, CombiningStatementData, CrossSellData, UpsellData, RevenueByCustomerData, EBITDABridgeData, BridgeAdjustment, WhatIfResult, QofEData, FinancialStatementData, FinancialStatementLineItem, PipelineReportData, OverlapSummary, OverlapDomainDetail, OverlapEntityOnlyResult } from "./types";
 import {
   BarChart, Bar, XAxis, YAxis, Cell, ResponsiveContainer,
   PieChart, Pie,
@@ -701,12 +702,31 @@ function ErrorState({ error, onRetry }: { error: string; onRetry: () => void }) 
 // OVERLAP TAB
 // ============================================================
 
+type OverlapDrill = { domain: OverlapDomain; side: "overlap" | "a_only" | "b_only" };
+
+function stripDomain(concept: string, domain: string): string {
+  const prefix = `${domain}.`;
+  return concept.startsWith(prefix) ? concept.slice(prefix.length) : concept;
+}
+
+function fmtCellValue(v: unknown): string {
+  if (v === null || v === undefined) return "—";
+  if (typeof v === "number") return v.toLocaleString();
+  return String(v);
+}
+
 function OverlapTab() {
   const [data, setData] = useState<OverlapSummary | null>(null);
   const [entityA, setEntityA] = useState<{ id: string; name: string } | null>(null);
   const [entityB, setEntityB] = useState<{ id: string; name: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const [drill, setDrill] = useState<OverlapDrill | null>(null);
+  const [details, setDetails] = useState<Partial<Record<OverlapDomain, OverlapDomainDetail>>>({});
+  const [entityOnly, setEntityOnly] = useState<Record<string, OverlapEntityOnlyResult>>({});
+  const [drillLoading, setDrillLoading] = useState(false);
+  const [drillError, setDrillError] = useState<string | null>(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -723,10 +743,39 @@ function OverlapTab() {
 
   useEffect(() => { load(); }, [load]);
 
+  const ensureOverlapDetail = useCallback(async (domain: OverlapDomain) => {
+    if (details[domain]) return;
+    setDrillLoading(true);
+    setDrillError(null);
+    try {
+      const detail = await fetchOverlapDomain(domain);
+      setDetails((prev) => ({ ...prev, [domain]: detail }));
+    } catch (err) {
+      setDrillError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setDrillLoading(false);
+    }
+  }, [details]);
+
+  const ensureEntityOnly = useCallback(async (domain: OverlapDomain, side: "a" | "b", entityId: string) => {
+    const key = `${domain}-${side}`;
+    if (entityOnly[key]) return;
+    setDrillLoading(true);
+    setDrillError(null);
+    try {
+      const result = await fetchOverlapEntityOnly(domain, entityId);
+      setEntityOnly((prev) => ({ ...prev, [key]: result }));
+    } catch (err) {
+      setDrillError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setDrillLoading(false);
+    }
+  }, [entityOnly]);
+
   if (loading) return <LoadingState message="Loading entity overlap..." />;
   if (error || !data || !entityA || !entityB) return <ErrorState error={error || "No data"} onRetry={load} />;
 
-  const domains: { key: keyof OverlapSummary; label: string }[] = [
+  const domains: { key: OverlapDomain; label: string }[] = [
     { key: "customer", label: "Customers" },
     { key: "vendor", label: "Vendors" },
     { key: "employee", label: "Employees" },
@@ -735,26 +784,85 @@ function OverlapTab() {
   const thS: React.CSSProperties = { textAlign: "left", padding: "8px 12px", color: COLORS.textMuted, fontWeight: 500, fontSize: 14, letterSpacing: "0.06em", textTransform: "uppercase", fontFamily: "'JetBrains Mono',monospace" };
   const thR: React.CSSProperties = { ...thS, textAlign: "right" };
 
+  const toggleOverlap = (domain: OverlapDomain) => {
+    if (drill?.domain === domain && drill.side === "overlap") {
+      setDrill(null);
+    } else {
+      setDrill({ domain, side: "overlap" });
+      void ensureOverlapDetail(domain);
+    }
+  };
+
+  const toggleEntityOnly = (domain: OverlapDomain, side: "a_only" | "b_only") => {
+    if (drill?.domain === domain && drill.side === side) {
+      setDrill(null);
+      return;
+    }
+    setDrill({ domain, side });
+    const whichSide = side === "a_only" ? "a" : "b";
+    const id = whichSide === "a" ? entityA.id : entityB.id;
+    void ensureEntityOnly(domain, whichSide, id);
+  };
+
+  const activeDomain = drill?.domain ?? null;
+  const isActive = (domain: OverlapDomain, side: OverlapDrill["side"]) =>
+    drill?.domain === domain && drill.side === side;
+
+  const cardActiveStyle = (active: boolean): React.CSSProperties => active
+    ? { outline: `2px solid ${COLORS.accent}`, outlineOffset: -2 }
+    : {};
+
+  const lineBtn = (active: boolean): React.CSSProperties => ({
+    background: active ? "rgba(199,120,64,0.12)" : "transparent",
+    border: "none",
+    color: active ? COLORS.accent : COLORS.textDim,
+    cursor: "pointer",
+    padding: "2px 6px",
+    fontSize: 13,
+    fontFamily: "'IBM Plex Sans',sans-serif",
+    textAlign: "left",
+    borderRadius: 3,
+    width: "100%",
+  });
+
   return (
     <div>
       {/* Top KPI cards — overlap counts per domain */}
       <div style={{ display: "flex", gap: 16, marginBottom: 24, flexWrap: "wrap" }}>
         {domains.map(({ key, label }) => {
           const d = data[key];
+          const aOnly = Math.max(0, d.entity_a_total - d.overlap_count);
+          const bOnly = Math.max(0, d.entity_b_total - d.overlap_count);
+          const cardActive = drill?.domain === key;
           return (
-            <div key={key} style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: "16px 20px", flex: "1 1 220px", minWidth: 220 }}>
-              <div style={{ fontSize: 14, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", fontFamily: "'JetBrains Mono',monospace" }}>{label}</div>
-              <div style={{ fontSize: 30, fontWeight: 700, color: COLORS.accent, fontFamily: "'IBM Plex Mono',monospace", marginTop: 4 }}>
-                {d.overlap_count.toLocaleString()}
+            <div key={key} style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: "16px 20px", flex: "1 1 240px", minWidth: 240, ...cardActiveStyle(cardActive) }}>
+              <button
+                type="button"
+                onClick={() => toggleOverlap(key)}
+                aria-label={`Drill into ${label} overlap`}
+                style={{ background: "transparent", border: "none", padding: 0, textAlign: "left", width: "100%", cursor: "pointer", color: COLORS.text }}
+              >
+                <div style={{ fontSize: 14, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", fontFamily: "'JetBrains Mono',monospace" }}>{label}</div>
+                <div style={{ fontSize: 30, fontWeight: 700, color: COLORS.accent, fontFamily: "'IBM Plex Mono',monospace", marginTop: 4 }}>
+                  {d.overlap_count.toLocaleString()}
+                </div>
+                <div style={{ fontSize: 14, color: COLORS.textDim, marginTop: 2 }}>shared across both entities</div>
+              </button>
+              <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 2, borderTop: `1px solid ${COLORS.border}`, paddingTop: 8 }}>
+                <button type="button" onClick={() => toggleEntityOnly(key, "a_only")} style={lineBtn(isActive(key, "a_only"))}>
+                  {entityA.name}-only: <span style={{ fontFamily: "'IBM Plex Mono',monospace", color: COLORS.text }}>{aOnly.toLocaleString()}</span>
+                </button>
+                <button type="button" onClick={() => toggleEntityOnly(key, "b_only")} style={lineBtn(isActive(key, "b_only"))}>
+                  {entityB.name}-only: <span style={{ fontFamily: "'IBM Plex Mono',monospace", color: COLORS.text }}>{bOnly.toLocaleString()}</span>
+                </button>
               </div>
-              <div style={{ fontSize: 14, color: COLORS.textDim, marginTop: 2 }}>shared across both entities</div>
             </div>
           );
         })}
       </div>
 
       {/* Detail table — per-domain breakdown */}
-      <div style={{ background: COLORS.surface, borderRadius: 8, border: `1px solid ${COLORS.border}`, overflow: "hidden" }}>
+      <div style={{ background: COLORS.surface, borderRadius: 8, border: `1px solid ${COLORS.border}`, overflow: "hidden", marginBottom: drill ? 24 : 0 }}>
         <div style={{ padding: "12px 20px", borderBottom: `1px solid ${COLORS.border}`, fontSize: 16, fontWeight: 600, color: COLORS.text }}>
           Overlap Breakdown
         </div>
@@ -786,6 +894,79 @@ function OverlapTab() {
           </tbody>
         </table>
       </div>
+
+      {/* Drill section */}
+      {drill && activeDomain && (
+        <div data-testid={`overlap-drill-${drill.domain}-${drill.side}`} style={{ background: COLORS.surface, borderRadius: 8, border: `1px solid ${COLORS.border}`, overflow: "hidden" }}>
+          <div style={{ padding: "12px 20px", borderBottom: `1px solid ${COLORS.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontSize: 16, fontWeight: 600, color: COLORS.text }}>
+              {drill.side === "overlap" && `Shared ${activeDomain}s — detail`}
+              {drill.side === "a_only" && `${entityA.name}-only ${activeDomain}s`}
+              {drill.side === "b_only" && `${entityB.name}-only ${activeDomain}s`}
+            </span>
+            <button type="button" onClick={() => setDrill(null)} style={{ background: "transparent", border: `1px solid ${COLORS.border}`, borderRadius: 4, color: COLORS.textMuted, padding: "2px 10px", fontSize: 13, cursor: "pointer" }}>Close</button>
+          </div>
+          {drillLoading && <div style={{ padding: "20px", color: COLORS.textMuted }}>Loading drill data...</div>}
+          {drillError && <div style={{ padding: "20px", color: COLORS.red }}>{drillError}</div>}
+          {!drillLoading && !drillError && drill.side === "overlap" && details[drill.domain] && (() => {
+            const concepts = details[drill.domain]!.concepts;
+            if (concepts.length === 0) return <div style={{ padding: "20px", color: COLORS.textMuted }}>No overlapping concepts.</div>;
+            const propKeys = Array.from(new Set(concepts.flatMap((c) => [...Object.keys(c.entity_a_properties), ...Object.keys(c.entity_b_properties)]))).sort();
+            return (
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "'IBM Plex Mono','JetBrains Mono',monospace", fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ borderBottom: `2px solid ${COLORS.accent}` }}>
+                      <th style={thS}>Concept</th>
+                      {propKeys.map((p) => (
+                        <React.Fragment key={p}>
+                          <th style={thR}>{p} ({entityA.name})</th>
+                          <th style={thR}>{p} ({entityB.name})</th>
+                        </React.Fragment>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {concepts.map((c) => (
+                      <tr key={c.concept} style={{ borderBottom: `1px solid ${COLORS.border}22` }}>
+                        <td style={{ padding: "6px 12px", color: COLORS.text, fontFamily: "'IBM Plex Sans',sans-serif" }}>{stripDomain(c.concept, drill.domain)}</td>
+                        {propKeys.map((p) => (
+                          <React.Fragment key={p}>
+                            <td style={{ textAlign: "right", padding: "6px 12px", color: COLORS.textMuted }}>{fmtCellValue(c.entity_a_properties[p])}</td>
+                            <td style={{ textAlign: "right", padding: "6px 12px", color: COLORS.textMuted }}>{fmtCellValue(c.entity_b_properties[p])}</td>
+                          </React.Fragment>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            );
+          })()}
+          {!drillLoading && !drillError && drill.side !== "overlap" && (() => {
+            const key = `${drill.domain}-${drill.side === "a_only" ? "a" : "b"}`;
+            const result = entityOnly[key];
+            if (!result) return null;
+            if (result.concepts.length === 0) return <div style={{ padding: "20px", color: COLORS.textMuted }}>No {drill.side === "a_only" ? entityA.name : entityB.name}-only {drill.domain}s.</div>;
+            return (
+              <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "'IBM Plex Mono','JetBrains Mono',monospace", fontSize: 13 }}>
+                <thead>
+                  <tr style={{ borderBottom: `2px solid ${COLORS.accent}` }}>
+                    <th style={thS}>Concept</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {result.concepts.map((concept) => (
+                    <tr key={concept} style={{ borderBottom: `1px solid ${COLORS.border}22` }}>
+                      <td style={{ padding: "6px 12px", color: COLORS.text, fontFamily: "'IBM Plex Sans',sans-serif" }}>{stripDomain(concept, drill.domain)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            );
+          })()}
+        </div>
+      )}
     </div>
   );
 }
