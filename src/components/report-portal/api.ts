@@ -15,7 +15,7 @@ import type {
   FinancialStatementLineItem,
   EntitySelection,
   CombiningStatementData,
-  OverlapData,
+  OverlapSummary,
   CrossSellData,
   UpsellData,
   RevenueByCustomerData,
@@ -557,7 +557,7 @@ function transformCombiningResponse(
 
 // ── Entity Overlap ────────────────────────────────────────────────────────
 
-export async function fetchOverlapData(): Promise<OverlapData> {
+export async function fetchOverlapSummary(): Promise<OverlapSummary> {
   const params = await withTenant()
   const res = await fetch(`${CONVERGENCE_REPORTS_BASE}/overlap/summary?${params}`)
 

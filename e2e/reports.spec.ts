@@ -78,6 +78,23 @@ test.describe('Reports Portal — Combined Entity Tabs (B17 Gate)', () => {
     await waitForDataAndNoErrors(page);
   });
 
+  test('Overlap tab renders entity overlap cards and breakdown table', async ({ page }) => {
+    await page.getByRole('button', { name: 'Overlap' }).click();
+    await expect(page.locator('text=/Loading entity overlap/i')).not.toBeVisible({ timeout: 30_000 });
+
+    // Three domain cards
+    await expect(page.locator('text=Customers').first()).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('text=Vendors').first()).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('text=Employees').first()).toBeVisible({ timeout: 5_000 });
+
+    // Breakdown table with entity-name columns
+    await expect(page.locator('text=Overlap Breakdown')).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('th', { hasText: /Meridian Total/ })).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('th', { hasText: /Cascadia Total/ })).toBeVisible({ timeout: 5_000 });
+
+    await waitForDataAndNoErrors(page);
+  });
+
   test('X-Sell tab renders cross-sell pipeline with summary cards', async ({ page }) => {
     await page.getByRole('button', { name: 'X-Sell' }).click();
     await expect(page.locator('text=/Loading cross-sell/i')).not.toBeVisible({ timeout: 30_000 });
@@ -275,6 +292,7 @@ test.describe('Reports Portal — Entity Switching (B17 Gate)', () => {
 
     // Verify combined-only tabs are NOT visible
     await expect(page.getByRole('button', { name: 'Combining' })).not.toBeVisible({ timeout: 2_000 });
+    await expect(page.getByRole('button', { name: 'Overlap' })).not.toBeVisible({ timeout: 2_000 });
     await expect(page.getByRole('button', { name: 'X-Sell' })).not.toBeVisible({ timeout: 2_000 });
 
     // Switch back to Combined
@@ -283,6 +301,7 @@ test.describe('Reports Portal — Entity Switching (B17 Gate)', () => {
 
     // Combined-only tabs should appear
     await expect(page.getByRole('button', { name: 'Combining' })).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByRole('button', { name: 'Overlap' })).toBeVisible({ timeout: 5_000 });
     await expect(page.getByRole('button', { name: 'X-Sell' })).toBeVisible({ timeout: 5_000 });
     await expect(page.getByRole('button', { name: 'QofE' })).toBeVisible({ timeout: 5_000 });
   });

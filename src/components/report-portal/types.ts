@@ -79,75 +79,18 @@ export interface CombiningStatementData {
 
 // ── Overlap Report ──────────────────────────────────────────────────────────
 
-export interface CustomerMatch {
-  meridian_name: string
-  cascadia_name: string
-  canonical_name: string
-  match_type: string
-  confidence: number
-  meridian_revenue_M: number
-  cascadia_revenue_M: number
-  combined_revenue_M: number
-  combined_pct_of_total: number
-  concentration_flag: boolean
-  industry: string
-  notes: string
-  engagement_detail: { entity: string; service_types: string[]; [key: string]: unknown }[]
+export interface OverlapDomainSummary {
+  overlap_count: number
+  entity_a_total: number
+  entity_b_total: number
+  overlap_pct_a: number
+  overlap_pct_b: number
 }
 
-export interface VendorMatch {
-  meridian_name: string
-  cascadia_name: string
-  canonical_name: string
-  match_type: string
-  category: string
-  meridian_spend_M: number
-  cascadia_spend_M: number
-  combined_spend_M: number
-  consolidation_opportunity: boolean
-  consolidation_detail: unknown
-}
-
-export interface PeopleRoleDetail {
-  title: string
-  meridian_count: number
-  cascadia_count: number
-  combined_count: number
-  consolidation_action: string
-}
-
-export interface PeopleFunction {
-  function: string
-  meridian_headcount: number
-  cascadia_headcount: number
-  combined_headcount: number
-  role_overlap_examples: string[]
-  definitional_note: string
-  role_detail: PeopleRoleDetail[]
-}
-
-export interface OverlapData {
-  customer_overlap: {
-    total_overlapping: number
-    overlap_pct_of_combined: number
-    overlap_pct_of_meridian: number
-    overlap_pct_of_cascadia: number
-    matches: CustomerMatch[]
-    concentration_threshold_crossings: unknown[]
-  }
-  vendor_overlap: {
-    total_overlapping: number
-    overlap_pct_of_combined: number
-    overlap_pct_of_meridian: number
-    overlap_pct_of_cascadia: number
-    matches: VendorMatch[]
-  }
-  people_overlap: {
-    functions: PeopleFunction[]
-    total_meridian_corporate: number
-    total_cascadia_corporate: number
-    total_combined_corporate: number
-  }
+export interface OverlapSummary {
+  customer: OverlapDomainSummary
+  vendor: OverlapDomainSummary
+  employee: OverlapDomainSummary
 }
 
 // ── Cross-Sell Pipeline ────────────────────────────────────────────────────

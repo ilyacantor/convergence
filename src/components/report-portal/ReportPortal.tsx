@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { fetchReport, fetchDimensionalDetail, fetchCombiningStatement, fetchCrossSell, fetchUpsell, fetchRevenueByCustomer, fetchEBITDABridge, fetchWhatIf, fetchQofE, fetchReportDimensions, fetchPipelineReport, getEngagementContext } from "./api";
+import { fetchReport, fetchDimensionalDetail, fetchCombiningStatement, fetchCrossSell, fetchUpsell, fetchRevenueByCustomer, fetchEBITDABridge, fetchWhatIf, fetchQofE, fetchReportDimensions, fetchPipelineReport, fetchOverlapSummary, getEngagementContext } from "./api";
 import type { PeriodDimension, DimensionalDetailResponse } from "./api";
 import React from "react";
-import type { ReportData, ReportVariant, EntitySelection, CombiningStatementData, CrossSellData, UpsellData, RevenueByCustomerData, EBITDABridgeData, BridgeAdjustment, WhatIfResult, QofEData, FinancialStatementData, FinancialStatementLineItem, PipelineReportData } from "./types";
+import type { ReportData, ReportVariant, EntitySelection, CombiningStatementData, CrossSellData, UpsellData, RevenueByCustomerData, EBITDABridgeData, BridgeAdjustment, WhatIfResult, QofEData, FinancialStatementData, FinancialStatementLineItem, PipelineReportData, OverlapSummary } from "./types";
 import {
   BarChart, Bar, XAxis, YAxis, Cell, ResponsiveContainer,
   PieChart, Pie,
@@ -693,6 +693,99 @@ function ErrorState({ error, onRetry }: { error: string; onRetry: () => void }) 
       <p style={{ fontSize: 15, fontWeight: 600, color: COLORS.red, fontFamily: "'IBM Plex Sans',sans-serif", margin: 0 }}>Error loading report data</p>
       <p style={{ fontSize: 14, color: COLORS.red, fontFamily: "'IBM Plex Mono',monospace", margin: "8px 0 0", whiteSpace: "pre-wrap", opacity: 0.85 }}>{error}</p>
       <button onClick={onRetry} style={{ marginTop: 12, fontSize: 14, color: COLORS.red, background: "transparent", border: `1px solid ${COLORS.red}44`, padding: "4px 12px", borderRadius: 4, cursor: "pointer" }}>Retry</button>
+    </div>
+  );
+}
+
+// ============================================================
+// OVERLAP TAB
+// ============================================================
+
+function OverlapTab() {
+  const [data, setData] = useState<OverlapSummary | null>(null);
+  const [entityA, setEntityA] = useState<{ id: string; name: string } | null>(null);
+  const [entityB, setEntityB] = useState<{ id: string; name: string } | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    setError(null);
+    Promise.all([fetchOverlapSummary(), getEngagementContext()])
+      .then(([summary, ctx]) => {
+        setData(summary);
+        setEntityA({ id: ctx.entity_a.id, name: ctx.entity_a.display_name });
+        setEntityB({ id: ctx.entity_b.id, name: ctx.entity_b.display_name });
+      })
+      .catch((err) => setError(err instanceof Error ? err.message : String(err)))
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  if (loading) return <LoadingState message="Loading entity overlap..." />;
+  if (error || !data || !entityA || !entityB) return <ErrorState error={error || "No data"} onRetry={load} />;
+
+  const domains: { key: keyof OverlapSummary; label: string }[] = [
+    { key: "customer", label: "Customers" },
+    { key: "vendor", label: "Vendors" },
+    { key: "employee", label: "Employees" },
+  ];
+
+  const thS: React.CSSProperties = { textAlign: "left", padding: "8px 12px", color: COLORS.textMuted, fontWeight: 500, fontSize: 14, letterSpacing: "0.06em", textTransform: "uppercase", fontFamily: "'JetBrains Mono',monospace" };
+  const thR: React.CSSProperties = { ...thS, textAlign: "right" };
+
+  return (
+    <div>
+      {/* Top KPI cards — overlap counts per domain */}
+      <div style={{ display: "flex", gap: 16, marginBottom: 24, flexWrap: "wrap" }}>
+        {domains.map(({ key, label }) => {
+          const d = data[key];
+          return (
+            <div key={key} style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: "16px 20px", flex: "1 1 220px", minWidth: 220 }}>
+              <div style={{ fontSize: 14, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", fontFamily: "'JetBrains Mono',monospace" }}>{label}</div>
+              <div style={{ fontSize: 30, fontWeight: 700, color: COLORS.accent, fontFamily: "'IBM Plex Mono',monospace", marginTop: 4 }}>
+                {d.overlap_count.toLocaleString()}
+              </div>
+              <div style={{ fontSize: 14, color: COLORS.textDim, marginTop: 2 }}>shared across both entities</div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Detail table — per-domain breakdown */}
+      <div style={{ background: COLORS.surface, borderRadius: 8, border: `1px solid ${COLORS.border}`, overflow: "hidden" }}>
+        <div style={{ padding: "12px 20px", borderBottom: `1px solid ${COLORS.border}`, fontSize: 16, fontWeight: 600, color: COLORS.text }}>
+          Overlap Breakdown
+        </div>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "'IBM Plex Mono','JetBrains Mono',monospace", fontSize: 14 }}>
+          <thead>
+            <tr style={{ borderBottom: `2px solid ${COLORS.accent}` }}>
+              <th style={thS}>Domain</th>
+              <th style={thR}>{entityA.name} Total</th>
+              <th style={thR}>{entityB.name} Total</th>
+              <th style={thR}>Overlap</th>
+              <th style={thR}>% of {entityA.name}</th>
+              <th style={thR}>% of {entityB.name}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {domains.map(({ key, label }) => {
+              const d = data[key];
+              return (
+                <tr key={key} style={{ borderBottom: `1px solid ${COLORS.border}22` }}>
+                  <td style={{ padding: "8px 12px", color: COLORS.text, fontFamily: "'IBM Plex Sans',sans-serif" }}>{label}</td>
+                  <td style={{ textAlign: "right", padding: "8px 12px", color: COLORS.textMuted }}>{d.entity_a_total.toLocaleString()}</td>
+                  <td style={{ textAlign: "right", padding: "8px 12px", color: COLORS.textMuted }}>{d.entity_b_total.toLocaleString()}</td>
+                  <td style={{ textAlign: "right", padding: "8px 12px", color: COLORS.accent, fontWeight: 700 }}>{d.overlap_count.toLocaleString()}</td>
+                  <td style={{ textAlign: "right", padding: "8px 12px", color: COLORS.text }}>{d.overlap_pct_a.toFixed(1)}%</td>
+                  <td style={{ textAlign: "right", padding: "8px 12px", color: COLORS.text }}>{d.overlap_pct_b.toFixed(1)}%</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -2297,6 +2390,7 @@ export function ReportPortal({ onClose: _onClose }: { onClose: () => void }) {
       return [
         ...base,
         { id: "combining", label: "Combining" },
+        { id: "overlap", label: "Overlap", title: "Entity Overlap" },
         { id: "crosssell", label: "X-Sell", title: "Cross-Sell Pipeline" },
         { id: "upsell", label: "Upsell", title: "Upsell Opportunities" },
         { id: "pipeline", label: "Pipeline" },
@@ -2541,6 +2635,9 @@ export function ReportPortal({ onClose: _onClose }: { onClose: () => void }) {
             </div>
             <CombiningStatement data={combiningData} loading={combiningLoading} error={combiningError} onRetry={loadCombining} />
           </div>
+        )}
+        {tab === "overlap" && entity === "combined" && (
+          <div style={{ maxWidth: CONTENT_MAX_WIDTH, margin: "0 auto" }}><OverlapTab /></div>
         )}
         {tab === "crosssell" && entity === "combined" && (
           <div style={{ maxWidth: CONTENT_MAX_WIDTH, margin: "0 auto" }}><CrossSellTab /></div>
