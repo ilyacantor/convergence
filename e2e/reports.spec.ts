@@ -82,10 +82,10 @@ test.describe('Reports Portal — Combined Entity Tabs (B17 Gate)', () => {
     await page.getByRole('button', { name: 'Overlap' }).click();
     await expect(page.locator('text=/Loading entity overlap/i')).not.toBeVisible({ timeout: 30_000 });
 
-    // Three domain cards
-    await expect(page.locator('text=Customers').first()).toBeVisible({ timeout: 10_000 });
-    await expect(page.locator('text=Vendors').first()).toBeVisible({ timeout: 5_000 });
+    // Three domain cards: Vendors, Employees, IT Assets (Customers lives in Cross-Sell/Upsell)
+    await expect(page.locator('text=Vendors').first()).toBeVisible({ timeout: 10_000 });
     await expect(page.locator('text=Employees').first()).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('text=IT Assets').first()).toBeVisible({ timeout: 5_000 });
 
     // Breakdown table with entity-name columns
     await expect(page.locator('text=Overlap Breakdown')).toBeVisible({ timeout: 5_000 });
@@ -95,23 +95,25 @@ test.describe('Reports Portal — Combined Entity Tabs (B17 Gate)', () => {
     await waitForDataAndNoErrors(page);
   });
 
-  test('Overlap tab drill-through — click Customers card and entity-only lines', async ({ page }) => {
+  test('Overlap tab drill-through — click IT Assets card and entity-only lines', async ({ page }) => {
     await page.getByRole('button', { name: 'Overlap' }).click();
     await expect(page.locator('text=/Loading entity overlap/i')).not.toBeVisible({ timeout: 30_000 });
     await expect(page.locator('text=Overlap Breakdown')).toBeVisible({ timeout: 10_000 });
 
-    // Click Customers KPI card → overlap drill appears with at least one concept row
-    await page.getByRole('button', { name: /Drill into Customers overlap/i }).click();
-    const overlapDrill = page.locator('[data-testid="overlap-drill-customer-overlap"]');
+    // Click IT Assets KPI card → overlap drill appears with at least one concept row
+    await page.getByRole('button', { name: /Drill into IT Assets overlap/i }).click();
+    const overlapDrill = page.locator('[data-testid="overlap-drill-it_asset-overlap"]');
     await expect(overlapDrill).toBeVisible({ timeout: 15_000 });
-    await expect(overlapDrill.locator('text=/Shared customers — detail/i')).toBeVisible({ timeout: 5_000 });
+    await expect(overlapDrill.locator('text=/Shared IT Assets — detail/i')).toBeVisible({ timeout: 5_000 });
     await expect(overlapDrill.locator('tbody tr').first()).toBeVisible({ timeout: 10_000 });
 
-    // Click Meridian-only line on the same card → entity-only drill replaces the overlap drill
-    await page.getByRole('button', { name: /Meridian-only:/ }).first().click();
-    const aOnlyDrill = page.locator('[data-testid="overlap-drill-customer-a_only"]');
+    // Click Meridian-only line on the IT Assets card → entity-only drill replaces overlap drill
+    await overlapDrill.isVisible();
+    const itAssetsCard = page.getByRole('button', { name: /Drill into IT Assets overlap/i }).locator('..');
+    await itAssetsCard.getByRole('button', { name: /Meridian-only:/ }).click();
+    const aOnlyDrill = page.locator('[data-testid="overlap-drill-it_asset-a_only"]');
     await expect(aOnlyDrill).toBeVisible({ timeout: 15_000 });
-    await expect(aOnlyDrill.locator('text=/Meridian-only customers/i')).toBeVisible({ timeout: 5_000 });
+    await expect(aOnlyDrill.locator('text=/Meridian-only IT Assets/i')).toBeVisible({ timeout: 5_000 });
     await expect(aOnlyDrill.locator('tbody tr').first()).toBeVisible({ timeout: 10_000 });
 
     // Close via the Close button → drill disappears

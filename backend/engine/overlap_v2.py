@@ -13,7 +13,8 @@ from backend.utils.log_utils import get_logger
 
 logger = get_logger(__name__)
 
-_ALLOWED_DOMAINS = ("customer", "vendor", "employee")
+# TEMPORARY: pending ME v2 two-SE refactor — see WP6
+_ALLOWED_DOMAINS = ("customer", "vendor", "employee", "it_asset")
 
 
 import re as _re

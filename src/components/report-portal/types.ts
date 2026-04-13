@@ -91,6 +91,7 @@ export interface OverlapSummary {
   customer: OverlapDomainSummary
   vendor: OverlapDomainSummary
   employee: OverlapDomainSummary
+  it_asset: OverlapDomainSummary
 }
 
 export interface OverlapConceptDetail {

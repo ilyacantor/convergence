@@ -573,7 +573,7 @@ export async function fetchOverlapSummary(): Promise<OverlapSummary> {
   return res.json()
 }
 
-export type OverlapDomain = 'customer' | 'vendor' | 'employee'
+export type OverlapDomain = 'customer' | 'vendor' | 'employee' | 'it_asset'
 
 export async function fetchOverlapDomain(domain: OverlapDomain): Promise<OverlapDomainDetail> {
   const params = await withTenant()

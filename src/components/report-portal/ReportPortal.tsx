@@ -775,10 +775,12 @@ function OverlapTab() {
   if (loading) return <LoadingState message="Loading entity overlap..." />;
   if (error || !data || !entityA || !entityB) return <ErrorState error={error || "No data"} onRetry={load} />;
 
+  // TEMPORARY: pending ME v2 two-SE refactor — see WP6
+  // Customer overlap intentionally omitted — coverage lives in Cross-Sell + Upsell tabs.
   const domains: { key: OverlapDomain; label: string }[] = [
-    { key: "customer", label: "Customers" },
     { key: "vendor", label: "Vendors" },
     { key: "employee", label: "Employees" },
+    { key: "it_asset", label: "IT Assets" },
   ];
 
   const thS: React.CSSProperties = { textAlign: "left", padding: "8px 12px", color: COLORS.textMuted, fontWeight: 500, fontSize: 14, letterSpacing: "0.06em", textTransform: "uppercase", fontFamily: "'JetBrains Mono',monospace" };
@@ -900,9 +902,9 @@ function OverlapTab() {
         <div data-testid={`overlap-drill-${drill.domain}-${drill.side}`} style={{ background: COLORS.surface, borderRadius: 8, border: `1px solid ${COLORS.border}`, overflow: "hidden" }}>
           <div style={{ padding: "12px 20px", borderBottom: `1px solid ${COLORS.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <span style={{ fontSize: 16, fontWeight: 600, color: COLORS.text }}>
-              {drill.side === "overlap" && `Shared ${activeDomain}s — detail`}
-              {drill.side === "a_only" && `${entityA.name}-only ${activeDomain}s`}
-              {drill.side === "b_only" && `${entityB.name}-only ${activeDomain}s`}
+              {drill.side === "overlap" && `Shared ${domains.find((d) => d.key === activeDomain)?.label ?? activeDomain} — detail`}
+              {drill.side === "a_only" && `${entityA.name}-only ${domains.find((d) => d.key === activeDomain)?.label ?? activeDomain}`}
+              {drill.side === "b_only" && `${entityB.name}-only ${domains.find((d) => d.key === activeDomain)?.label ?? activeDomain}`}
             </span>
             <button type="button" onClick={() => setDrill(null)} style={{ background: "transparent", border: `1px solid ${COLORS.border}`, borderRadius: 4, color: COLORS.textMuted, padding: "2px 10px", fontSize: 13, cursor: "pointer" }}>Close</button>
           </div>
@@ -947,7 +949,7 @@ function OverlapTab() {
             const key = `${drill.domain}-${drill.side === "a_only" ? "a" : "b"}`;
             const result = entityOnly[key];
             if (!result) return null;
-            if (result.concepts.length === 0) return <div style={{ padding: "20px", color: COLORS.textMuted }}>No {drill.side === "a_only" ? entityA.name : entityB.name}-only {drill.domain}s.</div>;
+            if (result.concepts.length === 0) return <div style={{ padding: "20px", color: COLORS.textMuted }}>No {drill.side === "a_only" ? entityA.name : entityB.name}-only {domains.find((d) => d.key === drill.domain)?.label ?? drill.domain}.</div>;
             return (
               <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "'IBM Plex Mono','JetBrains Mono',monospace", fontSize: 13 }}>
                 <thead>
