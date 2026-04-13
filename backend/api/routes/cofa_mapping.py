@@ -62,14 +62,18 @@ def _load_coa_accounts(cur, entity_id: str) -> dict[str, str]:
     """Load CoA account_name → account_number mapping for an entity.
 
     Returns {account_name: account_number} from the coa.* triples.
+
+    SE-side reads come from current_triples — the flat live mirror DCL
+    rebuild established. ME-side reads stay on convergence_triples until
+    that store undergoes its own rebuild.
     """
     cur.execute(
         "SELECT acct_num, acct_name FROM ("
         "  SELECT split_part(concept, '.', 2) AS acct_num, "
         "         value #>> '{}' AS acct_name, created_at "
-        "  FROM semantic_triples "
+        "  FROM current_triples "
         "  WHERE concept LIKE 'coa.%%' AND entity_id = %s "
-        "    AND property = 'account_name' AND is_active = true "
+        "    AND property = 'account_name' "
         "  UNION ALL "
         "  SELECT split_part(concept, '.', 2) AS acct_num, "
         "         value #>> '{}' AS acct_name, created_at "
@@ -135,17 +139,17 @@ def _check_completeness(
 def _get_consumed_dcl_ingest_ids(entity_ids: list[str]) -> list[str]:
     """Get the DCL ingest run_ids that produced source data for these entities.
 
-    Queries semantic_triples (DCL-owned) for distinct active run_ids
-    belonging to the entity pair. These are the upstream ingest IDs that
-    the COFA mapping consumed.
+    Reads the current_run_id pointer from tenant_runs — the authoritative
+    per-entity ingest pointer after the DCL store rebuild. current_triples
+    doesn't carry run_id, so provenance is resolved via the pointer table.
     """
     if not entity_ids:
         return []
     placeholders = ", ".join(["%s"] * len(entity_ids))
     sql = (
-        f"SELECT DISTINCT run_id::text FROM semantic_triples "
-        f"WHERE entity_id IN ({placeholders}) AND is_active = true "
-        f"ORDER BY run_id"
+        f"SELECT DISTINCT current_run_id::text FROM tenant_runs "
+        f"WHERE entity_id IN ({placeholders}) "
+        f"ORDER BY current_run_id"
     )
     with get_connection() as conn:
         with conn.cursor() as cur:
