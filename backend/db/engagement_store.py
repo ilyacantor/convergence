@@ -7,11 +7,14 @@ Platform (Mai) and Console read via HTTP. No proxying back to Platform.
 
 import json
 import logging
+import time
 from datetime import datetime, timezone
 from uuid import UUID
 
+import httpx
 from psycopg2.extras import RealDictCursor
 
+from backend.core.constants import FARM_API_URL
 from backend.core.db import get_connection
 
 logger = logging.getLogger(__name__)
@@ -25,6 +28,85 @@ VALID_TRANSITIONS = {
     "closed": {"archived"},
     "archived": set(),
 }
+
+
+class UnsanctionedEntityError(ValueError):
+    """Raised when an engagement references an entity_id Farm has no config for."""
+
+
+class FarmUnavailableError(RuntimeError):
+    """Raised when Farm's triple-configs endpoint is unreachable or returns 5xx."""
+
+
+_sanctioned_cache: dict = {"entities": None, "expires_at": 0.0}
+_SANCTIONED_TTL_SECONDS = 60.0
+
+
+def _fetch_sanctioned_entities() -> set[str]:
+    """Return the set of entity_ids Farm has configs for. Cached for 60s.
+
+    Farm is the sole authority on entity_id (RACI). Calls Farm's
+    /api/business-data/triple-configs and extracts entity_id from each
+    config. On Farm 5xx or unreachable: raises FarmUnavailableError with a
+    loud message. No silent "allow all" fallback — refusing to validate is
+    refusing to create.
+    """
+    now = time.monotonic()
+    cached = _sanctioned_cache["entities"]
+    if cached is not None and now < _sanctioned_cache["expires_at"]:
+        return cached
+
+    url = f"{FARM_API_URL.rstrip('/')}/api/business-data/triple-configs"
+    try:
+        with httpx.Client(timeout=5.0) as client:
+            resp = client.get(url)
+    except httpx.ConnectError as e:
+        raise FarmUnavailableError(
+            f"Cannot validate entity_id — Farm unreachable at {url} "
+            f"(connection refused: {e}). Refusing to create engagement "
+            f"without Farm-authoritative entity validation."
+        ) from e
+    except httpx.TimeoutException as e:
+        raise FarmUnavailableError(
+            f"Cannot validate entity_id — Farm at {url} timed out after 5s "
+            f"({e}). Refusing to create engagement."
+        ) from e
+
+    if resp.status_code >= 500:
+        raise FarmUnavailableError(
+            f"Cannot validate entity_id — Farm returned {resp.status_code} "
+            f"at {url} (body: {resp.text[:200]!r}). Refusing to create "
+            f"engagement."
+        )
+    if resp.status_code != 200:
+        raise FarmUnavailableError(
+            f"Cannot validate entity_id — Farm returned unexpected "
+            f"{resp.status_code} at {url} (body: {resp.text[:200]!r})."
+        )
+
+    configs = resp.json().get("configs") or []
+    entities = {c["entity_id"] for c in configs if c.get("entity_id")}
+    if not entities:
+        raise FarmUnavailableError(
+            f"Farm at {url} returned empty sanctioned entity set. "
+            f"Refusing to create engagement."
+        )
+
+    _sanctioned_cache["entities"] = entities
+    _sanctioned_cache["expires_at"] = now + _SANCTIONED_TTL_SECONDS
+    return entities
+
+
+def _validate_sanctioned_entities(acquirer: str, target: str) -> None:
+    sanctioned = _fetch_sanctioned_entities()
+    rejected = sorted({e for e in (acquirer, target) if e not in sanctioned})
+    if rejected:
+        raise UnsanctionedEntityError(
+            f"entity_id(s) not in Farm's sanctioned set: {rejected}. "
+            f"Farm configured entities: {sorted(sanctioned)}. "
+            f"Add farm_config_{{entity}}.yaml in Farm before creating "
+            f"engagements with new entities."
+        )
 
 
 def _validate_uuid(val: str, name: str) -> str:
@@ -74,6 +156,7 @@ def create_engagement(
     engagement_id: str | None = None,
 ) -> dict:
     _validate_uuid(tenant_id, "tenant_id")
+    _validate_sanctioned_entities(acquirer_entity_id, target_entity_id)
     now = datetime.now(timezone.utc)
     state_json = json.dumps(state or {})
 

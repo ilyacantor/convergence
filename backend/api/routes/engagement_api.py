@@ -82,15 +82,20 @@ class UpdateReviewRequest(BaseModel):
 @router.post("/engagements")
 async def create_engagement(req: CreateEngagementRequest):
     """Create a new engagement."""
-    return engagement_store.create_engagement(
-        tenant_id=req.tenant_id,
-        acquirer_entity_id=req.acquirer_entity_id,
-        target_entity_id=req.target_entity_id,
-        engagement_type=req.engagement_type,
-        engagement_short_name=req.engagement_short_name,
-        state=req.state,
-        engagement_id=req.engagement_id,
-    )
+    try:
+        return engagement_store.create_engagement(
+            tenant_id=req.tenant_id,
+            acquirer_entity_id=req.acquirer_entity_id,
+            target_entity_id=req.target_entity_id,
+            engagement_type=req.engagement_type,
+            engagement_short_name=req.engagement_short_name,
+            state=req.state,
+            engagement_id=req.engagement_id,
+        )
+    except engagement_store.UnsanctionedEntityError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except engagement_store.FarmUnavailableError as e:
+        raise HTTPException(status_code=503, detail=str(e))
 
 
 @router.get("/engagements")
