@@ -104,7 +104,7 @@ interface ConflictData {
   category_summary: CategorySummary;
 }
 
-interface MaestraEngagement {
+interface MaiEngagement {
   engagement_id: string;
   engagement_short_name: string | null;
   acquirer_entity_id: string;
@@ -185,7 +185,7 @@ export function MergePanel() {
   const [autoRefresh, setAutoRefresh] = useState(true);
 
   // Engagement selector
-  const [engagements, setEngagements] = useState<MaestraEngagement[]>([]);
+  const [engagements, setEngagements] = useState<MaiEngagement[]>([]);
   const [selectedEngagementId, setSelectedEngagementId] = useState<string | null>(null);
   const [engagementError, setEngagementError] = useState<string | null>(null);
 
@@ -207,7 +207,7 @@ export function MergePanel() {
           } else if (elapsed >= 30) {
             setMergeStatus('Mapping accounts and identifying conflicts...');
           } else if (elapsed >= 10) {
-            setMergeStatus('Maestra is analyzing charts of accounts...');
+            setMergeStatus('Mai is analyzing charts of accounts...');
           }
         }
       }, 1000);
@@ -269,7 +269,7 @@ export function MergePanel() {
         );
         return;
       }
-      const list: MaestraEngagement[] = await res.json();
+      const list: MaiEngagement[] = await res.json();
       const sorted = [...list].sort((a, b) => b.created_at.localeCompare(a.created_at));
       setEngagements(sorted);
       setEngagementError(null);
@@ -312,13 +312,13 @@ export function MergePanel() {
     setMergeRunning(true);
     setMergeError(null);
     setMergeCollapsedResponse(null);
-    setMergeStatus('Sending to Maestra...');
+    setMergeStatus('Sending to Mai...');
     mergeStartRef.current = Date.now();
 
-    // Step 1: POST to Maestra chat
-    let maestraOk = false;
+    // Step 1: POST to Mai chat
+    let maiOk = false;
     try {
-      const res = await fetch('/api/convergence/maestra/cofa-chat', {
+      const res = await fetch('/api/convergence/mai/cofa-chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -336,24 +336,24 @@ export function MergePanel() {
       const result = await res.json();
 
       if (result.tool_calls && result.tool_calls.length > 0) {
-        maestraOk = true;
+        maiOk = true;
       } else {
-        setMergeCollapsedResponse(result.response || 'Maestra responded but did not invoke mapping tool.');
+        setMergeCollapsedResponse(result.response || 'Mai responded but did not invoke mapping tool.');
       }
     } catch (e: unknown) {
-      setMergeError(e instanceof Error ? e.message : 'Failed to reach Platform/Maestra');
+      setMergeError(e instanceof Error ? e.message : 'Failed to reach Platform/Mai');
       setMergeRunning(false);
       setMergeStatus(null);
       return;
     }
 
-    if (!maestraOk) {
+    if (!maiOk) {
       setMergeRunning(false);
       setMergeStatus(null);
       return;
     }
 
-    // Step 2: Poll for results (max 120s — Maestra LLM + write should complete within this)
+    // Step 2: Poll for results (max 120s — Mai LLM + write should complete within this)
     setMergeStatus('Waiting for Convergence to receive mapping triples...');
     const POLL_TIMEOUT_MS = 120_000;
     const pollForResults = () => {
@@ -363,7 +363,7 @@ export function MergePanel() {
           if (pollRef.current) clearTimeout(pollRef.current);
           setMergeError(
             `Merge timed out after ${Math.floor(elapsed / 1000)}s. ` +
-            'Maestra may still be processing — check Platform logs. ' +
+            'Mai may still be processing — check Platform logs. ' +
             'Refresh the page and try again if needed.'
           );
           setMergeRunning(false);
@@ -760,7 +760,7 @@ export function MergePanel() {
                     ? 'No engagement selected \u2014 select or create one first'
                     : data.matches.has_matches
                       ? 'Re-run will replace existing mappings'
-                      : 'Trigger Maestra to unify COFA accounts'
+                      : 'Trigger Mai to unify COFA accounts'
                 }
               >
                 {mergeRunning ? 'Running...' : data.matches.has_matches ? 'Re-run' : 'Run COFA Merge'}
@@ -806,7 +806,7 @@ export function MergePanel() {
         {mergeCollapsedResponse && !mergeRunning && (
           <details className="mt-1.5 rounded border border-amber-500/20 bg-amber-500/10 px-3 py-1.5">
             <summary className="text-sm text-amber-400 cursor-pointer">
-              Maestra completed analysis but did not write results.
+              Mai completed analysis but did not write results.
             </summary>
             <pre className="mt-2 text-xs text-muted-foreground whitespace-pre-wrap max-h-40 overflow-y-auto">
               {mergeCollapsedResponse}
