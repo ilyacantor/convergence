@@ -1,11 +1,11 @@
 /**
  * Engagement Monitor tab — verify it loads without errors and
- * has zero references to constitution, tools, or Maestra.
+ * has zero references to constitution, tools, or Mai.
  */
 import { test, expect } from '@playwright/test'
 
-test.describe('Engagement Monitor — clean of Maestra concepts', () => {
-  test('loads with engagement data, no errors, no Maestra references', async ({ page }) => {
+test.describe('Engagement Monitor — clean of Mai concepts', () => {
+  test('loads with engagement data, no errors, no Mai references', async ({ page }) => {
     // Collect console errors
     const consoleErrors: string[] = []
     page.on('console', (msg) => {
@@ -26,9 +26,9 @@ test.describe('Engagement Monitor — clean of Maestra concepts', () => {
     // Header must say "Engagement Monitor"
     await expect(page.getByText('Engagement Monitor')).toBeVisible()
 
-    // Must NOT contain Maestra, Constitution, or Tools panel text
+    // Must NOT contain Mai, Constitution, or Tools panel text
     const pageText = await page.textContent('body') ?? ''
-    expect(pageText).not.toContain('Maestra')
+    expect(pageText).not.toContain('Mai')
     expect(pageText).not.toContain('Constitution')
     expect(pageText).not.toContain('Available Tools')
     expect(pageText).not.toContain('check_module_status')
@@ -51,10 +51,10 @@ test.describe('Engagement Monitor — clean of Maestra concepts', () => {
     expect(relevantFailures.length, `Unexpected failed requests: ${relevantFailures.join(', ')}`).toBe(0)
 
     // Check for console errors referencing constitution or tools
-    const maestraErrors = consoleErrors.filter(
-      e => e.includes('constitution') || e.includes('tools') || e.includes('Maestra')
+    const maiErrors = consoleErrors.filter(
+      e => e.includes('constitution') || e.includes('tools') || e.includes('Mai')
     )
-    expect(maestraErrors.length, `Maestra-related console errors: ${maestraErrors.join(', ')}`).toBe(0)
+    expect(maiErrors.length, `Mai-related console errors: ${maiErrors.join(', ')}`).toBe(0)
 
     await page.screenshot({ path: 'e2e/screenshots/engagement-monitor-clean.png' })
   })
