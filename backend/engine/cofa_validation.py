@@ -2,9 +2,9 @@
 COFA Completeness Gate
 ======================
 Validates that a COFA mapping covers every source account before accepting it.
-This is a deterministic gate — Maestra cannot bypass it.
+This is a deterministic gate — Mai cannot bypass it.
 
-If incomplete, returns the orphan list so Maestra can be told exactly which
+If incomplete, returns the orphan list so Mai can be told exactly which
 accounts she missed. She gets a second attempt with specific feedback.
 """
 
@@ -25,7 +25,7 @@ class COFACompletionGate:
         Args:
             source_coa: List of source accounts, each with at minimum
                         'account_number' and 'account_name'.
-            mapping_entries: The COFA mapping entries Maestra produced.
+            mapping_entries: The COFA mapping entries Mai produced.
                              Each entry may reference source accounts via
                              'entity_a_account_number', 'entity_b_account_number',
                              'source_account_number', or 'source_account'.
@@ -144,7 +144,7 @@ class COFACompletionGate:
     ) -> dict[str, Any]:
         """Validate and return rejection detail if incomplete.
 
-        If incomplete, returns the orphan list so Maestra can be told
+        If incomplete, returns the orphan list so Mai can be told
         exactly which accounts she missed. She gets a second attempt
         with specific feedback.
         """

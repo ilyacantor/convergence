@@ -3,7 +3,7 @@ COFA Mapping Route
 ==================
 POST /api/convergence/cofa-mapping
 
-Accepts Maestra's structured COFA mapping output and writes semantic triples.
+Accepts Mai's structured COFA mapping output and writes semantic triples.
 Enforces COFACompletionGate — rejects with 422 if any CoA account is unmapped.
 """
 
@@ -161,7 +161,7 @@ def _get_consumed_dcl_ingest_ids(entity_ids: list[str]) -> list[str]:
     "",
     summary="Write COFA mapping triples",
     description=(
-        "Converts Maestra's structured COFA mapping output into semantic triples "
+        "Converts Mai's structured COFA mapping output into semantic triples "
         "and writes them to the convergence_triples table. Idempotent per cofa_run_id. "
         "Enforces COFACompletionGate — rejects with 422 if any CoA account is unmapped."
     ),

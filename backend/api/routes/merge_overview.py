@@ -60,7 +60,7 @@ def _get_cofa_entity_ids(cur) -> list[str]:
     """Return distinct entity_ids that have active COFA-related triples.
 
     Includes coa (chart of accounts) and all cofa-prefixed domains so the
-    merge tab works both before and after Maestra runs.
+    merge tab works both before and after Mai runs.
     """
     cur.execute(
         "SELECT DISTINCT entity_id FROM ("
@@ -77,10 +77,10 @@ def _get_cofa_entity_ids(cur) -> list[str]:
     return [r[0] for r in cur.fetchall()]
 
 
-async def _fetch_engagement_from_maestra(
+async def _fetch_engagement_from_mai(
     tenant_id: Optional[str],
 ) -> tuple[Optional[str], Optional[str], Optional[str]]:
-    """Fetch active engagement (engagement_id, entity_a_id, entity_b_id) from Maestra.
+    """Fetch active engagement (engagement_id, entity_a_id, entity_b_id) from Mai.
 
     Returns (None, None, None) when:
       - tenant_id is unknown (no convergence_tenant_runs row yet)
@@ -114,7 +114,7 @@ def _resolve_entities(
 
     Priority:
     1. Explicit query params (validated against triple store)
-    2. Engagement from Maestra (passed in by caller), mapped to COFA entity_ids
+    2. Engagement from Mai (passed in by caller), mapped to COFA entity_ids
     3. Distinct entities from COFA triples (alphabetical)
 
     Returns (acquirer_id, target_id, engagement_id).
@@ -167,20 +167,20 @@ def _resolve_entities(
 
         # Engagement IDs don't match triple store — log clearly and fall through
         logger.warning(
-            f"[merge] Maestra engagement entity IDs ('{engagement_a}', '{engagement_b}') "
+            f"[merge] Mai engagement entity IDs ('{engagement_a}', '{engagement_b}') "
             f"do not match any COFA entity_ids in the triple store: {cofa_entities}. "
             f"Falling through to COFA entity discovery. "
             f"Fix: ensure engagement entity IDs match the entity_id values used during Farm ingestion."
         )
 
-    # 2.5. File-based engagement config — authoritative when Maestra has none
+    # 2.5. File-based engagement config — authoritative when Mai has none
     try:
         from backend.engine.engagement import get_active_engagement
         file_eng = get_active_engagement()
         a_id, b_id = file_eng.entity_a.id, file_eng.entity_b.id
         if a_id in cofa_entities and b_id in cofa_entities:
             logger.info(
-                f"[merge] No Maestra engagement — using file config: "
+                f"[merge] No Mai engagement — using file config: "
                 f"engagement_id={file_eng.engagement_id}, "
                 f"acquirer={a_id}, target={b_id}"
             )
@@ -202,11 +202,11 @@ async def merge_overview(
     target_id: Optional[str] = Query(None),
 ):
     """COFA merge overview — side-by-side comparison of two entities."""
-    # Resolve tenant_id from convergence_tenant_runs, then ask Maestra
-    # for the active engagement.  Engagement state lives in Maestra now —
+    # Resolve tenant_id from convergence_tenant_runs, then ask Mai
+    # for the active engagement.  Engagement state lives in Mai now —
     # we never query engagement_state directly.
     tenant_id = _triple_store.get_active_tenant_id()
-    eng_id, engagement_a, engagement_b = await _fetch_engagement_from_maestra(tenant_id)
+    eng_id, engagement_a, engagement_b = await _fetch_engagement_from_mai(tenant_id)
 
     with get_connection() as conn:
         with conn.cursor() as cur:

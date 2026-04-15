@@ -705,7 +705,7 @@ class TripleStore:
     def get_active_tenant_run_state(self) -> dict | None:
         """Return the most recently updated row from convergence_tenant_runs.
 
-        Replaces the SQL fallback in Maestra's _resolve_tenant_id().
+        Replaces the SQL fallback in Mai's _resolve_tenant_id().
         Returns None if the table is empty.
         """
         sql = (

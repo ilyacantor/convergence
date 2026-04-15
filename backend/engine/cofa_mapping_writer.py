@@ -1,7 +1,7 @@
 """
 COFA Mapping Writer
 ====================
-Converts Maestra's structured COFA mapping output into semantic triples
+Converts Mai's structured COFA mapping output into semantic triples
 and writes them to Postgres via TripleStore.
 
 Deterministic — no LLM calls. Idempotent via run_id deactivation.
@@ -18,7 +18,7 @@ logger = get_logger(__name__)
 # Fixed namespace for deterministic canonical_id generation
 _COFA_NAMESPACE = uuid.UUID("59ba322e-9a62-42a3-8c62-1df46c477a8e")
 
-# Map Maestra's mapping_basis to DB-allowed resolution_method values.
+# Map Mai's mapping_basis to DB-allowed resolution_method values.
 # DB constraint: deterministic | fuzzy | manual | NULL
 _RESOLUTION_METHOD_MAP = {
     "exact_match": "deterministic",
@@ -114,7 +114,7 @@ def _build_mapping_triples(data: dict) -> list[dict]:
                 "period": None,
                 "currency": None,
                 "unit": None,
-                "source_system": "maestra",
+                "source_system": "mai",
                 "source_table": None,
                 "source_field": "cofa_unification",
                 "pipe_id": None,
@@ -137,7 +137,7 @@ def _build_mapping_triples(data: dict) -> list[dict]:
                 "period": None,
                 "currency": None,
                 "unit": None,
-                "source_system": "maestra",
+                "source_system": "mai",
                 "source_table": None,
                 "source_field": "cofa_unification",
                 "pipe_id": None,
@@ -182,7 +182,7 @@ def _build_conflict_triples(data: dict) -> list[dict]:
                 "period": None,
                 "currency": None,
                 "unit": None,
-                "source_system": "maestra",
+                "source_system": "mai",
                 "source_table": None,
                 "source_field": "cofa_unification",
                 "pipe_id": None,
@@ -225,7 +225,7 @@ def _build_unified_account_triples(data: dict) -> list[dict]:
                 "period": None,
                 "currency": None,
                 "unit": None,
-                "source_system": "maestra",
+                "source_system": "mai",
                 "source_table": None,
                 "source_field": "cofa_unification",
                 "pipe_id": None,

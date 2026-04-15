@@ -3,7 +3,7 @@ Chart-of-Accounts read endpoint.
 
 GET /api/convergence/coa/accounts?tenant_id=X&entity_id=Y
 
-Replaces Maestra's raw SQL on convergence_triples for CoA loading.
+Replaces Mai's raw SQL on convergence_triples for CoA loading.
 One endpoint, one job — accounts only. Run state lives on /tenants/*.
 """
 
@@ -29,7 +29,7 @@ async def get_coa_accounts(
 ):
     """Return Chart of Accounts for an entity in the tenant's current run.
 
-    Used by Maestra's COFA chat to load CoA context into prompts.
+    Used by Mai's COFA chat to load CoA context into prompts.
     Returns an empty 404 if the entity has no CoA triples — no silent
     fallback, no demo data.
     """
