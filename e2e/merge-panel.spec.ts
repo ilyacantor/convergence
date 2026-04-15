@@ -64,7 +64,7 @@ test.describe('MergePanel', () => {
   });
 
   test('engagements load from Platform via HTTP contract', async ({ page }) => {
-    // After Maestra↔Convergence HTTP migration, Platform's engagements
+    // After Mai↔Convergence HTTP migration, Platform's engagements
     // endpoint is reachable from Convergence. The MergePanel must populate
     // its dropdown and not surface an engagement error.
     await expect(page.locator('h2', { hasText: 'COFA Merge' })).toBeVisible({ timeout: 15_000 });

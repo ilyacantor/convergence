@@ -4,7 +4,7 @@ Tenant run-state endpoints.
 GET /api/convergence/tenants/active     — most recently updated tenant + run
 GET /api/convergence/tenants/{tenant_id} — run state for a specific tenant
 
-Replaces the SQL fallback in Maestra's _resolve_tenant_id().
+Replaces the SQL fallback in Mai's _resolve_tenant_id().
 """
 
 from datetime import datetime
@@ -55,7 +55,7 @@ def _serialize_run_state(row: dict) -> dict:
 async def get_active_tenant():
     """Return the most recently updated tenant run state.
 
-    Used by Maestra to discover the active dataset when no explicit
+    Used by Mai to discover the active dataset when no explicit
     tenant_id is configured. Returns 404 when no pipeline has run yet.
     """
     try:
@@ -82,7 +82,7 @@ async def get_active_tenant():
 async def get_tenant(tenant_id: str):
     """Return run state for a specific tenant.
 
-    Used by Maestra to validate a configured tenant_id has live data.
+    Used by Mai to validate a configured tenant_id has live data.
     422 on invalid UUID, 404 when tenant has no row in tenant_runs.
     """
     try:

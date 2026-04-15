@@ -2,7 +2,7 @@
 Engagement store — canonical engagement CRUD on Convergence's engagements table.
 
 Single source of truth for engagement lifecycle, run ledger, and human reviews.
-Platform (Maestra) and Console read via HTTP. No proxying back to Platform.
+Platform (Mai) and Console read via HTTP. No proxying back to Platform.
 """
 
 import json
@@ -382,7 +382,7 @@ def create_review(
     action: str,
     context: dict,
     tier: int,
-    requested_by: str = "maestra",
+    requested_by: str = "mai",
 ) -> dict:
     now = datetime.now(timezone.utc)
     status = "approved" if tier == 1 else "pending"

@@ -2,7 +2,7 @@
 Engagement API — canonical engagement CRUD + legacy compat endpoints.
 
 POST-MOVE: All engagement state lives in Convergence's engagements table.
-Platform (Maestra) and Console read via these endpoints. No proxy to Platform.
+Platform (Mai) and Console read via these endpoints. No proxy to Platform.
 
 Keeps GET /engagement/active for DCL/NLQ/ReportPortal backwards compat.
 """
@@ -22,7 +22,7 @@ logger = get_logger(__name__)
 
 PLATFORM_URL = (
     os.environ.get("PLATFORM_URL")
-    or os.environ.get("MAESTRA_BASE_URL")
+    or os.environ.get("MAI_BASE_URL")
     or "http://localhost:8006"
 ).rstrip("/")
 
@@ -68,7 +68,7 @@ class CreateReviewRequest(BaseModel):
     action: str
     context: dict = Field(default_factory=dict)
     tier: int = 3
-    requested_by: str = "maestra"
+    requested_by: str = "mai"
 
 
 class UpdateReviewRequest(BaseModel):
@@ -401,25 +401,25 @@ async def run_stats(engagement_id: str, step_name: str = Query(None)):
     }
 
 
-# ── COFA chat proxy to Platform/Maestra ─────────────────────────────────────
+# ── COFA chat proxy to Platform/Mai ─────────────────────────────────────
 
-@router.post("/maestra/cofa-chat")
+@router.post("/mai/cofa-chat")
 async def cofa_chat(request: Request):
-    """Proxy COFA chat to Platform's Maestra endpoint.
+    """Proxy COFA chat to Platform's Mai endpoint.
 
-    Maestra's chat handler stays in Platform. This is a pass-through.
+    Mai's chat handler stays in Platform. This is a pass-through.
     """
     body = await request.json()
     async with httpx.AsyncClient(timeout=120.0) as client:
         try:
             resp = await client.post(
-                f"{PLATFORM_URL}/api/maestra/cofa-chat",
+                f"{PLATFORM_URL}/api/mai/cofa-chat",
                 json=body,
             )
             resp.raise_for_status()
         except httpx.HTTPError as e:
             raise HTTPException(
                 status_code=502,
-                detail=f"Cannot reach Platform at {PLATFORM_URL}/api/maestra/cofa-chat — {e}",
+                detail=f"Cannot reach Platform at {PLATFORM_URL}/api/mai/cofa-chat — {e}",
             )
     return resp.json()
