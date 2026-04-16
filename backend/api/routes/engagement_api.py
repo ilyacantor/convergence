@@ -406,25 +406,65 @@ async def run_stats(engagement_id: str, step_name: str = Query(None)):
     }
 
 
-# ── COFA chat proxy to Platform/Mai ─────────────────────────────────────
+# ── Canonical Mai chat proxy (Mai v8 §3.1/§3.2) ─────────────────────────
 
-@router.post("/mai/cofa-chat")
-async def cofa_chat(request: Request):
-    """Proxy COFA chat to Platform's Mai endpoint.
+@router.post("/mai/chat")
+async def mai_chat(request: Request):
+    """Proxy Mai canonical chat (SSE) from Convergence surface to Platform.
 
-    Mai's chat handler stays in Platform. This is a pass-through.
+    Per Mai v8 blueprint: the Convergence frontend sends a canonical envelope
+    here with `surface_id='convergence'`; this handler streams the SSE events
+    back from Platform unchanged. Mai's chat handler stays in Platform.
     """
+    from fastapi.responses import StreamingResponse
+
     body = await request.json()
-    async with httpx.AsyncClient(timeout=120.0) as client:
+
+    async def forward() -> "typing.AsyncGenerator[bytes, None]":
+        async with httpx.AsyncClient(timeout=None) as client:
+            try:
+                async with client.stream(
+                    "POST",
+                    f"{PLATFORM_URL}/api/mai/chat",
+                    json=body,
+                    headers={"Accept": "text/event-stream"},
+                ) as resp:
+                    if resp.status_code >= 400:
+                        detail = (await resp.aread()).decode(errors="replace")
+                        raise HTTPException(
+                            status_code=resp.status_code,
+                            detail=f"Platform /api/mai/chat error: {detail}",
+                        )
+                    async for chunk in resp.aiter_raw():
+                        yield chunk
+            except httpx.HTTPError as e:
+                # Emit a final SSE error frame so the client can react.
+                err_payload = (
+                    f'data: {{"type":"error","error":"Cannot reach Platform at '
+                    f'{PLATFORM_URL}/api/mai/chat — {e}"}}\n\n'
+                ).encode()
+                yield err_payload
+
+    return StreamingResponse(
+        forward(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@router.get("/mai/chat/history")
+async def mai_chat_history(session_id: str):
+    """Proxy chat history GET to Platform — used on mount / resume."""
+    async with httpx.AsyncClient(timeout=10.0) as client:
         try:
-            resp = await client.post(
-                f"{PLATFORM_URL}/api/mai/cofa-chat",
-                json=body,
+            resp = await client.get(
+                f"{PLATFORM_URL}/api/mai/chat/history",
+                params={"session_id": session_id},
             )
             resp.raise_for_status()
         except httpx.HTTPError as e:
             raise HTTPException(
                 status_code=502,
-                detail=f"Cannot reach Platform at {PLATFORM_URL}/api/mai/cofa-chat — {e}",
+                detail=f"Cannot reach Platform at {PLATFORM_URL}/api/mai/chat/history — {e}",
             )
     return resp.json()

@@ -315,30 +315,72 @@ export function MergePanel() {
     setMergeStatus('Sending to Mai...');
     mergeStartRef.current = Date.now();
 
-    // Step 1: POST to Mai chat
+    // Step 1: POST canonical envelope to Mai and listen for tool_use events.
+    // Per Mai v8 §3.1/§3.2 — surface_id='convergence', SSE stream, look for
+    // write_cofa_mapping tool_use to confirm Mai is doing the work.
+    const tenantId = (window as unknown as { __AOS_TENANT_ID?: string }).__AOS_TENANT_ID
+      || 'default';
+    const operatorId = (window as unknown as { __AOS_OPERATOR_ID?: string }).__AOS_OPERATOR_ID
+      || 'operator';
     let maiOk = false;
+    let sawWriteCofaMapping = false;
+    let lastAssistantText = '';
     try {
-      const res = await fetch('/api/convergence/mai/cofa-chat', {
+      const res = await fetch('/api/convergence/mai/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'text/event-stream',
+        },
         body: JSON.stringify({
-          session_id: `merge-${selectedEngagementId}`,
-          engagement_id: selectedEngagementId,
           message: 'Run COFA unification — map all chart-of-accounts entries, identify conflicts, and write results to Convergence.',
+          session_id: `merge-${selectedEngagementId}`,
+          surface_id: 'convergence',
+          tenant_id: tenantId,
+          operator_id: operatorId,
+          engagement_id: selectedEngagementId,
+          page_context: { route: '/merge', panel: 'MergePanel' },
         }),
       });
 
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.detail || `Platform returned HTTP ${res.status}`);
+      if (!res.ok || !res.body) {
+        throw new Error(`Platform returned HTTP ${res.status}`);
       }
 
-      const result = await res.json();
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const frames = buf.split('\n\n');
+        buf = frames.pop() || '';
+        for (const frame of frames) {
+          if (!frame.startsWith('data:')) continue;
+          let evt: { type?: string; text?: string; name?: string; error?: string };
+          try {
+            evt = JSON.parse(frame.replace(/^data:\s*/, ''));
+          } catch {
+            continue;
+          }
+          if (evt.type === 'content' && typeof evt.text === 'string') {
+            lastAssistantText = evt.text;
+          } else if (evt.type === 'tool_use' && evt.name === 'write_cofa_mapping') {
+            sawWriteCofaMapping = true;
+            setMergeStatus('Mai is writing unified COFA mapping...');
+          } else if (evt.type === 'error' && evt.error) {
+            throw new Error(evt.error);
+          } else if (evt.type === 'done') {
+            maiOk = true;
+          }
+        }
+      }
 
-      if (result.tool_calls && result.tool_calls.length > 0) {
-        maiOk = true;
-      } else {
-        setMergeCollapsedResponse(result.response || 'Mai responded but did not invoke mapping tool.');
+      if (!sawWriteCofaMapping) {
+        setMergeCollapsedResponse(
+          lastAssistantText || 'Mai responded but did not invoke write_cofa_mapping.'
+        );
       }
     } catch (e: unknown) {
       setMergeError(e instanceof Error ? e.message : 'Failed to reach Platform/Mai');
@@ -347,7 +389,7 @@ export function MergePanel() {
       return;
     }
 
-    if (!maiOk) {
+    if (!maiOk || !sawWriteCofaMapping) {
       setMergeRunning(false);
       setMergeStatus(null);
       return;
