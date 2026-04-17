@@ -45,8 +45,12 @@ test.describe('MergePanel', () => {
     await expect(page.locator('th', { hasText: 'Dollar Impact' }).first()).toBeVisible();
     await expect(page.locator('th', { hasText: 'EBITDA' }).first()).toBeVisible();
 
-    // Combined row at the bottom of the impact table
-    await expect(page.locator('td', { hasText: 'Combined' })).toBeVisible();
+    // Combined row at the bottom of the impact table.
+    // Exact match to avoid colliding with conflict-description cells that
+    // mention "Sales & Marketing Combined" or "combined" in prose.
+    await expect(
+      page.getByRole('cell', { name: 'Combined', exact: true })
+    ).toBeVisible();
   });
 
   test('shows Conflict Resolution section with conflicts', async ({ page }) => {

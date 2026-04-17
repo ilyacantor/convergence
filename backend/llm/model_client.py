@@ -197,6 +197,17 @@ async def invoke_semantic_mapper(
             f"Anthropic returned no text content. stop_reason={response.stop_reason}"
         )
 
+    # Sonnet sometimes wraps the JSON in a ```json fence despite the system
+    # prompt forbidding it. Strip a single leading/trailing fence; do not
+    # tolerate any other prose around the JSON body.
+    if raw.startswith("```"):
+        first_nl = raw.find("\n")
+        if first_nl != -1:
+            raw = raw[first_nl + 1 :]
+        if raw.endswith("```"):
+            raw = raw[: -3]
+        raw = raw.strip()
+
     try:
         payload = json.loads(raw)
     except json.JSONDecodeError as exc:

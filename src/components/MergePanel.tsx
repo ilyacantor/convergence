@@ -178,7 +178,6 @@ export function MergePanel() {
   const [mergeRunning, setMergeRunning] = useState(false);
   const [mergeStatus, setMergeStatus] = useState<string | null>(null);
   const [mergeError, setMergeError] = useState<string | null>(null);
-  const [mergeCollapsedResponse, setMergeCollapsedResponse] = useState<string | null>(null);
   const [mergeElapsed, setMergeElapsed] = useState(0);
   const [mergeFinishedIn, setMergeFinishedIn] = useState<number | null>(null);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
@@ -189,7 +188,6 @@ export function MergePanel() {
   const [selectedEngagementId, setSelectedEngagementId] = useState<string | null>(null);
   const [engagementError, setEngagementError] = useState<string | null>(null);
 
-  const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mergeStartRef = useRef<number>(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -203,11 +201,11 @@ export function MergePanel() {
           const elapsed = Math.floor((Date.now() - mergeStartRef.current) / 1000);
           setMergeElapsed(elapsed);
           if (elapsed >= 60) {
-            setMergeStatus('Writing mapping results to Convergence...');
+            setMergeStatus('Writing mapping triples to Convergence...');
           } else if (elapsed >= 30) {
             setMergeStatus('Mapping accounts and identifying conflicts...');
           } else if (elapsed >= 10) {
-            setMergeStatus('Mai is analyzing charts of accounts...');
+            setMergeStatus('Semantic mapper analyzing charts of accounts...');
           }
         }
       }, 1000);
@@ -286,13 +284,6 @@ export function MergePanel() {
     }
   }, [selectedEngagementId]);
 
-  // Cleanup poll on unmount
-  useEffect(() => {
-    return () => {
-      if (pollRef.current) clearTimeout(pollRef.current);
-    };
-  }, []);
-
   // Auto-dismiss toast after 8 seconds
   useEffect(() => {
     if (!toast) return;
@@ -311,144 +302,73 @@ export function MergePanel() {
 
     setMergeRunning(true);
     setMergeError(null);
-    setMergeCollapsedResponse(null);
-    setMergeStatus('Sending to Mai...');
+    setMergeStatus('Running COFA merge...');
     mergeStartRef.current = Date.now();
 
-    // Step 1: POST canonical envelope to Mai and listen for tool_use events.
-    // Per Mai v8 §3.1/§3.2 — surface_id='convergence', SSE stream, look for
-    // write_cofa_mapping tool_use to confirm Mai is doing the work.
-    const tenantId = (window as unknown as { __AOS_TENANT_ID?: string }).__AOS_TENANT_ID
-      || 'default';
-    const operatorId = (window as unknown as { __AOS_OPERATOR_ID?: string }).__AOS_OPERATOR_ID
-      || 'operator';
-    let maiOk = false;
-    let sawWriteCofaMapping = false;
-    let lastAssistantText = '';
+    // Synchronous JSON call to the Convergence-owned workflow. The LLM call
+    // inside can take 30-90s; AbortController caps the wait at 180s.
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 180_000);
     try {
-      const res = await fetch('/api/convergence/mai/chat', {
+      const res = await fetch('/api/convergence/cofa/run', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'text/event-stream',
-        },
-        body: JSON.stringify({
-          message: 'Run COFA unification — map all chart-of-accounts entries, identify conflicts, and write results to Convergence.',
-          session_id: `merge-${selectedEngagementId}`,
-          surface_id: 'convergence',
-          tenant_id: tenantId,
-          operator_id: operatorId,
-          engagement_id: selectedEngagementId,
-          page_context: { route: '/merge', panel: 'MergePanel' },
-        }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ engagement_id: selectedEngagementId }),
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
 
-      if (!res.ok || !res.body) {
-        throw new Error(`Platform returned HTTP ${res.status}`);
-      }
-
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buf = '';
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buf += decoder.decode(value, { stream: true });
-        const frames = buf.split('\n\n');
-        buf = frames.pop() || '';
-        for (const frame of frames) {
-          if (!frame.startsWith('data:')) continue;
-          let evt: { type?: string; text?: string; name?: string; error?: string };
-          try {
-            evt = JSON.parse(frame.replace(/^data:\s*/, ''));
-          } catch {
-            continue;
-          }
-          if (evt.type === 'content' && typeof evt.text === 'string') {
-            lastAssistantText = evt.text;
-          } else if (evt.type === 'tool_use' && evt.name === 'write_cofa_mapping') {
-            sawWriteCofaMapping = true;
-            setMergeStatus('Mai is writing unified COFA mapping...');
-          } else if (evt.type === 'error' && evt.error) {
-            throw new Error(evt.error);
-          } else if (evt.type === 'done') {
-            maiOk = true;
-          }
-        }
-      }
-
-      if (!sawWriteCofaMapping) {
-        setMergeCollapsedResponse(
-          lastAssistantText || 'Mai responded but did not invoke write_cofa_mapping.'
-        );
-      }
-    } catch (e: unknown) {
-      setMergeError(e instanceof Error ? e.message : 'Failed to reach Platform/Mai');
-      setMergeRunning(false);
-      setMergeStatus(null);
-      return;
-    }
-
-    if (!maiOk || !sawWriteCofaMapping) {
-      setMergeRunning(false);
-      setMergeStatus(null);
-      return;
-    }
-
-    // Step 2: Poll for results (max 120s — Mai LLM + write should complete within this)
-    setMergeStatus('Waiting for Convergence to receive mapping triples...');
-    const POLL_TIMEOUT_MS = 120_000;
-    const pollForResults = () => {
-      pollRef.current = setTimeout(async () => {
-        const elapsed = Date.now() - mergeStartRef.current;
-        if (elapsed > POLL_TIMEOUT_MS) {
-          if (pollRef.current) clearTimeout(pollRef.current);
-          setMergeError(
-            `Merge timed out after ${Math.floor(elapsed / 1000)}s. ` +
-            'Mai may still be processing — check Platform logs. ' +
-            'Refresh the page and try again if needed.'
-          );
-          setMergeRunning(false);
-          setMergeStatus(null);
-          return;
-        }
-
+      if (!res.ok) {
+        let detail: string;
         try {
-          const res = await fetch('/api/convergence/merge/overview');
-          if (!res.ok) throw new Error(`HTTP ${res.status}`);
-          const freshData: MergeData = await res.json();
-
-          if (freshData.matches.has_matches) {
-            if (pollRef.current) clearTimeout(pollRef.current);
-            const finalElapsed = Math.floor((Date.now() - mergeStartRef.current) / 1000);
-            setMergeFinishedIn(finalElapsed);
-            setData(freshData);
-            setMergeRunning(false);
-            setMergeStatus(null);
-            fetchConflicts();
-
-            const accountCount = freshData.matches.rows.length;
-            setToast({
-              message: `COFA merge complete in ${finalElapsed}s — ${accountCount} accounts mapped.`,
-              type: 'success',
-            });
-            return;
-          }
-
-          setMergeStatus(`Waiting for Convergence to receive mapping triples... (${Math.floor(elapsed / 1000)}s)`);
+          const body = await res.json();
+          detail = typeof body.detail === 'string'
+            ? body.detail
+            : JSON.stringify(body.detail ?? body);
         } catch {
-          if (pollRef.current) clearTimeout(pollRef.current);
-          setMergeError('Lost connection while waiting for results. Check services and try again.');
-          setMergeRunning(false);
-          setMergeStatus(null);
-          return;
+          detail = `HTTP ${res.status}`;
         }
+        if (res.status === 422) {
+          setMergeError(`Gate rejected the merge: ${detail}`);
+        } else if (res.status === 503) {
+          setMergeError(`Semantic mapper unavailable: ${detail}`);
+        } else if (res.status === 404) {
+          setMergeError(detail);
+        } else {
+          setMergeError(`COFA merge failed (HTTP ${res.status}): ${detail}`);
+        }
+        setMergeRunning(false);
+        setMergeStatus(null);
+        return;
+      }
 
-        pollForResults();
-      }, 3000);
-    };
-    pollForResults();
-  }, [data, fetchConflicts, selectedEngagementId]);
+      const result = await res.json();
+      const finalElapsed = Math.floor((Date.now() - mergeStartRef.current) / 1000);
+      setMergeFinishedIn(finalElapsed);
+      setMergeStatus(null);
+      setMergeRunning(false);
+
+      // Refresh MergePanel data from read endpoints now that triples landed.
+      await fetchMerge(false);
+      fetchConflicts();
+
+      const mappingCount = typeof result.mapping_count === 'number' ? result.mapping_count : 0;
+      setToast({
+        message: `COFA merge complete in ${finalElapsed}s — ${mappingCount} accounts mapped.`,
+        type: 'success',
+      });
+    } catch (e: unknown) {
+      clearTimeout(timeoutId);
+      const aborted = e instanceof Error && e.name === 'AbortError';
+      setMergeError(
+        aborted
+          ? 'COFA merge exceeded 180s and was aborted. Check Convergence logs and retry.'
+          : e instanceof Error ? e.message : 'Failed to reach Convergence COFA endpoint'
+      );
+      setMergeRunning(false);
+      setMergeStatus(null);
+    }
+  }, [selectedEngagementId, fetchMerge, fetchConflicts]);
 
   useEffect(() => {
     fetchMerge();
@@ -844,16 +764,6 @@ export function MergePanel() {
               Retry
             </button>
           </div>
-        )}
-        {mergeCollapsedResponse && !mergeRunning && (
-          <details className="mt-1.5 rounded border border-amber-500/20 bg-amber-500/10 px-3 py-1.5">
-            <summary className="text-sm text-amber-400 cursor-pointer">
-              Mai completed analysis but did not write results.
-            </summary>
-            <pre className="mt-2 text-xs text-muted-foreground whitespace-pre-wrap max-h-40 overflow-y-auto">
-              {mergeCollapsedResponse}
-            </pre>
-          </details>
         )}
       </div>
 
