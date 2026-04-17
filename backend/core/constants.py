@@ -41,9 +41,6 @@ LLM_VALIDATION_THRESHOLD = float(os.getenv("DCL_LLM_VALIDATION_THRESHOLD", "0.80
 # --- Trust Scores ---
 TRUST_SCORE_FALLBACK = int(os.getenv("DCL_TRUST_SCORE_FALLBACK", "60"))
 
-# --- LLM Configuration ---
-LLM_MODEL_NAME = os.getenv("LLM_MODEL_NAME", "gpt-4o-mini")
-
 # --- Pinecone Configuration ---
 PINECONE_INDEX_NAME = os.getenv("PINECONE_INDEX_NAME", "dcl-mapping-lessons")
 PINECONE_DIMENSION = int(os.getenv("PINECONE_DIMENSION", "1536"))
@@ -77,9 +74,6 @@ INGEST_STATEMENT_TIMEOUT_MS = int(os.getenv("DCL_INGEST_STATEMENT_TIMEOUT_MS", "
 CB_COOLDOWN = float(os.getenv("DCL_CB_COOLDOWN", "120.0"))
 FARM_REGISTRY_TIMEOUT = float(os.getenv("DCL_FARM_REGISTRY_TIMEOUT", "5.0"))
 FARM_BROWSER_TIMEOUT = float(os.getenv("DCL_FARM_BROWSER_TIMEOUT", "5.0"))
-
-# --- Embedding Model ---
-OPENAI_EMBEDDING_MODEL = os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
 
 # --- AAM Integration ---
 AAM_API_URL = os.getenv("AAM_API_URL", "http://localhost:8001")

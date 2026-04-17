@@ -49,9 +49,8 @@ DCL_RAG_CONFIDENCE_THRESHOLD=0.75
 DCL_LLM_VALIDATION_THRESHOLD=0.80
 DCL_TRUST_SCORE_FALLBACK=60
 
-# --- LLM / Embedding ---
-LLM_MODEL_NAME=gpt-4o-mini
-OPENAI_EMBEDDING_MODEL=text-embedding-3-small
+# --- LLM (cofa_merge semantic mapper) ---
+ANTHROPIC_API_KEY=<set-via-render-dashboard>
 
 # --- Pinecone ---
 PINECONE_INDEX_NAME=dcl-mapping-lessons

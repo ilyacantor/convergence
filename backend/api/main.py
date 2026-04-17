@@ -36,7 +36,7 @@ from backend.api.routes.reports_bridge_v2 import router as reports_bridge_v2_rou
 from backend.api.routes.reports_whatif_v2 import router as reports_whatif_v2_router
 from backend.api.routes.reports_detail_v2 import router as reports_detail_v2_router
 from backend.api.routes.cofa_validation import router as cofa_validation_router
-from backend.api.routes.cofa_mapping import router as cofa_mapping_router
+from backend.api.routes.cofa_run import router as cofa_run_router
 from backend.api.routes.merge_overview import router as merge_overview_router
 from backend.api.routes.merge_conflicts import router as merge_conflicts_router
 from backend.api.routes.engagement_api import router as engagement_api_router
@@ -161,7 +161,7 @@ app.include_router(reports_bridge_v2_router)
 app.include_router(reports_whatif_v2_router)
 app.include_router(reports_detail_v2_router)
 app.include_router(cofa_validation_router)
-app.include_router(cofa_mapping_router)
+app.include_router(cofa_run_router)
 app.include_router(merge_overview_router)
 app.include_router(merge_conflicts_router)
 app.include_router(engagement_api_router)
