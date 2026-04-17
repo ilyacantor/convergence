@@ -177,6 +177,43 @@ async def list_run_steps(engagement_id: str, status: str | None = None):
     return engagement_store.list_run_steps(engagement_id, status=status)
 
 
+@router.get("/runs")
+async def list_runs(
+    engagement_id: str = Query(..., description="Engagement UUID — required."),
+    step_name: str | None = Query(
+        None, description="Optional exact step_name filter (e.g. 'cofa_merge')."
+    ),
+    status: str | None = Query(
+        None, description="Optional status filter (pending|running|complete|failed|stale)."
+    ),
+    limit: int | None = Query(
+        None, ge=1, le=200,
+        description="Max rows to return (1-200). When set, results come newest-first.",
+    ),
+):
+    """Concierge read of run_ledger for the supplied engagement.
+
+    Mai's `get_workflow_runs` tool consumes this endpoint to answer
+    questions like "did the cofa_merge run?" / "what model and how many
+    tokens did the last run use?". Read-only — no SQL crosses the service
+    boundary.
+    """
+    rows = engagement_store.list_run_steps(
+        engagement_id=engagement_id,
+        status=status,
+        step_name=step_name,
+        limit=limit,
+    )
+    return {
+        "engagement_id": engagement_id,
+        "step_name": step_name,
+        "status": status,
+        "limit": limit,
+        "count": len(rows),
+        "runs": rows,
+    }
+
+
 @router.get("/runs/{step_id}")
 async def get_run_step(step_id: str):
     """Get a single run ledger step by ID."""

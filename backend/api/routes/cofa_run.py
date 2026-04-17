@@ -223,7 +223,7 @@ async def run_cofa_merge(req: COFARunRequest):
     update_run_step(step_id, "running")
 
     try:
-        mapping = await invoke_semantic_mapper(
+        mapping, usage = await invoke_semantic_mapper(
             acquirer_entity_id=acquirer_id,
             target_entity_id=target_id,
             acquirer_coa=list(acquirer_coa.keys()),
@@ -259,7 +259,15 @@ async def run_cofa_merge(req: COFARunRequest):
 
     consumed_ids = _get_consumed_dcl_ingest_ids([acquirer_id, target_id])
     outputs_ref = f"convergence_triples:cofa_run_id={cofa_run_id}"
-    update_run_step(step_id, "complete", outputs_ref=outputs_ref)
+    update_run_step(
+        step_id,
+        "complete",
+        outputs_ref=outputs_ref,
+        model_version=usage.model_version,
+        tokens_in=usage.tokens_in,
+        tokens_out=usage.tokens_out,
+        cost_usd=usage.cost_usd,
+    )
 
     triples_written = writer_result["triple_count"]
     mapping_count = writer_result["mapping_count"]

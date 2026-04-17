@@ -26,6 +26,9 @@ _MODEL = "claude-sonnet-4-6"
 _MAX_TOKENS = 16000
 _TEMPERATURE = 0.0
 
+_PRICE_INPUT_PER_MTOK_USD = 3.0
+_PRICE_OUTPUT_PER_MTOK_USD = 15.0
+
 
 # ── Output schema (mirrors cofa_mapping_writer.write_cofa_mapping inputs) ──
 
@@ -65,6 +68,18 @@ class SemanticMapping(BaseModel):
     mappings: list[MappingEntry]
     conflicts: list[ConflictEntry] = Field(default_factory=list)
     unified_accounts: list[UnifiedAccountEntry] = Field(default_factory=list)
+
+
+class MapperUsage(BaseModel):
+    """Telemetry for one mapper invocation. Persisted to run_ledger."""
+    # Pydantic v2 reserves the `model_` prefix; we use model_version to match
+    # the run_ledger column name so the field can flow through verbatim.
+    model_config = {"protected_namespaces": ()}
+
+    model_version: str
+    tokens_in: int
+    tokens_out: int
+    cost_usd: float
 
 
 class SemanticMapperError(RuntimeError):
@@ -130,12 +145,13 @@ async def invoke_semantic_mapper(
     target_coa: list[str],
     acquirer_policies: Optional[str] = None,
     target_policies: Optional[str] = None,
-) -> SemanticMapping:
+) -> tuple[SemanticMapping, MapperUsage]:
     """Run one Anthropic call and parse the structured mapping.
 
-    Raises SemanticMapperError on missing API key, transport failure, empty
-    response, or schema-invalid output. Never returns a partial mapping —
-    callers can rely on the result type.
+    Returns the parsed mapping plus per-call telemetry (model, token counts,
+    USD cost). Raises SemanticMapperError on missing API key, transport
+    failure, empty response, or schema-invalid output. Never returns a
+    partial mapping — callers can rely on both elements being valid.
     """
     api_key = os.getenv("ANTHROPIC_API_KEY")
     if not api_key:
@@ -197,13 +213,26 @@ async def invoke_semantic_mapper(
             f"First: {exc.errors()[0]}"
         ) from exc
 
+    tokens_in = response.usage.input_tokens
+    tokens_out = response.usage.output_tokens
+    cost_usd = (
+        tokens_in * _PRICE_INPUT_PER_MTOK_USD
+        + tokens_out * _PRICE_OUTPUT_PER_MTOK_USD
+    ) / 1_000_000
+
     logger.info(
         "[cofa_merge] mapping returned — mappings=%d conflicts=%d unified=%d "
-        "tokens_in=%d tokens_out=%d",
+        "tokens_in=%d tokens_out=%d cost_usd=%.4f",
         len(mapping.mappings), len(mapping.conflicts), len(mapping.unified_accounts),
-        response.usage.input_tokens, response.usage.output_tokens,
+        tokens_in, tokens_out, cost_usd,
     )
-    return mapping
+    usage = MapperUsage(
+        model_version=_MODEL,
+        tokens_in=tokens_in,
+        tokens_out=tokens_out,
+        cost_usd=round(cost_usd, 4),
+    )
+    return mapping, usage
 
 
 def _build_user_message(

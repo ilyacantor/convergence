@@ -305,6 +305,7 @@ def delete_engagement(engagement_id: str) -> bool:
 # ── Run Ledger ──────────────────────────────────────────────────────────────
 
 def _run_row_to_dict(row: dict) -> dict:
+    cost = row.get("cost_usd")
     return {
         "step_id": str(row["id"]),
         "engagement_id": row["engagement_id"],
@@ -315,6 +316,10 @@ def _run_row_to_dict(row: dict) -> dict:
         "upstream_deps": row.get("upstream_deps"),
         "outputs_ref": row.get("outputs_ref"),
         "error": row.get("error"),
+        "model_version": row.get("model_version"),
+        "tokens_in": row.get("tokens_in"),
+        "tokens_out": row.get("tokens_out"),
+        "cost_usd": float(cost) if cost is not None else None,
         "started_at": row["started_at"].isoformat() if row.get("started_at") else None,
         "completed_at": row["completed_at"].isoformat() if row.get("completed_at") else None,
         "created_at": row["created_at"].isoformat() if row.get("created_at") else "",
@@ -380,7 +385,16 @@ def record_run_step(
             }
 
 
-def update_run_step(step_id: str, status: str, outputs_ref: str | None = None, error: str | None = None) -> dict:
+def update_run_step(
+    step_id: str,
+    status: str,
+    outputs_ref: str | None = None,
+    error: str | None = None,
+    model_version: str | None = None,
+    tokens_in: int | None = None,
+    tokens_out: int | None = None,
+    cost_usd: float | None = None,
+) -> dict:
     now = datetime.now(timezone.utc)
     with get_connection() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
@@ -391,8 +405,19 @@ def update_run_step(step_id: str, status: str, outputs_ref: str | None = None, e
                 )
             elif status == "complete":
                 cur.execute(
-                    "UPDATE run_ledger SET status = 'complete', completed_at = %s, outputs_ref = %s WHERE id = %s::uuid RETURNING *",
-                    (now, outputs_ref, step_id),
+                    """
+                    UPDATE run_ledger
+                       SET status = 'complete',
+                           completed_at = %s,
+                           outputs_ref = %s,
+                           model_version = COALESCE(%s, model_version),
+                           tokens_in = COALESCE(%s, tokens_in),
+                           tokens_out = COALESCE(%s, tokens_out),
+                           cost_usd = COALESCE(%s, cost_usd)
+                     WHERE id = %s::uuid
+                 RETURNING *
+                    """,
+                    (now, outputs_ref, model_version, tokens_in, tokens_out, cost_usd, step_id),
                 )
             elif status == "failed":
                 cur.execute(
@@ -413,19 +438,41 @@ def update_run_step(step_id: str, status: str, outputs_ref: str | None = None, e
             return _run_row_to_dict(row)
 
 
-def list_run_steps(engagement_id: str, status: str | None = None) -> list[dict]:
+def list_run_steps(
+    engagement_id: str,
+    status: str | None = None,
+    step_name: str | None = None,
+    limit: int | None = None,
+) -> list[dict]:
+    """List run_ledger entries for an engagement, newest first.
+
+    Filters: optional status, optional step_name (exact match). When limit is
+    given, returns at most that many rows (most recent by created_at).
+    """
+    clauses = ["engagement_id = %s"]
+    params: list = [engagement_id]
+    if status:
+        clauses.append("status = %s")
+        params.append(status)
+    if step_name:
+        clauses.append("step_name = %s")
+        params.append(step_name)
+
+    # Default: ASC order (preserves existing per-engagement endpoint behavior).
+    # When limit is requested (concierge "show me recent N" use case), return
+    # newest-first so the caller doesn't have to slice from the tail.
+    if limit is not None:
+        sql = (
+            f"SELECT * FROM run_ledger WHERE {' AND '.join(clauses)} "
+            f"ORDER BY created_at DESC LIMIT %s"
+        )
+        params.append(limit)
+    else:
+        sql = f"SELECT * FROM run_ledger WHERE {' AND '.join(clauses)} ORDER BY created_at"
+
     with get_connection() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            if status:
-                cur.execute(
-                    "SELECT * FROM run_ledger WHERE engagement_id = %s AND status = %s ORDER BY created_at",
-                    (engagement_id, status),
-                )
-            else:
-                cur.execute(
-                    "SELECT * FROM run_ledger WHERE engagement_id = %s ORDER BY created_at",
-                    (engagement_id,),
-                )
+            cur.execute(sql, params)
             return [_run_row_to_dict(r) for r in cur.fetchall()]
 
 
