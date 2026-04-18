@@ -215,14 +215,17 @@ class QualityOfEarningsV2:
         *,
         customers: list[dict] | None = None,
         cs_engagements: list[dict] | None = None,
+        cross_sell_summary: dict | None = None,
     ) -> dict:
         """Compute the full revenue_quality shape matching the frontend QofEData type.
 
         Computes customer concentration, contract quality, revenue mix,
         cohort retention, and cross-sell penetration from convergence_triples.
 
-        Pass pre-computed customers/cs_engagements to override the default
-        single-entity query (used by the combined summary to merge both entities).
+        Pass pre-computed customers/cs_engagements/cross_sell_summary to override
+        the default single-entity queries. The cross-sell summary is tenant-wide
+        (spans both entities) and identical for per-entity and combined QoE — so
+        get_combined_qoe() computes it once and reuses it in all three consumers.
         """
         if customers is None:
             customers = self._get_all_customer_data(entity_id)
@@ -355,10 +358,13 @@ class QualityOfEarningsV2:
         ]
 
         # ── Cross-sell Penetration ──
-        cross_sell_engine = CrossSellEngineV2(self.tenant_id, self.pipeline_run_id)
-        cs_summary = cross_sell_engine.get_cross_sell_summary()
-        total_candidates = cs_summary["total_opportunities"]
-        total_pipeline_acv_M = round(cs_summary["total_potential_acv"], 2)
+        # cross_sell_summary is tenant-wide (both entities) — accept pre-computed
+        # to avoid recomputing 3x in get_combined_qoe.
+        if cross_sell_summary is None:
+            cross_sell_engine = CrossSellEngineV2(self.tenant_id, self.pipeline_run_id)
+            cross_sell_summary = cross_sell_engine.get_cross_sell_summary()
+        total_candidates = cross_sell_summary["total_opportunities"]
+        total_pipeline_acv_M = round(cross_sell_summary["total_potential_acv"], 2)
 
         return {
             "customer_concentration": {
@@ -399,8 +405,21 @@ class QualityOfEarningsV2:
         bridge = self._bridge_engine.get_bridge(entity_id)
         return self._get_qoe_summary_with_bridge(entity_id, bridge)
 
-    def _get_qoe_summary_with_bridge(self, entity_id: str, bridge: dict) -> dict:
-        """QoE summary using a pre-computed bridge (avoids redundant DB calls)."""
+    def _get_qoe_summary_with_bridge(
+        self,
+        entity_id: str,
+        bridge: dict,
+        *,
+        streams: list[dict] | None = None,
+        customers: list[dict] | None = None,
+        cs_engagements: list[dict] | None = None,
+        cross_sell_summary: dict | None = None,
+    ) -> dict:
+        """QoE summary using a pre-computed bridge (avoids redundant DB calls).
+
+        Pre-computed streams/customers/cs_engagements/cross_sell_summary are
+        passed through from get_combined_qoe to avoid re-fetching the same rows.
+        """
         reported = bridge["reported_ebitda"]
         adjusted = bridge["adjusted_ebitda"]
         total_adj = bridge["total_adjustments"]
@@ -419,7 +438,8 @@ class QualityOfEarningsV2:
         confidence_weighted_ebitda = round(reported + conf_weighted_adj, 2)
 
         # Revenue quality
-        streams = self._get_revenue_streams(entity_id)
+        if streams is None:
+            streams = self._get_revenue_streams(entity_id)
         total_revenue = 0.0
         by_stream = []
         for s in streams:
@@ -437,7 +457,10 @@ class QualityOfEarningsV2:
 
         # Full revenue quality with concentration, contract, mix, cohort, cross-sell
         full_revenue_quality = self._compute_full_revenue_quality(
-            entity_id, streams, total_revenue
+            entity_id, streams, total_revenue,
+            customers=customers,
+            cs_engagements=cs_engagements,
+            cross_sell_summary=cross_sell_summary,
         )
         # Preserve total_revenue and by_stream for backward compatibility
         full_revenue_quality["total_revenue"] = total_revenue
@@ -466,10 +489,9 @@ class QualityOfEarningsV2:
     def get_combined_qoe(self) -> dict:
         """Combined QoE for both entities.
 
-        Computes per-entity bridges once and reuses them everywhere,
-        avoiding redundant DB round-trips (was 18 queries, now 11).
-        Includes the combined bridge in the response so callers (NLQ)
-        don't need a separate /bridge call.
+        Fetches each underlying dataset exactly once and threads it through
+        per-entity and combined paths. Cross-sell summary is tenant-wide
+        (both entities together), so one call covers all three consumers.
         """
         entity_a, entity_b = self._bridge_engine._get_entities()
 
@@ -478,14 +500,45 @@ class QualityOfEarningsV2:
         bridge_b = self._bridge_engine.get_bridge(entity_b)
         combined_bridge = self._merge_bridges(bridge_a, bridge_b)
 
-        # Per-entity QoE, passing pre-computed bridges to avoid re-fetching
-        qoe_a = self._get_qoe_summary_with_bridge(entity_a, bridge_a)
-        qoe_b = self._get_qoe_summary_with_bridge(entity_b, bridge_b)
+        # Fetch per-entity source data once
+        streams_a = self._get_revenue_streams(entity_a)
+        streams_b = self._get_revenue_streams(entity_b)
+        customers_a = self._get_all_customer_data(entity_a)
+        customers_b = self._get_all_customer_data(entity_b)
+        cs_engagements_a = self._get_customer_service_data(entity_a)
+        cs_engagements_b = self._get_customer_service_data(entity_b)
+
+        # Cross-sell summary is tenant-wide — one invocation covers all three
+        # revenue_quality consumers (qoe_a, qoe_b, combined).
+        cross_sell_engine = CrossSellEngineV2(self.tenant_id, self.pipeline_run_id)
+        cross_sell_summary = cross_sell_engine.get_cross_sell_summary()
+
+        qoe_a = self._get_qoe_summary_with_bridge(
+            entity_a, bridge_a,
+            streams=streams_a,
+            customers=customers_a,
+            cs_engagements=cs_engagements_a,
+            cross_sell_summary=cross_sell_summary,
+        )
+        qoe_b = self._get_qoe_summary_with_bridge(
+            entity_b, bridge_b,
+            streams=streams_b,
+            customers=customers_b,
+            cs_engagements=cs_engagements_b,
+            cross_sell_summary=cross_sell_summary,
+        )
 
         combined = self._get_combined_summary(
             entity_a, entity_b, combined_bridge,
             qoe_a.get("margin_trend", []),
             qoe_b.get("margin_trend", []),
+            streams_a=streams_a,
+            streams_b=streams_b,
+            customers_a=customers_a,
+            customers_b=customers_b,
+            cs_engagements_a=cs_engagements_a,
+            cs_engagements_b=cs_engagements_b,
+            cross_sell_summary=cross_sell_summary,
         )
 
         return {
@@ -601,11 +654,20 @@ class QualityOfEarningsV2:
         bridge: dict,
         margin_trend_a: list[dict],
         margin_trend_b: list[dict],
+        *,
+        streams_a: list[dict] | None = None,
+        streams_b: list[dict] | None = None,
+        customers_a: list[dict] | None = None,
+        customers_b: list[dict] | None = None,
+        cs_engagements_a: list[dict] | None = None,
+        cs_engagements_b: list[dict] | None = None,
+        cross_sell_summary: dict | None = None,
     ) -> dict:
         """Produce combined QoE summary.
 
-        Accepts pre-computed bridge and margin trends to avoid redundant
-        DB queries (previously re-fetched everything from scratch).
+        Accepts pre-computed bridge, margin trends, and per-entity source
+        data (streams, customers, customer_service engagements, cross-sell
+        summary). get_combined_qoe passes everything in — none of it re-fetched.
         """
         reported = bridge["reported_ebitda"]
         adjusted = bridge["adjusted_ebitda"]
@@ -668,9 +730,21 @@ class QualityOfEarningsV2:
         )
 
         # Combined revenue quality: merge streams from both entities, use all
-        # customer data from both entities for concentration/contract analysis
-        streams_a = self._get_revenue_streams(entity_a)
-        streams_b = self._get_revenue_streams(entity_b)
+        # customer data from both entities for concentration/contract analysis.
+        # All source data is passed in by get_combined_qoe — no re-fetches.
+        if streams_a is None:
+            streams_a = self._get_revenue_streams(entity_a)
+        if streams_b is None:
+            streams_b = self._get_revenue_streams(entity_b)
+        if customers_a is None:
+            customers_a = self._get_all_customer_data(entity_a)
+        if customers_b is None:
+            customers_b = self._get_all_customer_data(entity_b)
+        if cs_engagements_a is None:
+            cs_engagements_a = self._get_customer_service_data(entity_a)
+        if cs_engagements_b is None:
+            cs_engagements_b = self._get_customer_service_data(entity_b)
+
         total_rev_a = sum(
             float(s["total_value"]) for s in streams_a if s["concept"] == "revenue.total"
         )
@@ -688,15 +762,11 @@ class QualityOfEarningsV2:
             {"concept": c, "total_value": v} for c, v in stream_merge.items()
         ]
 
-        # Merge customers from both entities for combined concentration analysis
-        customers_a = self._get_all_customer_data(entity_a)
-        customers_b = self._get_all_customer_data(entity_b)
-        cs_engagements_a = self._get_customer_service_data(entity_a)
-        cs_engagements_b = self._get_customer_service_data(entity_b)
         combined_revenue_quality = self._compute_full_revenue_quality(
             entity_a, merged_streams, combined_total_revenue,
             customers=customers_a + customers_b,
             cs_engagements=cs_engagements_a + cs_engagements_b,
+            cross_sell_summary=cross_sell_summary,
         )
 
         return {

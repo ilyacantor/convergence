@@ -291,6 +291,41 @@ def update_engagement(
             return _row_to_dict(row) if row else None
 
 
+def promote_engagement(engagement_id: str) -> dict | None:
+    """Bump engagement.updated_at = NOW() so this engagement wins the
+    `get_active_engagement(tenant)` ORDER BY updated_at DESC tie-break.
+
+    Console's ME pre-flight calls this immediately after verifying the
+    dispatched engagement is in lifecycle_stage='active'. The downstream
+    verify_merge step queries `/engagements/active?tenant_id=` and requires
+    the dispatched engagement to be the resolver's answer — without this
+    bump, two coexisting active engagements race by stale updated_at.
+
+    Refuses to promote anything that isn't in lifecycle_stage='active': we
+    do not silently expand its semantics into a transition (A1).
+    Returns the updated row, or None if the engagement does not exist.
+    """
+    existing = get_engagement(engagement_id)
+    if not existing:
+        return None
+    if existing["lifecycle_stage"] != "active":
+        raise ValueError(
+            f"Cannot promote engagement {engagement_id}: lifecycle_stage="
+            f"{existing['lifecycle_stage']!r} (must be 'active')"
+        )
+    now = datetime.now(timezone.utc)
+    with get_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                "UPDATE engagements SET updated_at = %s "
+                "WHERE engagement_id = %s::uuid RETURNING *",
+                (now, engagement_id),
+            )
+            conn.commit()
+            row = cur.fetchone()
+            return _row_to_dict(row) if row else None
+
+
 def delete_engagement(engagement_id: str) -> bool:
     with get_connection() as conn:
         with conn.cursor() as cur:

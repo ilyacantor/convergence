@@ -156,6 +156,27 @@ async def delete_engagement(engagement_id: str):
     return {"deleted": True, "engagement_id": engagement_id}
 
 
+@router.post("/engagements/{engagement_id}/promote")
+async def promote_engagement(engagement_id: str):
+    """Bump engagement.updated_at so this engagement wins the
+    `get_active_engagement(tenant)` ORDER BY updated_at DESC tie-break.
+
+    Called by Console's ME pre-flight at dispatch — without this, two
+    coexisting active engagements for the same tenant race, and verify_merge
+    can find a different engagement as 'active' than the one Console
+    dispatched. 404 when not found, 409 when not in lifecycle_stage='active'.
+    """
+    try:
+        result = engagement_store.promote_engagement(engagement_id)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    if not result:
+        raise HTTPException(
+            status_code=404, detail=f"Engagement not found: {engagement_id}"
+        )
+    return result
+
+
 # ── Run Ledger ──────────────────────────────────────────────────────────────
 
 @router.post("/engagements/{engagement_id}/runs")
