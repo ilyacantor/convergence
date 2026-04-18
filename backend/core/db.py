@@ -236,6 +236,19 @@ def get_connection():
         raise
     finally:
         if conn is not None and pg_pool is not None:
+            # Guarantee clean transaction state on pool return.
+            # psycopg2 with autocommit=False starts an implicit transaction on
+            # the first SELECT. Read paths in triple_store.py do not commit or
+            # rollback before release, so without this rollback the connection
+            # goes back to the pool idle-in-transaction. The next borrower's
+            # `SET LOCAL statement_timeout = …` then applies to that stale tx
+            # and PostgreSQL cancels statements at unpredictable thresholds
+            # (observed: 25s cancellations on 90s-budgeted COPY during ME ingest).
+            try:
+                if not conn.closed:
+                    conn.rollback()
+            except Exception as e:
+                logger.warning("[db] rollback before putconn failed: %s", e)
             try:
                 pg_pool.putconn(conn)
             except Exception:

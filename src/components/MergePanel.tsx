@@ -376,13 +376,20 @@ export function MergePanel() {
     fetchEngagements();
   }, [fetchMerge, fetchConflicts, fetchEngagements]);
 
-  // Auto-polling (same pattern as TriplesPanel)
+  // Auto-polling — 30s cadence, paused when tab is hidden.
+  // Why 30s: merge_overview holds one connection across ~12 sequential
+  // SQL queries (financial summary, side-by-side, matches, orphans). Under
+  // concurrent ingest load each call takes 5–30s. A 5s interval creates an
+  // uncontrolled queue that drains the Convergence pool. 30s + visibility
+  // gating matches actual operator cadence and removes the contention.
   useEffect(() => {
     if (!autoRefresh) return;
-    const interval = setInterval(() => {
+    const tick = () => {
+      if (typeof document !== 'undefined' && document.hidden) return;
       fetchMerge(false);
       fetchConflicts();
-    }, 5000);
+    };
+    const interval = setInterval(tick, 30_000);
     return () => clearInterval(interval);
   }, [autoRefresh, fetchMerge, fetchConflicts]);
 
