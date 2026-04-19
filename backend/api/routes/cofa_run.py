@@ -28,10 +28,12 @@ namespaced as cofa_run_id.
 import uuid
 from typing import Any, Optional
 
+import httpx
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
+from backend.core.constants import FARM_API_URL
 from backend.core.db import get_connection
 from backend.db.engagement_store import (
     get_engagement,
@@ -142,6 +144,71 @@ def _get_consumed_dcl_ingest_ids(entity_ids: list[str]) -> list[str]:
             return [row[0] for row in cur.fetchall()]
 
 
+async def _fetch_accounting_policies(entity_id: str) -> str:
+    """Fetch per-entity accounting policies from Farm.
+
+    Returns the flat policies_text the semantic mapper expects. Raises
+    HTTPException on Farm unreachable (503) or missing config (422). No
+    silent fallback — without policies the LLM emits zero-impact conflicts
+    and the whole merge looks broken.
+    """
+    url = (
+        f"{FARM_API_URL.rstrip('/')}"
+        f"/api/business-data/accounting-policies/{entity_id}"
+    )
+    try:
+        async with httpx.AsyncClient(timeout=2.0) as client:
+            resp = await client.get(url)
+    except httpx.ConnectError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                f"Farm unreachable at {url} (connection refused: {exc}). "
+                f"COFA merge aborted — cannot run semantic mapper without "
+                f"accounting policies."
+            ),
+        ) from exc
+    except httpx.TimeoutException as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                f"Farm unreachable at {url} — request timed out after 2.0s "
+                f"({exc}). COFA merge aborted."
+            ),
+        ) from exc
+
+    if resp.status_code == 404:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Farm has no accounting-policy config for entity_id="
+                f"'{entity_id}' ({url} returned 404). Add an "
+                f"accounting_policies block to farm_config_{entity_id}.yaml "
+                f"before running COFA merge."
+            ),
+        )
+    if resp.status_code != 200:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                f"Farm returned {resp.status_code} at {url} "
+                f"(body: {resp.text[:200]!r}). COFA merge aborted."
+            ),
+        )
+
+    body = resp.json()
+    policies_text = body.get("policies_text")
+    if not isinstance(policies_text, str) or not policies_text.strip():
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Farm returned empty policies_text for entity_id="
+                f"'{entity_id}'. COFA merge aborted."
+            ),
+        )
+    return policies_text
+
+
 def _orphan_detail(report: dict, acquirer_id: str, target_id: str) -> str:
     parts = [
         "COFACompletionGate REJECTED: mapping is incomplete.",
@@ -223,11 +290,20 @@ async def run_cofa_merge(req: COFARunRequest):
     update_run_step(step_id, "running")
 
     try:
+        acquirer_policies = await _fetch_accounting_policies(acquirer_id)
+        target_policies = await _fetch_accounting_policies(target_id)
+    except HTTPException as exc:
+        update_run_step(step_id, "failed", error=str(exc.detail))
+        raise
+
+    try:
         mapping, usage = await invoke_semantic_mapper(
             acquirer_entity_id=acquirer_id,
             target_entity_id=target_id,
             acquirer_coa=list(acquirer_coa.keys()),
             target_coa=list(target_coa.keys()),
+            acquirer_policies=acquirer_policies,
+            target_policies=target_policies,
         )
     except SemanticMapperError as exc:
         update_run_step(step_id, "failed", error=str(exc))

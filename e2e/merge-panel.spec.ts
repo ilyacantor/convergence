@@ -130,4 +130,67 @@ test.describe('MergePanel', () => {
     expect(body.summary).toBeDefined();
     expect(body.summary.total).toBeGreaterThan(0);
   });
+
+  test('Financial Statement Impact renders non-zero numbers across buckets', async ({ page }) => {
+    await expect(page.locator('h2', { hasText: 'COFA Merge' })).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator('text=Financial Statement Impact')).toBeVisible({ timeout: 20_000 });
+
+    const expectedBuckets = ['recognition', 'capitalization', 'policy'];
+    const parseMoney = (raw: string): number => {
+      const t = raw.trim();
+      if (!t || t === '\u2014') return NaN;
+      const m = t.match(/-?\$?([\d.]+)\s*([KMB]?)/i);
+      if (!m) return NaN;
+      const n = parseFloat(m[1]);
+      const unit = (m[2] || '').toUpperCase();
+      const mult = unit === 'B' ? 1e9 : unit === 'M' ? 1e6 : unit === 'K' ? 1e3 : 1;
+      const sign = t.trim().startsWith('-') ? -1 : 1;
+      return sign * n * mult;
+    };
+
+    const impactsByBucket: Record<string, { revenue: number; expense: number; ebitda: number }> = {};
+    for (const type of expectedBuckets) {
+      const revCell = page.locator(`[data-testid="fs-impact-${type}-revenue"]`);
+      const expCell = page.locator(`[data-testid="fs-impact-${type}-expense"]`);
+      const ebCell = page.locator(`[data-testid="fs-impact-${type}-ebitda"]`);
+      await expect(revCell, `revenue cell missing for bucket ${type}`).toBeVisible();
+      await expect(expCell, `expense cell missing for bucket ${type}`).toBeVisible();
+      await expect(ebCell, `ebitda cell missing for bucket ${type}`).toBeVisible();
+
+      const revText = (await revCell.textContent() ?? '').trim();
+      const expText = (await expCell.textContent() ?? '').trim();
+      const ebText = (await ebCell.textContent() ?? '').trim();
+
+      // Em-dash is the legitimate render for zero on a single line.
+      // The A1-violation surface would have been all-dash rows across every
+      // bucket — what we assert is that per bucket at least one of the three
+      // lines has a non-dash numeric value, i.e. the bucket carries real FS
+      // impact data and not a fallback placeholder.
+      const cells = [
+        { label: 'revenue', text: revText },
+        { label: 'expense', text: expText },
+        { label: 'ebitda', text: ebText },
+      ];
+      const numeric = cells
+        .filter(c => c.text !== '\u2014')
+        .map(c => ({ ...c, value: parseMoney(c.text) }));
+      expect(numeric.length, `bucket ${type}: every FS line rendered em-dash (no real data)`).toBeGreaterThan(0);
+      for (const { label, text, value } of numeric) {
+        expect(Number.isFinite(value), `bucket ${type} ${label} not numeric: "${text}"`).toBe(true);
+      }
+
+      const rev = revText === '\u2014' ? 0 : parseMoney(revText);
+      const exp = expText === '\u2014' ? 0 : parseMoney(expText);
+      const eb = ebText === '\u2014' ? 0 : parseMoney(ebText);
+      impactsByBucket[type] = { revenue: rev, expense: exp, ebitda: eb };
+    }
+
+    // Across all three buckets, at least one value must be non-zero.
+    const anyNonZero = Object.values(impactsByBucket).some(
+      v => v.revenue !== 0 || v.expense !== 0 || v.ebitda !== 0,
+    );
+    expect(anyNonZero, `all FS impact values zero across ${JSON.stringify(impactsByBucket)}`).toBe(true);
+
+    await page.screenshot({ path: 'e2e/screenshots/merge-panel-fs-impact.png', fullPage: true });
+  });
 });

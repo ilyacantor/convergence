@@ -855,13 +855,13 @@ export function MergePanel() {
                                 </td>
                                 <td className="px-3 py-2 text-center font-mono">{cat.count}</td>
                                 <td className="px-3 py-2 text-right font-mono">{fmtDollarImpact(cat.total_dollar_impact)}</td>
-                                <td className={`px-3 py-2 text-right font-mono ${cat.revenue_impact !== 0 ? 'text-amber-400' : 'text-muted-foreground/40'}`}>
+                                <td data-testid={`fs-impact-${type}-revenue`} className={`px-3 py-2 text-right font-mono ${cat.revenue_impact !== 0 ? 'text-amber-400' : 'text-muted-foreground/40'}`}>
                                   {cat.revenue_impact !== 0 ? fmtDollarImpact(cat.revenue_impact) : '—'}
                                 </td>
-                                <td className={`px-3 py-2 text-right font-mono ${cat.expense_impact !== 0 ? 'text-amber-400' : 'text-muted-foreground/40'}`}>
+                                <td data-testid={`fs-impact-${type}-expense`} className={`px-3 py-2 text-right font-mono ${cat.expense_impact !== 0 ? 'text-amber-400' : 'text-muted-foreground/40'}`}>
                                   {cat.expense_impact !== 0 ? fmtDollarImpact(cat.expense_impact) : '—'}
                                 </td>
-                                <td className={`px-3 py-2 text-right font-mono ${cat.ebitda_impact !== 0 ? (cat.ebitda_impact > 0 ? 'text-emerald-400' : 'text-red-400') : 'text-muted-foreground/40'}`}>
+                                <td data-testid={`fs-impact-${type}-ebitda`} className={`px-3 py-2 text-right font-mono ${cat.ebitda_impact !== 0 ? (cat.ebitda_impact > 0 ? 'text-emerald-400' : 'text-red-400') : 'text-muted-foreground/40'}`}>
                                   {cat.ebitda_impact !== 0 ? fmtDollarImpact(cat.ebitda_impact) : '—'}
                                 </td>
                               </tr>
@@ -906,13 +906,13 @@ export function MergePanel() {
                                               <td className="px-3 py-1.5 text-right font-mono">
                                                 {d.dollar_impact > 0 ? fmtDollarImpact(d.dollar_impact) : '—'}
                                               </td>
-                                              <td className={`px-3 py-1.5 text-right font-mono ${d.revenue_impact !== 0 ? 'text-amber-400' : 'text-muted-foreground/40'}`}>
+                                              <td data-testid={`fs-impact-detail-${d.conflict_id}-revenue`} className={`px-3 py-1.5 text-right font-mono ${d.revenue_impact !== 0 ? 'text-amber-400' : 'text-muted-foreground/40'}`}>
                                                 {d.revenue_impact !== 0 ? fmtDollarImpact(d.revenue_impact) : '—'}
                                               </td>
-                                              <td className={`px-3 py-1.5 text-right font-mono ${d.expense_impact !== 0 ? 'text-amber-400' : 'text-muted-foreground/40'}`}>
+                                              <td data-testid={`fs-impact-detail-${d.conflict_id}-expense`} className={`px-3 py-1.5 text-right font-mono ${d.expense_impact !== 0 ? 'text-amber-400' : 'text-muted-foreground/40'}`}>
                                                 {d.expense_impact !== 0 ? fmtDollarImpact(d.expense_impact) : '—'}
                                               </td>
-                                              <td className={`px-3 py-1.5 text-right font-mono ${d.ebitda_impact !== 0 ? (d.ebitda_impact > 0 ? 'text-emerald-400' : 'text-red-400') : 'text-muted-foreground/40'}`}>
+                                              <td data-testid={`fs-impact-detail-${d.conflict_id}-ebitda`} className={`px-3 py-1.5 text-right font-mono ${d.ebitda_impact !== 0 ? (d.ebitda_impact > 0 ? 'text-emerald-400' : 'text-red-400') : 'text-muted-foreground/40'}`}>
                                                 {d.ebitda_impact !== 0 ? fmtDollarImpact(d.ebitda_impact) : '—'}
                                               </td>
                                             </tr>
