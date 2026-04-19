@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 
 from backend.db import engagement_store
 from backend.db.triple_store import TripleStore
+from backend.engine.contract_check import check_aos_contract
 from backend.utils.log_utils import get_logger
 
 logger = get_logger(__name__)
@@ -34,13 +35,19 @@ _triple_store = TripleStore()
 # ── Request models ──────────────────────────────────────────────────────────
 
 class CreateEngagementRequest(BaseModel):
-    tenant_id: str
-    acquirer_entity_id: str
-    target_entity_id: str
+    # Legacy flow (Console/Platform callers): pass tenant_id + entity_ids
+    tenant_id: str | None = None
+    acquirer_entity_id: str | None = None
+    target_entity_id: str | None = None
     engagement_type: str = "MA"
     engagement_short_name: str | None = None
     state: dict = Field(default_factory=dict)
     engagement_id: str | None = None
+    # V2 flow (convergence_transition_master §2): pass AOS tenant pair
+    acquirer_tenant_id: str | None = None
+    target_tenant_id: str | None = None
+    config: dict | None = None
+    created_by: str | None = None
 
 
 class UpdateEngagementRequest(BaseModel):
@@ -81,7 +88,23 @@ class UpdateReviewRequest(BaseModel):
 
 @router.post("/engagements")
 async def create_engagement(req: CreateEngagementRequest):
-    """Create a new engagement."""
+    """Create a new engagement.
+
+    Supports two flows:
+    - Legacy: tenant_id + acquirer_entity_id + target_entity_id
+    - V2 (convergence_transition_master §2): acquirer_tenant_id + target_tenant_id
+      Runs AOS output contract check on both tenants before creation.
+    """
+    if req.acquirer_tenant_id and req.target_tenant_id:
+        return _create_engagement_v2(req)
+
+    if not req.tenant_id or not req.acquirer_entity_id or not req.target_entity_id:
+        raise HTTPException(
+            status_code=422,
+            detail="Provide either (acquirer_tenant_id, target_tenant_id) for v2 flow "
+                   "or (tenant_id, acquirer_entity_id, target_entity_id) for legacy flow.",
+        )
+
     try:
         return engagement_store.create_engagement(
             tenant_id=req.tenant_id,
@@ -96,6 +119,79 @@ async def create_engagement(req: CreateEngagementRequest):
         raise HTTPException(status_code=422, detail=str(e))
     except engagement_store.FarmUnavailableError as e:
         raise HTTPException(status_code=503, detail=str(e))
+
+
+def _create_engagement_v2(req: CreateEngagementRequest):
+    """V2 engagement creation with AOS output contract check."""
+    acq_tid = req.acquirer_tenant_id
+    tgt_tid = req.target_tenant_id
+
+    if acq_tid == tgt_tid:
+        raise HTTPException(
+            status_code=422,
+            detail=f"acquirer_tenant_id and target_tenant_id must be distinct. "
+                   f"Both are: {acq_tid}",
+        )
+
+    acq_contract = check_aos_contract(acq_tid)
+    tgt_contract = check_aos_contract(tgt_tid)
+
+    failures = {}
+    if not acq_contract.passed:
+        failures["acquirer"] = acq_contract.to_dict()
+    if not tgt_contract.passed:
+        failures["target"] = tgt_contract.to_dict()
+
+    if failures:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": "AOS_CONTRACT_FAILED",
+                "message": "One or both AOS tenants failed the output contract check.",
+                "diagnostics": failures,
+            },
+        )
+
+    import json
+    from datetime import datetime, timezone
+    from psycopg2.extras import RealDictCursor
+    from backend.core.db import get_connection
+
+    now = datetime.now(timezone.utc)
+    config_json = json.dumps(req.config) if req.config else None
+
+    with get_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                """
+                INSERT INTO engagements
+                    (tenant_id, engagement_type, acquirer_entity_id, target_entity_id,
+                     acquirer_tenant_id, target_tenant_id, created_by,
+                     config_snapshot, state, created_at, updated_at)
+                VALUES (
+                    %s::uuid, %s, %s, %s,
+                    %s::uuid, %s::uuid, %s,
+                    %s::jsonb, '{}'::jsonb, %s, %s
+                )
+                RETURNING engagement_id, acquirer_tenant_id, target_tenant_id,
+                          lifecycle_stage AS status, created_at
+                """,
+                (
+                    acq_tid, req.engagement_type, "", "",
+                    acq_tid, tgt_tid, req.created_by or "operator",
+                    config_json, now, now,
+                ),
+            )
+            conn.commit()
+            row = cur.fetchone()
+
+    return {
+        "engagement_id": str(row["engagement_id"]),
+        "acquirer_tenant_id": str(row["acquirer_tenant_id"]),
+        "target_tenant_id": str(row["target_tenant_id"]),
+        "status": row["status"],
+        "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
+    }
 
 
 @router.get("/engagements")

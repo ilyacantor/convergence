@@ -30,6 +30,10 @@ REQUIRED_TABLES = [
     # What-if scenario persistence
     "whatif_scenarios",
     "uploads",
+    # Identity resolver (convergence_transition_master §3)
+    "resolver_decisions",
+    "engagement_adjustments",
+    "engagement_runs",
 ]
 
 

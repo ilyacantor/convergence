@@ -47,6 +47,7 @@ from backend.api.routes.semantic_catalog import router as semantic_catalog_route
 from backend.api.routes.coa_accounts import router as coa_accounts_router
 from backend.api.routes.tenants import router as tenants_router
 from backend.api.routes.upload import router as upload_router
+from backend.api.routes.resolver_api import router as resolver_api_router
 
 logger = get_logger(__name__)
 
@@ -172,6 +173,7 @@ app.include_router(semantic_catalog_router)
 app.include_router(coa_accounts_router)
 app.include_router(tenants_router)
 app.include_router(upload_router)
+app.include_router(resolver_api_router)
 
 
 # =============================================================================

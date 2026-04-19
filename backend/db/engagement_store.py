@@ -122,7 +122,7 @@ def _row_to_dict(row: dict) -> dict:
     state = row.get("state") or {}
     if isinstance(state, str):
         state = json.loads(state)
-    return {
+    result = {
         "engagement_id": str(row["engagement_id"]),
         "tenant_id": str(row["tenant_id"]),
         "engagement_type": row["engagement_type"],
@@ -142,6 +142,16 @@ def _row_to_dict(row: dict) -> dict:
         "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
         "updated_at": row["updated_at"].isoformat() if row.get("updated_at") else None,
     }
+    if row.get("acquirer_tenant_id"):
+        result["acquirer_tenant_id"] = str(row["acquirer_tenant_id"])
+    if row.get("target_tenant_id"):
+        result["target_tenant_id"] = str(row["target_tenant_id"])
+    if row.get("resolver_version"):
+        result["resolver_version"] = row["resolver_version"]
+    if row.get("config_snapshot"):
+        cs = row["config_snapshot"]
+        result["config_snapshot"] = json.loads(cs) if isinstance(cs, str) else cs
+    return result
 
 
 # ── Engagement CRUD ─────────────────────────────────────────────────────────
