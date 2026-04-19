@@ -314,7 +314,7 @@ async def run_cofa_merge(req: COFARunRequest):
     if not completeness["complete"]:
         detail = _orphan_detail(completeness, acquirer_id, target_id)
         logger.warning("[cofa_merge] gate rejected: %s", detail)
-        update_run_step(step_id, "failed", error=detail)
+        update_run_step(step_id, "failed", error=detail, validation_result="failed")
         raise HTTPException(status_code=422, detail=detail)
 
     writer_input = {
@@ -335,6 +335,13 @@ async def run_cofa_merge(req: COFARunRequest):
 
     consumed_ids = _get_consumed_dcl_ingest_ids([acquirer_id, target_id])
     outputs_ref = f"convergence_triples:cofa_run_id={cofa_run_id}"
+    run_summary = {
+        "acquirer_accounts": completeness["acquirer_total"],
+        "target_accounts": completeness["target_total"],
+        "mappings": len(mapping_dicts),
+        "conflicts": writer_result["conflict_count"],
+        "orphan_accounts": completeness.get("orphans", []),
+    }
     update_run_step(
         step_id,
         "complete",
@@ -343,6 +350,8 @@ async def run_cofa_merge(req: COFARunRequest):
         tokens_in=usage.tokens_in,
         tokens_out=usage.tokens_out,
         cost_usd=usage.cost_usd,
+        validation_result="pass",
+        summary=run_summary,
     )
 
     triples_written = writer_result["triple_count"]

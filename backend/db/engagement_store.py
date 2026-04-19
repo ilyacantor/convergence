@@ -355,6 +355,9 @@ def _run_row_to_dict(row: dict) -> dict:
         "tokens_in": row.get("tokens_in"),
         "tokens_out": row.get("tokens_out"),
         "cost_usd": float(cost) if cost is not None else None,
+        "validation_result": row.get("validation_result"),
+        "human_decision": row.get("human_decision"),
+        "summary": row.get("summary"),
         "started_at": row["started_at"].isoformat() if row.get("started_at") else None,
         "completed_at": row["completed_at"].isoformat() if row.get("completed_at") else None,
         "created_at": row["created_at"].isoformat() if row.get("created_at") else "",
@@ -429,6 +432,9 @@ def update_run_step(
     tokens_in: int | None = None,
     tokens_out: int | None = None,
     cost_usd: float | None = None,
+    validation_result: str | None = None,
+    human_decision: dict | None = None,
+    summary: dict | None = None,
 ) -> dict:
     now = datetime.now(timezone.utc)
     with get_connection() as conn:
@@ -439,6 +445,8 @@ def update_run_step(
                     (now, step_id),
                 )
             elif status == "complete":
+                human_decision_json = json.dumps(human_decision) if human_decision else None
+                summary_json = json.dumps(summary) if summary else None
                 cur.execute(
                     """
                     UPDATE run_ledger
@@ -448,16 +456,29 @@ def update_run_step(
                            model_version = COALESCE(%s, model_version),
                            tokens_in = COALESCE(%s, tokens_in),
                            tokens_out = COALESCE(%s, tokens_out),
-                           cost_usd = COALESCE(%s, cost_usd)
+                           cost_usd = COALESCE(%s, cost_usd),
+                           validation_result = COALESCE(%s, validation_result),
+                           human_decision = COALESCE(%s::jsonb, human_decision),
+                           summary = COALESCE(%s::jsonb, summary)
                      WHERE id = %s::uuid
                  RETURNING *
                     """,
-                    (now, outputs_ref, model_version, tokens_in, tokens_out, cost_usd, step_id),
+                    (now, outputs_ref, model_version, tokens_in, tokens_out,
+                     cost_usd, validation_result, human_decision_json,
+                     summary_json, step_id),
                 )
             elif status == "failed":
                 cur.execute(
-                    "UPDATE run_ledger SET status = 'failed', completed_at = %s, error = %s WHERE id = %s::uuid RETURNING *",
-                    (now, error, step_id),
+                    """
+                    UPDATE run_ledger
+                       SET status = 'failed',
+                           completed_at = %s,
+                           error = %s,
+                           validation_result = COALESCE(%s, validation_result)
+                     WHERE id = %s::uuid
+                 RETURNING *
+                    """,
+                    (now, error, validation_result, step_id),
                 )
             elif status == "stale":
                 cur.execute(
