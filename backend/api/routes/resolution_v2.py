@@ -8,8 +8,10 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 from typing import Optional
 
-from backend.api.routes.v2_helpers import resolve_tenant_and_run, build_identity_context
+from backend.api.routes.v2_helpers import resolve_engagement_or_tenant, build_identity_context
 from backend.core.db import PoolExhausted
+from backend.engine.engagement import get_active_engagement
+from backend.engine.engagement_data import EngagementData
 from backend.engine.entity_resolution_v2 import EntityResolutionV2
 from backend.utils.log_utils import get_logger
 
@@ -18,9 +20,9 @@ logger = get_logger(__name__)
 router = APIRouter(prefix="/api/convergence/resolution/v2", tags=["Resolution V2"])
 
 
-def _get_resolver(tenant_id: str, pipeline_run_id: str) -> EntityResolutionV2:
-    """Build a resolver from already-resolved tenant/run IDs."""
-    return EntityResolutionV2(tenant_id=tenant_id, pipeline_run_id=pipeline_run_id)
+def _get_resolver(eng_data: EngagementData, tid: str, rid: str) -> EntityResolutionV2:
+    """Build a resolver from EngagementData (preferred) or tenant/run IDs."""
+    return EntityResolutionV2(eng_data, pipeline_run_id=rid)
 
 
 class CreateWorkspacesRequest(BaseModel):
@@ -45,9 +47,12 @@ class DecisionRequest(BaseModel):
 @router.post("/create-workspaces")
 def create_workspaces(request: CreateWorkspacesRequest = CreateWorkspacesRequest()):
     """Create resolution workspaces from triple overlap."""
-    tid, rid = resolve_tenant_and_run(request.tenant_id, request.pipeline_run_id)
-    identity = build_identity_context(tid, rid)
-    resolver = _get_resolver(tid, rid)
+    eng_data, tid, rid = resolve_engagement_or_tenant(None, request.tenant_id, request.pipeline_run_id)
+    if eng_data is None:
+        eng_cfg = get_active_engagement(tid)
+        eng_data = EngagementData(eng_cfg.engagement_id)
+    identity = build_identity_context(tid, rid, eng_data=eng_data)
+    resolver = _get_resolver(eng_data, tid, rid)
     result = resolver.create_workspaces_from_overlap()
     return {**identity, "status": "ok", **result}
 
@@ -56,13 +61,17 @@ def create_workspaces(request: CreateWorkspacesRequest = CreateWorkspacesRequest
 def list_workspaces(
     domain: Optional[str] = Query(None),
     status: Optional[str] = Query(None),
+    engagement_id: Optional[str] = Query(None),
     tenant_id: Optional[str] = Query(None),
     pipeline_run_id: Optional[str] = Query(None),
 ):
     """List resolution workspaces with optional filters."""
-    tid, rid = resolve_tenant_and_run(tenant_id, pipeline_run_id)
-    identity = build_identity_context(tid, rid)
-    resolver = _get_resolver(tid, rid)
+    eng_data, tid, rid = resolve_engagement_or_tenant(engagement_id, tenant_id, pipeline_run_id)
+    if eng_data is None:
+        eng_cfg = get_active_engagement(tid)
+        eng_data = EngagementData(eng_cfg.engagement_id)
+    identity = build_identity_context(tid, rid, eng_data=eng_data)
+    resolver = _get_resolver(eng_data, tid, rid)
     workspaces = resolver.list_workspaces(domain=domain, status=status)
     return {**identity, "workspaces": workspaces, "count": len(workspaces)}
 
@@ -70,13 +79,17 @@ def list_workspaces(
 @router.get("/workspaces/{workspace_id}")
 def get_workspace(
     workspace_id: str,
+    engagement_id: Optional[str] = Query(None),
     tenant_id: Optional[str] = Query(None),
     pipeline_run_id: Optional[str] = Query(None),
 ):
     """Get a single workspace by ID."""
-    tid, rid = resolve_tenant_and_run(tenant_id, pipeline_run_id)
-    identity = build_identity_context(tid, rid)
-    resolver = _get_resolver(tid, rid)
+    eng_data, tid, rid = resolve_engagement_or_tenant(engagement_id, tenant_id, pipeline_run_id)
+    if eng_data is None:
+        eng_cfg = get_active_engagement(tid)
+        eng_data = EngagementData(eng_cfg.engagement_id)
+    identity = build_identity_context(tid, rid, eng_data=eng_data)
+    resolver = _get_resolver(eng_data, tid, rid)
     try:
         ws = resolver.get_workspace(workspace_id)
         return {**identity, **ws}
@@ -93,13 +106,17 @@ def get_workspace(
 def confirm_match(
     workspace_id: str,
     request: ConfirmRequest,
+    engagement_id: Optional[str] = Query(None),
     tenant_id: Optional[str] = Query(None),
     pipeline_run_id: Optional[str] = Query(None),
 ):
     """Confirm that overlapping concepts are the same real-world entity."""
-    tid, rid = resolve_tenant_and_run(tenant_id, pipeline_run_id)
-    identity = build_identity_context(tid, rid)
-    resolver = _get_resolver(tid, rid)
+    eng_data, tid, rid = resolve_engagement_or_tenant(engagement_id, tenant_id, pipeline_run_id)
+    if eng_data is None:
+        eng_cfg = get_active_engagement(tid)
+        eng_data = EngagementData(eng_cfg.engagement_id)
+    identity = build_identity_context(tid, rid, eng_data=eng_data)
+    resolver = _get_resolver(eng_data, tid, rid)
     try:
         ws = resolver.confirm_match(
             workspace_id, request.canonical_id, request.decided_by
@@ -118,13 +135,17 @@ def confirm_match(
 def reject_match(
     workspace_id: str,
     request: DecisionRequest = DecisionRequest(),
+    engagement_id: Optional[str] = Query(None),
     tenant_id: Optional[str] = Query(None),
     pipeline_run_id: Optional[str] = Query(None),
 ):
     """Reject the match — concepts are different entities."""
-    tid, rid = resolve_tenant_and_run(tenant_id, pipeline_run_id)
-    identity = build_identity_context(tid, rid)
-    resolver = _get_resolver(tid, rid)
+    eng_data, tid, rid = resolve_engagement_or_tenant(engagement_id, tenant_id, pipeline_run_id)
+    if eng_data is None:
+        eng_cfg = get_active_engagement(tid)
+        eng_data = EngagementData(eng_cfg.engagement_id)
+    identity = build_identity_context(tid, rid, eng_data=eng_data)
+    resolver = _get_resolver(eng_data, tid, rid)
     try:
         ws = resolver.reject_match(workspace_id, request.decided_by)
         return {**identity, **ws}
@@ -141,13 +162,17 @@ def reject_match(
 def escalate(
     workspace_id: str,
     request: EscalateRequest,
+    engagement_id: Optional[str] = Query(None),
     tenant_id: Optional[str] = Query(None),
     pipeline_run_id: Optional[str] = Query(None),
 ):
     """Escalate for human review."""
-    tid, rid = resolve_tenant_and_run(tenant_id, pipeline_run_id)
-    identity = build_identity_context(tid, rid)
-    resolver = _get_resolver(tid, rid)
+    eng_data, tid, rid = resolve_engagement_or_tenant(engagement_id, tenant_id, pipeline_run_id)
+    if eng_data is None:
+        eng_cfg = get_active_engagement(tid)
+        eng_data = EngagementData(eng_cfg.engagement_id)
+    identity = build_identity_context(tid, rid, eng_data=eng_data)
+    resolver = _get_resolver(eng_data, tid, rid)
     try:
         ws = resolver.escalate(
             workspace_id, request.reason, request.decided_by
@@ -165,13 +190,17 @@ def escalate(
 @router.post("/workspaces/{workspace_id}/undo")
 def undo_decision(
     workspace_id: str,
+    engagement_id: Optional[str] = Query(None),
     tenant_id: Optional[str] = Query(None),
     pipeline_run_id: Optional[str] = Query(None),
 ):
     """Undo a decision — reset to pending."""
-    tid, rid = resolve_tenant_and_run(tenant_id, pipeline_run_id)
-    identity = build_identity_context(tid, rid)
-    resolver = _get_resolver(tid, rid)
+    eng_data, tid, rid = resolve_engagement_or_tenant(engagement_id, tenant_id, pipeline_run_id)
+    if eng_data is None:
+        eng_cfg = get_active_engagement(tid)
+        eng_data = EngagementData(eng_cfg.engagement_id)
+    identity = build_identity_context(tid, rid, eng_data=eng_data)
+    resolver = _get_resolver(eng_data, tid, rid)
     try:
         ws = resolver.undo_decision(workspace_id)
         return {**identity, **ws}
@@ -186,12 +215,16 @@ def undo_decision(
 
 @router.get("/stats")
 def get_stats(
+    engagement_id: Optional[str] = Query(None),
     tenant_id: Optional[str] = Query(None),
     pipeline_run_id: Optional[str] = Query(None),
 ):
     """Get resolution statistics."""
-    tid, rid = resolve_tenant_and_run(tenant_id, pipeline_run_id)
-    identity = build_identity_context(tid, rid)
-    resolver = _get_resolver(tid, rid)
+    eng_data, tid, rid = resolve_engagement_or_tenant(engagement_id, tenant_id, pipeline_run_id)
+    if eng_data is None:
+        eng_cfg = get_active_engagement(tid)
+        eng_data = EngagementData(eng_cfg.engagement_id)
+    identity = build_identity_context(tid, rid, eng_data=eng_data)
+    resolver = _get_resolver(eng_data, tid, rid)
     result = resolver.get_resolution_stats()
     return {**identity, **result}

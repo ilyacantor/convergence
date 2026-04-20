@@ -604,11 +604,13 @@ function fmtCombining(n: number | null | undefined): string {
   return n < 0 ? `(${s})` : s;
 }
 
-function CombiningStatement({ data, loading, error, onRetry }: {
+function CombiningStatement({ data, loading, error, onRetry, entityAName, entityBName }: {
   data: CombiningStatementData | null;
   loading: boolean;
   error: string | null;
   onRetry: () => void;
+  entityAName?: string;
+  entityBName?: string;
 }) {
   if (loading) return <LoadingState message="Loading combining statement..." />;
   if (error) return <ErrorState error={error} onRetry={onRetry} />;
@@ -635,8 +637,8 @@ function CombiningStatement({ data, loading, error, onRetry }: {
                 {" "}
                 <span style={{ fontWeight: 400, fontSize: 14, fontStyle: "italic", letterSpacing: "0.04em", color: COLORS.textDim }}>($MM)</span>
               </th>
-              <th style={thStyle}>Meridian</th>
-              <th style={thStyle}>Cascadia</th>
+              <th style={thStyle}>{entityAName || 'Entity A'}</th>
+              <th style={thStyle}>{entityBName || 'Entity B'}</th>
               <th style={{ ...thStyle, background: "rgba(255,235,59,0.06)" }}>Adjustments</th>
               <th style={thStyle}>Combined</th>
             </tr>
@@ -663,8 +665,8 @@ function CombiningStatement({ data, loading, error, onRetry }: {
                   }}>
                     {item.line_item}
                   </td>
-                  <td style={numStyle(item.meridian)}>{fmtCombining(item.meridian)}</td>
-                  <td style={numStyle(item.cascadia)}>{fmtCombining(item.cascadia)}</td>
+                  <td style={numStyle(item.entity_a)}>{fmtCombining(item.entity_a)}</td>
+                  <td style={numStyle(item.entity_b)}>{fmtCombining(item.entity_b)}</td>
                   <td style={numStyle(item.adjustments, true)}>{fmtCombining(item.adjustments)}</td>
                   <td style={numStyle(item.combined)}>{fmtCombining(item.combined)}</td>
                 </tr>
@@ -981,12 +983,18 @@ function CrossSellTab() {
   const [data, setData] = useState<CrossSellData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [direction, setDirection] = useState<"m_to_c" | "c_to_m">("m_to_c");
+  const [direction, setDirection] = useState<"a_to_b" | "b_to_a">("a_to_b");
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [entityAName, setEntityAName] = useState('Entity A');
+  const [entityBName, setEntityBName] = useState('Entity B');
 
   useEffect(() => {
-    fetchCrossSell()
-      .then(setData)
+    Promise.all([fetchCrossSell(), getEngagementContext()])
+      .then(([crossSellData, ctx]) => {
+        setData(crossSellData);
+        setEntityAName(ctx.entity_a.display_name);
+        setEntityBName(ctx.entity_b.display_name);
+      })
       .catch((err) => setError(err instanceof Error ? err.message : String(err)))
       .finally(() => setLoading(false));
   }, []);
@@ -995,11 +1003,11 @@ function CrossSellTab() {
   if (error || !data) return <ErrorState error={error || "No data"} onRetry={() => { setLoading(true); setError(null); fetchCrossSell().then(setData).catch((e) => setError(String(e))).finally(() => setLoading(false)); }} />;
 
   const s = data.summary;
-  const candidates = direction === "m_to_c" ? data.m_to_c : data.c_to_m;
-  const dirCount = direction === "m_to_c" ? s.m_to_c_candidates : s.c_to_m_candidates;
-  const dirAcv = direction === "m_to_c" ? s.m_to_c_total_acv : s.c_to_m_total_acv;
-  const dirHighCount = direction === "m_to_c" ? s.m_to_c_high_conf_count : s.c_to_m_high_conf_count;
-  const dirHighAcv = direction === "m_to_c" ? s.m_to_c_high_conf_acv : s.c_to_m_high_conf_acv;
+  const candidates = direction === "a_to_b" ? data.a_to_b : data.b_to_a;
+  const dirCount = direction === "a_to_b" ? s.a_to_b_candidates : s.b_to_a_candidates;
+  const dirAcv = direction === "a_to_b" ? s.a_to_b_total_acv : s.b_to_a_total_acv;
+  const dirHighCount = direction === "a_to_b" ? s.a_to_b_high_conf_count : s.b_to_a_high_conf_count;
+  const dirHighAcv = direction === "a_to_b" ? s.a_to_b_high_conf_acv : s.b_to_a_high_conf_acv;
   const thS: React.CSSProperties = { textAlign: "left", padding: "8px 12px", color: COLORS.textMuted, fontWeight: 500, fontSize: 14, letterSpacing: "0.06em", textTransform: "uppercase", fontFamily: "'JetBrains Mono',monospace" };
   const thR: React.CSSProperties = { ...thS, textAlign: "right" };
 
@@ -1023,7 +1031,7 @@ function CrossSellTab() {
 
       {/* Direction toggle */}
       <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-        {(["m_to_c", "c_to_m"] as const).map((d) => (
+        {(["a_to_b", "b_to_a"] as const).map((d) => (
           <button key={d} onClick={() => setDirection(d)} style={{
             padding: "6px 16px", fontSize: 14, fontWeight: direction === d ? 600 : 400,
             background: direction === d ? "rgba(199,120,64,0.12)" : "transparent",
@@ -1031,7 +1039,7 @@ function CrossSellTab() {
             border: `1px solid ${direction === d ? COLORS.accent + "44" : COLORS.border}`,
             borderRadius: 4, cursor: "pointer", fontFamily: "'IBM Plex Sans',sans-serif",
           }}>
-            {d === "m_to_c" ? "Meridian Advisory \u2192 Cascadia Clients" : "Cascadia BPM \u2192 Meridian Clients"}
+            {d === "a_to_b" ? `${entityAName} \u2192 ${entityBName} Clients` : `${entityBName} \u2192 ${entityAName} Clients`}
           </button>
         ))}
       </div>
@@ -1124,12 +1132,18 @@ function UpsellTab() {
   const [data, setData] = useState<UpsellData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [direction, setDirection] = useState<"m_to_c" | "c_to_m">("m_to_c");
+  const [direction, setDirection] = useState<"a_to_b" | "b_to_a">("a_to_b");
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [entityAName, setEntityAName] = useState('Entity A');
+  const [entityBName, setEntityBName] = useState('Entity B');
 
   useEffect(() => {
-    fetchUpsell()
-      .then(setData)
+    Promise.all([fetchUpsell(), getEngagementContext()])
+      .then(([upsellData, ctx]) => {
+        setData(upsellData);
+        setEntityAName(ctx.entity_a.display_name);
+        setEntityBName(ctx.entity_b.display_name);
+      })
       .catch((err) => setError(err instanceof Error ? err.message : String(err)))
       .finally(() => setLoading(false));
   }, []);
@@ -1138,9 +1152,9 @@ function UpsellTab() {
   if (error || !data) return <ErrorState error={error || "No data"} onRetry={() => { setLoading(true); setError(null); fetchUpsell().then(setData).catch((e) => setError(String(e))).finally(() => setLoading(false)); }} />;
 
   const s = data.summary;
-  const candidates = direction === "m_to_c" ? data.m_to_c : data.c_to_m;
-  const dirCount = direction === "m_to_c" ? s.m_to_c_count : s.c_to_m_count;
-  const dirAcv = direction === "m_to_c" ? s.m_to_c_acv : s.c_to_m_acv;
+  const candidates = direction === "a_to_b" ? data.a_to_b : data.b_to_a;
+  const dirCount = direction === "a_to_b" ? s.a_to_b_count : s.b_to_a_count;
+  const dirAcv = direction === "a_to_b" ? s.a_to_b_acv : s.b_to_a_acv;
   const thS: React.CSSProperties = { textAlign: "left", padding: "8px 12px", color: COLORS.textMuted, fontWeight: 500, fontSize: 14, letterSpacing: "0.06em", textTransform: "uppercase", fontFamily: "'JetBrains Mono',monospace" };
   const thR: React.CSSProperties = { ...thS, textAlign: "right" };
 
@@ -1150,7 +1164,7 @@ function UpsellTab() {
       <div style={{ display: "flex", gap: 16, marginBottom: 24, flexWrap: "wrap" }}>
         {[
           { label: "Shared Customers", value: String(s.total_shared_customers), sub: "served by both entities" },
-          { label: "Opportunities", value: String(dirCount), sub: `${direction === "m_to_c" ? "M\u2192C" : "C\u2192M"} direction` },
+          { label: "Opportunities", value: String(dirCount), sub: `${direction === "a_to_b" ? "A\u2192B" : "B\u2192A"} direction` },
           { label: "Expansion ACV", value: fmtDollar(dirAcv), sub: `${dirCount} gap services` },
           { label: "Avg Score", value: String(s.avg_score), sub: "across all opportunities" },
         ].map((card) => (
@@ -1164,7 +1178,7 @@ function UpsellTab() {
 
       {/* Direction toggle */}
       <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-        {(["m_to_c", "c_to_m"] as const).map((d) => (
+        {(["a_to_b", "b_to_a"] as const).map((d) => (
           <button key={d} onClick={() => setDirection(d)} style={{
             padding: "6px 16px", fontSize: 14, fontWeight: direction === d ? 600 : 400,
             background: direction === d ? "rgba(199,120,64,0.12)" : "transparent",
@@ -1172,7 +1186,7 @@ function UpsellTab() {
             border: `1px solid ${direction === d ? COLORS.accent + "44" : COLORS.border}`,
             borderRadius: 4, cursor: "pointer", fontFamily: "'IBM Plex Sans',sans-serif",
           }}>
-            {d === "m_to_c" ? "Meridian Services \u2192 Cascadia Clients" : "Cascadia Services \u2192 Meridian Clients"}
+            {d === "a_to_b" ? `${entityAName} Services \u2192 ${entityBName} Clients` : `${entityBName} Services \u2192 ${entityAName} Clients`}
           </button>
         ))}
       </div>
@@ -1371,10 +1385,16 @@ function EBITDABridgeTab() {
   const [error, setError] = useState<string | null>(null);
   const [expandedAdj, setExpandedAdj] = useState<string | null>(null);
   const [expandedKpi, setExpandedKpi] = useState<string | null>(null);
+  const [entityAName, setEntityAName] = useState('Entity A');
+  const [entityBName, setEntityBName] = useState('Entity B');
 
   useEffect(() => {
-    fetchEBITDABridge()
-      .then(setData)
+    Promise.all([fetchEBITDABridge(), getEngagementContext()])
+      .then(([bridgeData, ctx]) => {
+        setData(bridgeData);
+        setEntityAName(ctx.entity_a.display_name);
+        setEntityBName(ctx.entity_b.display_name);
+      })
       .catch((err) => setError(err instanceof Error ? err.message : String(err)))
       .finally(() => setLoading(false));
   }, []);
@@ -1458,12 +1478,12 @@ function EBITDABridgeTab() {
                 <table style={{ width: "100%", maxWidth: 400, borderCollapse: "collapse", fontSize: 14 }}>
                   <tbody>
                     <tr style={{ borderBottom: `1px solid ${COLORS.border}22` }}>
-                      <td style={{ padding: "6px 0", color: COLORS.textMuted }}>Meridian</td>
-                      <td style={{ textAlign: "right", padding: "6px 0", color: COLORS.text, fontWeight: 600, fontFamily: "'IBM Plex Mono',monospace" }}>{fmtDollar(rep.meridian)}</td>
+                      <td style={{ padding: "6px 0", color: COLORS.textMuted }}>{entityAName}</td>
+                      <td style={{ textAlign: "right", padding: "6px 0", color: COLORS.text, fontWeight: 600, fontFamily: "'IBM Plex Mono',monospace" }}>{fmtDollar(rep.entity_a)}</td>
                     </tr>
                     <tr style={{ borderBottom: `1px solid ${COLORS.border}22` }}>
-                      <td style={{ padding: "6px 0", color: COLORS.textMuted }}>Cascadia</td>
-                      <td style={{ textAlign: "right", padding: "6px 0", color: COLORS.text, fontWeight: 600, fontFamily: "'IBM Plex Mono',monospace" }}>{fmtDollar(rep.cascadia)}</td>
+                      <td style={{ padding: "6px 0", color: COLORS.textMuted }}>{entityBName}</td>
+                      <td style={{ textAlign: "right", padding: "6px 0", color: COLORS.text, fontWeight: 600, fontFamily: "'IBM Plex Mono',monospace" }}>{fmtDollar(rep.entity_b)}</td>
                     </tr>
                     <tr style={{ borderTop: `1px solid ${COLORS.borderLight}` }}>
                       <td style={{ padding: "6px 0", color: COLORS.text, fontWeight: 700 }}>Combined</td>
@@ -1480,16 +1500,16 @@ function EBITDABridgeTab() {
                   <thead>
                     <tr style={{ borderBottom: `1px solid ${COLORS.border}` }}>
                       <th style={{ textAlign: "left", padding: "4px 0", color: COLORS.textDim, fontSize: 14 }}></th>
-                      <th style={{ textAlign: "right", padding: "4px 8px", color: COLORS.textDim, fontSize: 14 }}>MERIDIAN</th>
-                      <th style={{ textAlign: "right", padding: "4px 8px", color: COLORS.textDim, fontSize: 14 }}>CASCADIA</th>
+                      <th style={{ textAlign: "right", padding: "4px 8px", color: COLORS.textDim, fontSize: 14 }}>{entityAName.toUpperCase()}</th>
+                      <th style={{ textAlign: "right", padding: "4px 8px", color: COLORS.textDim, fontSize: 14 }}>{entityBName.toUpperCase()}</th>
                       <th style={{ textAlign: "right", padding: "4px 0", color: COLORS.textDim, fontSize: 14 }}>COMBINED</th>
                     </tr>
                   </thead>
                   <tbody>
                     <tr style={{ borderBottom: `1px solid ${COLORS.border}22` }}>
                       <td style={{ padding: "6px 0", color: COLORS.textMuted }}>Reported</td>
-                      <td style={{ textAlign: "right", padding: "6px 8px", color: COLORS.text, fontFamily: "'IBM Plex Mono',monospace" }}>{fmtDollar(rep.meridian)}</td>
-                      <td style={{ textAlign: "right", padding: "6px 8px", color: COLORS.text, fontFamily: "'IBM Plex Mono',monospace" }}>{fmtDollar(rep.cascadia)}</td>
+                      <td style={{ textAlign: "right", padding: "6px 8px", color: COLORS.text, fontFamily: "'IBM Plex Mono',monospace" }}>{fmtDollar(rep.entity_a)}</td>
+                      <td style={{ textAlign: "right", padding: "6px 8px", color: COLORS.text, fontFamily: "'IBM Plex Mono',monospace" }}>{fmtDollar(rep.entity_b)}</td>
                       <td style={{ textAlign: "right", padding: "6px 0", color: COLORS.text, fontFamily: "'IBM Plex Mono',monospace" }}>{fmtDollar(rep.combined_reported)}</td>
                     </tr>
                     {data.entity_adjustments.map((adj) => (
@@ -1501,8 +1521,8 @@ function EBITDABridgeTab() {
                     ))}
                     <tr style={{ borderTop: `1px solid ${COLORS.borderLight}` }}>
                       <td style={{ padding: "6px 0", color: COLORS.text, fontWeight: 700 }}>Adjusted</td>
-                      <td style={{ textAlign: "right", padding: "6px 8px", color: COLORS.text, fontWeight: 700, fontFamily: "'IBM Plex Mono',monospace" }}>{fmtDollar(ea.meridian)}</td>
-                      <td style={{ textAlign: "right", padding: "6px 8px", color: COLORS.text, fontWeight: 700, fontFamily: "'IBM Plex Mono',monospace" }}>{fmtDollar(ea.cascadia)}</td>
+                      <td style={{ textAlign: "right", padding: "6px 8px", color: COLORS.text, fontWeight: 700, fontFamily: "'IBM Plex Mono',monospace" }}>{fmtDollar(ea.entity_a)}</td>
+                      <td style={{ textAlign: "right", padding: "6px 8px", color: COLORS.text, fontWeight: 700, fontFamily: "'IBM Plex Mono',monospace" }}>{fmtDollar(ea.entity_b)}</td>
                       <td style={{ textAlign: "right", padding: "6px 0", color: COLORS.text, fontWeight: 700, fontFamily: "'IBM Plex Mono',monospace" }}>{fmtDollar(ea.combined)}</td>
                     </tr>
                   </tbody>
@@ -2457,10 +2477,20 @@ export function ReportPortal({ onClose: _onClose }: { onClose: () => void }) {
     (entityFromUrl as EntitySelection) || "combined"
   );
   const [entityNames, setEntityNames] = useState<Record<string, string>>({});
+  const [entityAName, setEntityAName] = useState('Entity A');
+  const [entityBName, setEntityBName] = useState('Entity B');
   const [tab, setTab] = useState("pl");
   const [variant, setVariant] = useState("act_vs_py");
   const [quarter, setQuarter] = useState("2025-Q3");
   const [segment, setSegment] = useState("all");
+
+  // Fetch entity display names from engagement context
+  useEffect(() => {
+    getEngagementContext().then((ctx) => {
+      setEntityAName(ctx.entity_a.display_name);
+      setEntityBName(ctx.entity_b.display_name);
+    }).catch(() => { /* DealSelector will surface errors */ });
+  }, []);
 
   // Dimension state — fetched from API on mount
   const [dimensions, setDimensions] = useState<{ periods: PeriodDimension[]; segments: string[] } | null>(null);
@@ -2816,7 +2846,7 @@ export function ReportPortal({ onClose: _onClose }: { onClose: () => void }) {
                 ...availableSegments.map((s) => ({ value: s, label: s })),
               ]} />
             </div>
-            <CombiningStatement data={combiningData} loading={combiningLoading} error={combiningError} onRetry={loadCombining} />
+            <CombiningStatement data={combiningData} loading={combiningLoading} error={combiningError} onRetry={loadCombining} entityAName={entityAName} entityBName={entityBName} />
           </div>
         )}
         {tab === "overlap" && entity === "combined" && (

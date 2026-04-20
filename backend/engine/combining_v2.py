@@ -9,13 +9,19 @@ Identity gates validate every statement before returning.
 COFA conflicts read from cofa_conflict.* triples in the database.
 """
 
+from __future__ import annotations
+
 import os
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
+from typing import TYPE_CHECKING
 
 from backend.core.db import get_connection
 from backend.engine.query_resolver_v2 import TripleQueryResolver
 from backend.utils.log_utils import get_logger
+
+if TYPE_CHECKING:
+    from backend.engine.engagement_data import EngagementData
 
 logger = get_logger(__name__)
 
@@ -51,11 +57,15 @@ class CombiningEngineV2:
     Identity gates: every statement must balance before returning.
     """
 
-    def __init__(self, tenant_id: str, pipeline_run_id: str):
-        """Store context, initialize TripleQueryResolver internally."""
-        self.tenant_id = tenant_id
+    def __init__(
+        self,
+        eng_data: EngagementData,
+        pipeline_run_id: str | None = None,
+    ):
+        self._eng = eng_data
+        self.tenant_id = eng_data.tenant_id
         self.pipeline_run_id = pipeline_run_id
-        self._resolver = TripleQueryResolver(tenant_id, pipeline_run_id)
+        self._resolver = eng_data.triple_resolver(pipeline_run_id)
 
     # ------------------------------------------------------------------
     # COFA adjustments
@@ -150,15 +160,8 @@ class CombiningEngineV2:
         Identity gate: combined.ebitda == entity_a.ebitda + entity_b.ebitda + adjustments.total_ebitda_impact
         Raises ValueError if identity fails.
         """
-        entities = self._resolver._get_entities()
-        if len(entities) < 2:
-            raise ValueError(
-                f"Combining statement requires at least 2 entities, "
-                f"found {len(entities)}: {entities} for "
-                f"tenant_id='{self.tenant_id}', run_id='{self.pipeline_run_id}'"
-            )
-        entity_a_id = entities[0]
-        entity_b_id = entities[1]
+        entity_a_id = self._eng.entity_a_id
+        entity_b_id = self._eng.entity_b_id
 
         stmt_a_f = _combining_executor.submit(self._resolver.get_income_statement, entity_a_id, period)
         stmt_b_f = _combining_executor.submit(self._resolver.get_income_statement, entity_b_id, period)
@@ -185,8 +188,8 @@ class CombiningEngineV2:
 
         return {
             "period": period,
-            "entity_a": {"name": entity_a_id, **stmt_a},
-            "entity_b": {"name": entity_b_id, **stmt_b},
+            "entity_a": {"id": entity_a_id, "name": self._eng.entity_a_display_name, **stmt_a},
+            "entity_b": {"id": entity_b_id, "name": self._eng.entity_b_display_name, **stmt_b},
             "adjustments": adjustments,
             "combined": combined,
             "identity_check": {
@@ -210,14 +213,8 @@ class CombiningEngineV2:
         Identity gate: combined.assets == combined.liabilities + combined.equity
         $0 tolerance. Raises ValueError if identity fails.
         """
-        entities = self._resolver._get_entities()
-        if len(entities) < 2:
-            raise ValueError(
-                f"Combining BS requires at least 2 entities, "
-                f"found {len(entities)}: {entities}"
-            )
-        entity_a_id = entities[0]
-        entity_b_id = entities[1]
+        entity_a_id = self._eng.entity_a_id
+        entity_b_id = self._eng.entity_b_id
 
         bs_a_f = _combining_executor.submit(self._resolver.get_balance_sheet, entity_a_id, period)
         bs_b_f = _combining_executor.submit(self._resolver.get_balance_sheet, entity_b_id, period)
@@ -248,8 +245,8 @@ class CombiningEngineV2:
 
         return {
             "period": period,
-            "entity_a": {"name": entity_a_id, **bs_a},
-            "entity_b": {"name": entity_b_id, **bs_b},
+            "entity_a": {"id": entity_a_id, "name": self._eng.entity_a_display_name, **bs_a},
+            "entity_b": {"id": entity_b_id, "name": self._eng.entity_b_display_name, **bs_b},
             "combined": combined,
             "identity_check": {
                 "passed": True,
@@ -272,14 +269,8 @@ class CombiningEngineV2:
         Identity gate: combined.operating + combined.investing + combined.financing == combined.net_change
         $0 tolerance. Raises ValueError if identity fails.
         """
-        entities = self._resolver._get_entities()
-        if len(entities) < 2:
-            raise ValueError(
-                f"Combining CF requires at least 2 entities, "
-                f"found {len(entities)}: {entities}"
-            )
-        entity_a_id = entities[0]
-        entity_b_id = entities[1]
+        entity_a_id = self._eng.entity_a_id
+        entity_b_id = self._eng.entity_b_id
 
         cf_a_f = _combining_executor.submit(self._resolver.get_cash_flow, entity_a_id, period)
         cf_b_f = _combining_executor.submit(self._resolver.get_cash_flow, entity_b_id, period)
@@ -308,8 +299,8 @@ class CombiningEngineV2:
 
         return {
             "period": period,
-            "entity_a": {"name": entity_a_id, **cf_a},
-            "entity_b": {"name": entity_b_id, **cf_b},
+            "entity_a": {"id": entity_a_id, "name": self._eng.entity_a_display_name, **cf_a},
+            "entity_b": {"id": entity_b_id, "name": self._eng.entity_b_display_name, **cf_b},
             "combined": combined,
             "identity_check": {
                 "passed": True,

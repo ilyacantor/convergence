@@ -1,29 +1,33 @@
 """
-OverlapEngineV2 — PG-backed overlap analysis from convergence_triples.
+OverlapEngineV2 — entity overlap analysis using resolver decisions + convergence_triples.
 
-Analyzes entity overlap: concepts that appear under both entity_ids
-within a domain (customer, vendor, employee).
+For domains covered by the identity resolver (customer, vendor, employee):
+overlap is determined from resolver_decisions (confirmed + auto_accepted mappings).
 
-All data sourced from convergence_triples in PG — no JSON files.
+For domains not covered by the resolver (it_asset):
+falls back to concept-name matching in convergence_triples.
 """
 
+from __future__ import annotations
+
+import re as _re
+from typing import TYPE_CHECKING
+
 from backend.core.db import get_connection
-from backend.engine.engagement import get_active_engagement
 from backend.utils.log_utils import get_logger
+
+if TYPE_CHECKING:
+    from backend.engine.engagement_data import EngagementData
 
 logger = get_logger(__name__)
 
-# TEMPORARY: pending ME v2 two-SE refactor — see WP6
 _ALLOWED_DOMAINS = ("customer", "vendor", "employee", "it_asset")
-
-
-import re as _re
+_RESOLVER_DOMAINS = ("customer", "vendor", "employee")
 
 _NUMERIC_RE = _re.compile(r"^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$")
 
 
 def _safe_sort_float(val) -> float:
-    """Convert a value to float for sorting. Non-numeric values sort as 0."""
     if val is None:
         return 0.0
     if isinstance(val, (int, float)):
@@ -33,20 +37,13 @@ def _safe_sort_float(val) -> float:
         return float(s)
     return 0.0
 
-# Entity ordering: entity_a sorts first descending (meridian > cascadia)
-_ENTITY_A_LABEL = "entity_a"
-_ENTITY_B_LABEL = "entity_b"
-
 
 class OverlapEngineV2:
-    """
-    Analyzes entity overlap from convergence_triples.
+    """Entity overlap analysis. Resolver-backed for customer/vendor/employee."""
 
-    Overlap = concepts that appear under both entity_ids within a domain.
-    """
-
-    def __init__(self, tenant_id: str, pipeline_run_id: str):
-        self.tenant_id = tenant_id
+    def __init__(self, eng_data: EngagementData, pipeline_run_id: str | None = None):
+        self._eng = eng_data
+        self.tenant_id = eng_data.tenant_id
         self.pipeline_run_id = pipeline_run_id
 
     @property
@@ -68,9 +65,29 @@ class OverlapEngineV2:
                 return [dict(zip(columns, row)) for row in cur.fetchall()]
 
     def _get_entities(self) -> tuple[str, str]:
-        """Get entity IDs from the active engagement config."""
-        eng = get_active_engagement()
-        return eng.entity_ids()
+        return self._eng.entity_a_id, self._eng.entity_b_id
+
+    def _use_resolver(self, domain: str) -> bool:
+        """Check if resolver data exists for this domain."""
+        return domain in _RESOLVER_DOMAINS and self._eng.has_resolver_data(domain)
+
+    def _get_resolver_overlap(self, domain: str) -> list[str]:
+        """Get overlapping concept names from resolver confirmed mappings."""
+        mappings = self._eng.get_resolved_mappings(domain)
+        return [m["acquirer_record_id"] for m in mappings]
+
+    def _count_records_from_resolver(self, domain: str, entity_id: str) -> int:
+        """Count total records for one entity from resolver decisions."""
+        from backend.db import resolver_store
+        all_decisions = resolver_store.get_decisions(
+            self._eng.engagement_id, domain=domain,
+        )
+        if entity_id == self._eng.entity_a_id:
+            return len({d["acquirer_record_id"] for d in all_decisions})
+        return len({
+            d["target_record_id"] for d in all_decisions
+            if d["target_record_id"] is not None
+        })
 
     def _count_concepts_for_entity(self, domain: str, entity_id: str) -> int:
         """Count distinct entity-level concepts in a domain for a specific entity.
@@ -118,24 +135,26 @@ class OverlapEngineV2:
         return [r["concept"] for r in rows]
 
     def get_overlap_summary(self) -> dict:
-        """
-        Returns overlap summary per domain.
+        """Returns overlap summary per domain.
 
-        Example:
-        {
-            "customer": {"overlap_count": 34, "entity_a_total": 1218, "entity_b_total": 220,
-                         "overlap_pct_a": 2.79, "overlap_pct_b": 15.45},
-            ...
-        }
+        Uses resolver decisions for customer/vendor/employee when available.
+        Falls back to convergence_triples concept-matching for it_asset
+        or when no resolver data exists.
         """
         entity_a, entity_b = self._get_entities()
         summary = {}
 
         for domain in _ALLOWED_DOMAINS:
-            overlapping = self._find_overlapping_concepts(domain)
-            overlap_count = len(overlapping)
-            a_total = self._count_concepts_for_entity(domain, entity_a)
-            b_total = self._count_concepts_for_entity(domain, entity_b)
+            if self._use_resolver(domain):
+                overlapping = self._get_resolver_overlap(domain)
+                overlap_count = len(overlapping)
+                a_total = self._count_records_from_resolver(domain, entity_a)
+                b_total = self._count_records_from_resolver(domain, entity_b)
+            else:
+                overlapping = self._find_overlapping_concepts(domain)
+                overlap_count = len(overlapping)
+                a_total = self._count_concepts_for_entity(domain, entity_a)
+                b_total = self._count_concepts_for_entity(domain, entity_b)
 
             overlap_pct_a = round(overlap_count / a_total * 100, 2) if a_total > 0 else 0.0
             overlap_pct_b = round(overlap_count / b_total * 100, 2) if b_total > 0 else 0.0
@@ -146,22 +165,22 @@ class OverlapEngineV2:
                 "entity_b_total": b_total,
                 "overlap_pct_a": overlap_pct_a,
                 "overlap_pct_b": overlap_pct_b,
+                "source": "resolver" if self._use_resolver(domain) else "concept_match",
             }
 
         logger.info(
-            "OverlapEngineV2.get_overlap_summary: %s for tenant=%s, run=%s",
+            "OverlapEngineV2.get_overlap_summary: %s for tenant=%s",
             {d: s["overlap_count"] for d, s in summary.items()},
-            self.tenant_id, self.pipeline_run_id,
+            self.tenant_id,
         )
         return summary
 
     def get_overlapping_concepts(self, domain: str) -> list[dict]:
-        """
-        Returns list of overlapping concepts with properties from both entities.
+        """Returns overlapping concepts with properties from both entities.
 
-        [{"concept": "customer.accenture",
-          "entity_a_properties": {"revenue": 12.0, "industry": "Professional Services", ...},
-          "entity_b_properties": {"revenue": 4.0, "industry": "Professional Services", ...}}]
+        When resolver data exists: matched pairs from resolver_decisions, with
+        each pair's properties fetched from convergence_triples.
+        When no resolver data: concept-name matching in convergence_triples.
         """
         if domain not in _ALLOWED_DOMAINS:
             raise ValueError(
@@ -169,6 +188,10 @@ class OverlapEngineV2:
             )
 
         entity_a, entity_b = self._get_entities()
+
+        if self._use_resolver(domain):
+            return self._get_resolver_overlapping_concepts(domain, entity_a, entity_b)
+
         overlapping = self._find_overlapping_concepts(domain)
 
         if not overlapping:
@@ -211,15 +234,67 @@ class OverlapEngineV2:
 
         return result
 
+    def _get_resolver_overlapping_concepts(
+        self, domain: str, entity_a: str, entity_b: str,
+    ) -> list[dict]:
+        """Build overlapping concept list from resolver matched pairs.
+
+        For each confirmed mapping, fetch properties for both the acquirer
+        and target record from convergence_triples.
+        """
+        mappings = self._eng.get_resolved_mappings(domain)
+        if not mappings:
+            return []
+
+        acq_concepts = [m["acquirer_record_id"] for m in mappings]
+        tgt_concepts = [m["target_record_id"] for m in mappings]
+        all_concepts = list(set(acq_concepts + tgt_concepts))
+
+        placeholders = ", ".join(["%s"] * len(all_concepts))
+        sql = f"""
+            SELECT concept, entity_id, property, value
+            FROM convergence_triples
+            WHERE tenant_id = %s AND {self._run_clause}
+              AND concept IN ({placeholders})
+            ORDER BY concept, entity_id, property
+        """
+        params = [self.tenant_id, *self._run_params] + all_concepts
+        rows = self._query(sql, params)
+
+        concept_data: dict[str, dict[str, dict]] = {}
+        for row in rows:
+            concept = row["concept"]
+            eid = row["entity_id"]
+            if concept not in concept_data:
+                concept_data[concept] = {}
+            if eid not in concept_data[concept]:
+                concept_data[concept][eid] = {}
+            concept_data[concept][eid][row["property"]] = row["value"]
+
+        result = []
+        for m in mappings:
+            acq_id = m["acquirer_record_id"]
+            tgt_id = m["target_record_id"]
+            result.append({
+                "concept": acq_id,
+                "matched_concept": tgt_id,
+                "confidence": m["confidence"],
+                "tier": m["tier_matched"],
+                "entity_a_properties": concept_data.get(acq_id, {}).get(entity_a, {}),
+                "entity_b_properties": concept_data.get(tgt_id, {}).get(entity_b, {}),
+            })
+        return result
+
     def get_entity_only_concepts(self, domain: str, entity_id: str) -> list[str]:
-        """
-        Concepts in domain that appear ONLY under the given entity.
-        E.g., Meridian-only customers = 1218 - 34 = 1184.
-        """
+        """Concepts in domain that appear ONLY under the given entity."""
         if domain not in _ALLOWED_DOMAINS:
             raise ValueError(
                 f"Invalid domain '{domain}'. Must be one of: {', '.join(_ALLOWED_DOMAINS)}"
             )
+
+        if self._use_resolver(domain):
+            role = self._eng.role_for_entity_id(entity_id)
+            return self._eng.get_unmatched_records(domain, side=role)
 
         overlapping_set = set(self._find_overlapping_concepts(domain))
 
@@ -240,18 +315,18 @@ class OverlapEngineV2:
         return [c for c in all_concepts if c not in overlapping_set]
 
     def get_overlap_by_property(self, domain: str, property_name: str) -> list[dict]:
-        """
-        Compare a specific property across overlapping concepts.
-        E.g., compare 'revenue' for shared customers.
-        Returns sorted list with both entity values for comparison.
-        """
+        """Compare a specific property across overlapping concepts."""
         if domain not in _ALLOWED_DOMAINS:
             raise ValueError(
                 f"Invalid domain '{domain}'. Must be one of: {', '.join(_ALLOWED_DOMAINS)}"
             )
 
         entity_a, entity_b = self._get_entities()
-        overlapping = self._find_overlapping_concepts(domain)
+
+        if self._use_resolver(domain):
+            overlapping = self._get_resolver_overlap(domain)
+        else:
+            overlapping = self._find_overlapping_concepts(domain)
 
         if not overlapping:
             return []

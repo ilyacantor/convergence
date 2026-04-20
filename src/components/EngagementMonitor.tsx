@@ -870,8 +870,6 @@ export default function EngagementMonitor() {
         method: 'POST',
         body: JSON.stringify({
           tenant_id: TENANT_ID,
-          acquirer_entity_id: 'meridian',
-          target_entity_id: 'cascadia',
           engagement_type: 'MA',
         }),
       });

@@ -11,9 +11,15 @@ Reported EBITDA (Entity A + Entity B)
 All data sourced from convergence_triples in PG — no JSON files.
 """
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 from backend.core.db import get_connection
-from backend.engine.engagement import get_active_engagement
 from backend.utils.log_utils import get_logger
+
+if TYPE_CHECKING:
+    from backend.engine.engagement_data import EngagementData
 
 logger = get_logger(__name__)
 
@@ -95,8 +101,9 @@ class EBITDABridgeV2:
     = Adjusted Pro Forma EBITDA
     """
 
-    def __init__(self, tenant_id: str, pipeline_run_id: str):
-        self.tenant_id = tenant_id
+    def __init__(self, eng_data: EngagementData, pipeline_run_id: str | None = None):
+        self._eng = eng_data
+        self.tenant_id = eng_data.tenant_id
         self.pipeline_run_id = pipeline_run_id
 
     @property
@@ -118,9 +125,7 @@ class EBITDABridgeV2:
                 return [dict(zip(columns, row)) for row in cur.fetchall()]
 
     def _get_entities(self) -> tuple[str, str]:
-        """Get entity IDs from the active engagement config."""
-        eng = get_active_engagement()
-        return eng.entity_ids()
+        return self._eng.entity_a_id, self._eng.entity_b_id
 
     def _get_reported_ebitda(self, entity_id: str) -> float:
         """Sum pnl.ebitda across all 2025 quarters for an entity."""

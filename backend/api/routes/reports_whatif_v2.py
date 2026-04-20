@@ -18,8 +18,9 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
-from backend.api.routes.v2_helpers import resolve_tenant_and_run, build_identity_context
+from backend.api.routes.v2_helpers import resolve_engagement_or_tenant, build_identity_context
 from backend.core.db import PoolExhausted
+from backend.engine.engagement_data import EngagementData
 from backend.engine.what_if_v2 import WhatIfEngineV2
 from backend.engine.revenue_bridge import RevenueBridgeV2
 from backend.utils.log_utils import get_logger
@@ -67,14 +68,19 @@ class SaveScenarioRequest(BaseModel):
 @router.post("/whatif/scenario")
 async def apply_scenario(
     request: ScenarioRequest,
+    engagement_id: Optional[str] = Query(None),
     tenant_id: Optional[str] = Query(None),
     pipeline_run_id: Optional[str] = Query(None),
 ):
     """Apply what-if adjustments to a baseline and compute impacts."""
-    tid, rid = resolve_tenant_and_run(tenant_id, pipeline_run_id)
-    identity = build_identity_context(tid, rid)
+    eng_data, tid, rid = resolve_engagement_or_tenant(engagement_id, tenant_id, pipeline_run_id)
+    if eng_data is None:
+        from backend.engine.engagement import get_active_engagement
+        eng_cfg = get_active_engagement(tid)
+        eng_data = EngagementData(eng_cfg.engagement_id)
+    identity = build_identity_context(tid, rid, eng_data=eng_data)
     try:
-        engine = WhatIfEngineV2(tid, rid)
+        engine = WhatIfEngineV2(eng_data, rid)
         adjustments = [a.model_dump() for a in request.adjustments]
         result = engine.apply_scenario(request.entity_id, request.period, adjustments)
         return {**identity, "entity_id": request.entity_id, **result}
@@ -92,14 +98,19 @@ async def apply_scenario(
 @router.post("/whatif/compare")
 async def compare_scenarios(
     request: CompareRequest,
+    engagement_id: Optional[str] = Query(None),
     tenant_id: Optional[str] = Query(None),
     pipeline_run_id: Optional[str] = Query(None),
 ):
     """Compare multiple named scenarios side by side."""
-    tid, rid = resolve_tenant_and_run(tenant_id, pipeline_run_id)
-    identity = build_identity_context(tid, rid)
+    eng_data, tid, rid = resolve_engagement_or_tenant(engagement_id, tenant_id, pipeline_run_id)
+    if eng_data is None:
+        from backend.engine.engagement import get_active_engagement
+        eng_cfg = get_active_engagement(tid)
+        eng_data = EngagementData(eng_cfg.engagement_id)
+    identity = build_identity_context(tid, rid, eng_data=eng_data)
     try:
-        engine = WhatIfEngineV2(tid, rid)
+        engine = WhatIfEngineV2(eng_data, rid)
         scenarios = {
             name: [a.model_dump() for a in adjs]
             for name, adjs in request.scenarios.items()
@@ -124,14 +135,19 @@ async def sensitivity_analysis(
     concept: str = "revenue.total",
     range_pct: float = 20.0,
     steps: int = 5,
+    engagement_id: Optional[str] = Query(None),
     tenant_id: Optional[str] = Query(None),
     pipeline_run_id: Optional[str] = Query(None),
 ):
     """Vary a single concept and show impact on EBITDA/net income."""
-    tid, rid = resolve_tenant_and_run(tenant_id, pipeline_run_id)
-    identity = build_identity_context(tid, rid)
+    eng_data, tid, rid = resolve_engagement_or_tenant(engagement_id, tenant_id, pipeline_run_id)
+    if eng_data is None:
+        from backend.engine.engagement import get_active_engagement
+        eng_cfg = get_active_engagement(tid)
+        eng_data = EngagementData(eng_cfg.engagement_id)
+    identity = build_identity_context(tid, rid, eng_data=eng_data)
     try:
-        engine = WhatIfEngineV2(tid, rid)
+        engine = WhatIfEngineV2(eng_data, rid)
         steps_result = engine.sensitivity_analysis(entity_id, period, concept, range_pct, steps)
         return {**identity, "entity_id": entity_id, "steps": steps_result}
     except ValueError as e:
@@ -148,14 +164,19 @@ async def sensitivity_analysis(
 @router.post("/whatif/save")
 async def save_scenario(
     request: SaveScenarioRequest,
+    engagement_id: Optional[str] = Query(None),
     tenant_id: Optional[str] = Query(None),
     pipeline_run_id: Optional[str] = Query(None),
 ):
     """Persist a scenario to the database."""
-    tid, rid = resolve_tenant_and_run(tenant_id, pipeline_run_id)
-    identity = build_identity_context(tid, rid)
+    eng_data, tid, rid = resolve_engagement_or_tenant(engagement_id, tenant_id, pipeline_run_id)
+    if eng_data is None:
+        from backend.engine.engagement import get_active_engagement
+        eng_cfg = get_active_engagement(tid)
+        eng_data = EngagementData(eng_cfg.engagement_id)
+    identity = build_identity_context(tid, rid, eng_data=eng_data)
     try:
-        engine = WhatIfEngineV2(tid, rid)
+        engine = WhatIfEngineV2(eng_data, rid)
         adjustments = [a.model_dump() for a in request.adjustments]
         scenario_id = engine.save_scenario(
             request.name, request.entity_id, request.period, adjustments,
@@ -174,14 +195,19 @@ async def save_scenario(
 
 @router.get("/whatif/scenarios")
 async def list_scenarios(
+    engagement_id: Optional[str] = Query(None),
     tenant_id: Optional[str] = Query(None),
     pipeline_run_id: Optional[str] = Query(None),
 ):
     """List all saved scenarios."""
-    tid, rid = resolve_tenant_and_run(tenant_id, pipeline_run_id)
-    identity = build_identity_context(tid, rid)
+    eng_data, tid, rid = resolve_engagement_or_tenant(engagement_id, tenant_id, pipeline_run_id)
+    if eng_data is None:
+        from backend.engine.engagement import get_active_engagement
+        eng_cfg = get_active_engagement(tid)
+        eng_data = EngagementData(eng_cfg.engagement_id)
+    identity = build_identity_context(tid, rid, eng_data=eng_data)
     try:
-        engine = WhatIfEngineV2(tid, rid)
+        engine = WhatIfEngineV2(eng_data, rid)
         scenarios = engine.list_scenarios()
         return {**identity, "scenarios": scenarios}
     except PoolExhausted as e:
@@ -196,14 +222,19 @@ async def list_scenarios(
 @router.get("/whatif/scenarios/{scenario_id}")
 async def load_scenario(
     scenario_id: str,
+    engagement_id: Optional[str] = Query(None),
     tenant_id: Optional[str] = Query(None),
     pipeline_run_id: Optional[str] = Query(None),
 ):
     """Load a saved scenario and re-apply against current baselines."""
-    tid, rid = resolve_tenant_and_run(tenant_id, pipeline_run_id)
-    identity = build_identity_context(tid, rid)
+    eng_data, tid, rid = resolve_engagement_or_tenant(engagement_id, tenant_id, pipeline_run_id)
+    if eng_data is None:
+        from backend.engine.engagement import get_active_engagement
+        eng_cfg = get_active_engagement(tid)
+        eng_data = EngagementData(eng_cfg.engagement_id)
+    identity = build_identity_context(tid, rid, eng_data=eng_data)
     try:
-        engine = WhatIfEngineV2(tid, rid)
+        engine = WhatIfEngineV2(eng_data, rid)
         result = engine.load_scenario(scenario_id)
         return {**identity, **result}
     except ValueError as e:
@@ -227,14 +258,19 @@ async def get_revenue_bridge(
     entity_id: str = Query(..., description="Entity ID"),
     period_from: Optional[str] = None,
     period_to: Optional[str] = None,
+    engagement_id: Optional[str] = Query(None),
     tenant_id: Optional[str] = Query(None),
     pipeline_run_id: Optional[str] = Query(None),
 ):
     """Revenue bridge between two periods."""
-    tid, rid = resolve_tenant_and_run(tenant_id, pipeline_run_id)
-    identity = build_identity_context(tid, rid)
+    eng_data, tid, rid = resolve_engagement_or_tenant(engagement_id, tenant_id, pipeline_run_id)
+    if eng_data is None:
+        from backend.engine.engagement import get_active_engagement
+        eng_cfg = get_active_engagement(tid)
+        eng_data = EngagementData(eng_cfg.engagement_id)
+    identity = build_identity_context(tid, rid, eng_data=eng_data)
     try:
-        bridge = RevenueBridgeV2(tid, rid)
+        bridge = RevenueBridgeV2(eng_data, rid)
         if period_from is None or period_to is None:
             raise ValueError(
                 "Revenue bridge requires 'period_from' and 'period_to' query parameters. "
@@ -257,14 +293,19 @@ async def get_revenue_bridge(
 async def get_yoy_bridge(
     entity_id: str = Query(..., description="Entity ID"),
     period: str = "2025-Q1",
+    engagement_id: Optional[str] = Query(None),
     tenant_id: Optional[str] = Query(None),
     pipeline_run_id: Optional[str] = Query(None),
 ):
     """Year-over-year revenue bridge."""
-    tid, rid = resolve_tenant_and_run(tenant_id, pipeline_run_id)
-    identity = build_identity_context(tid, rid)
+    eng_data, tid, rid = resolve_engagement_or_tenant(engagement_id, tenant_id, pipeline_run_id)
+    if eng_data is None:
+        from backend.engine.engagement import get_active_engagement
+        eng_cfg = get_active_engagement(tid)
+        eng_data = EngagementData(eng_cfg.engagement_id)
+    identity = build_identity_context(tid, rid, eng_data=eng_data)
     try:
-        bridge = RevenueBridgeV2(tid, rid)
+        bridge = RevenueBridgeV2(eng_data, rid)
         result = bridge.get_yoy_bridge(entity_id, period)
         return {**identity, "entity_id": entity_id, **result}
     except ValueError as e:
@@ -282,14 +323,19 @@ async def get_yoy_bridge(
 async def get_combined_revenue_bridge(
     period_from: Optional[str] = None,
     period_to: Optional[str] = None,
+    engagement_id: Optional[str] = Query(None),
     tenant_id: Optional[str] = Query(None),
     pipeline_run_id: Optional[str] = Query(None),
 ):
     """Combined (all entities) revenue bridge."""
-    tid, rid = resolve_tenant_and_run(tenant_id, pipeline_run_id)
-    identity = build_identity_context(tid, rid)
+    eng_data, tid, rid = resolve_engagement_or_tenant(engagement_id, tenant_id, pipeline_run_id)
+    if eng_data is None:
+        from backend.engine.engagement import get_active_engagement
+        eng_cfg = get_active_engagement(tid)
+        eng_data = EngagementData(eng_cfg.engagement_id)
+    identity = build_identity_context(tid, rid, eng_data=eng_data)
     try:
-        bridge = RevenueBridgeV2(tid, rid)
+        bridge = RevenueBridgeV2(eng_data, rid)
         if period_from is None or period_to is None:
             raise ValueError(
                 "Combined revenue bridge requires 'period_from' and 'period_to' query parameters."

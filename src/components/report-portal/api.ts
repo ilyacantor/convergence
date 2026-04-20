@@ -63,9 +63,12 @@ export interface EngagementContext {
 
 let _engagementCache: EngagementContext | null = null
 
-export async function getEngagementContext(): Promise<EngagementContext> {
-  if (_engagementCache) return _engagementCache
-  const res = await fetch(CONVERGENCE_ENGAGEMENT_URL)
+export async function getEngagementContext(engagementId?: string): Promise<EngagementContext> {
+  if (_engagementCache && !engagementId) return _engagementCache
+  const url = engagementId
+    ? `${CONVERGENCE_ENGAGEMENT_URL}?engagement_id=${encodeURIComponent(engagementId)}`
+    : CONVERGENCE_ENGAGEMENT_URL
+  const res = await fetch(url)
   if (!res.ok) {
     const errText = await res.text().catch(() => 'Unknown error')
     throw new Error(
@@ -491,64 +494,64 @@ function transformCombiningResponse(
   const line_items = [
     {
       line_item: 'Total Revenue',
-      meridian: num(ea, 'revenue'),
-      cascadia: num(eb, 'revenue'),
+      entity_a: num(ea, 'revenue'),
+      entity_b: num(eb, 'revenue'),
       adjustments: adjNum('revenue'),
       combined: num(comb, 'revenue'),
     },
     {
       line_item: 'Total COGS',
-      meridian: num(ea, 'cogs'),
-      cascadia: num(eb, 'cogs'),
+      entity_a: num(ea, 'cogs'),
+      entity_b: num(eb, 'cogs'),
       adjustments: adjNum('cogs'),
       combined: num(comb, 'cogs'),
     },
     {
       line_item: 'Gross Profit',
-      meridian: num(ea, 'revenue') - num(ea, 'cogs'),
-      cascadia: num(eb, 'revenue') - num(eb, 'cogs'),
+      entity_a: num(ea, 'revenue') - num(ea, 'cogs'),
+      entity_b: num(eb, 'revenue') - num(eb, 'cogs'),
       adjustments: adjNum('revenue') - adjNum('cogs'),
       combined: num(comb, 'revenue') - num(comb, 'cogs'),
     },
     {
       line_item: 'Total OpEx',
-      meridian: num(ea, 'opex'),
-      cascadia: num(eb, 'opex'),
+      entity_a: num(ea, 'opex'),
+      entity_b: num(eb, 'opex'),
       adjustments: adjNum('opex'),
       combined: num(comb, 'opex'),
     },
     {
       line_item: 'EBITDA',
-      meridian: num(ea, 'ebitda'),
-      cascadia: num(eb, 'ebitda'),
+      entity_a: num(ea, 'ebitda'),
+      entity_b: num(eb, 'ebitda'),
       adjustments: adjNum('total_ebitda_impact'),
       combined: num(comb, 'ebitda'),
     },
     {
       line_item: 'D&A',
-      meridian: num(ea, 'depreciation_amortization'),
-      cascadia: num(eb, 'depreciation_amortization'),
+      entity_a: num(ea, 'depreciation_amortization'),
+      entity_b: num(eb, 'depreciation_amortization'),
       adjustments: adjNum('depreciation'),
       combined: num(comb, 'depreciation_amortization'),
     },
     {
       line_item: 'Operating Profit',
-      meridian: num(ea, 'operating_profit'),
-      cascadia: num(eb, 'operating_profit'),
+      entity_a: num(ea, 'operating_profit'),
+      entity_b: num(eb, 'operating_profit'),
       adjustments: adjNum('total_ebitda_impact') - adjNum('depreciation'),
       combined: num(comb, 'operating_profit'),
     },
     {
       line_item: 'Tax',
-      meridian: num(ea, 'tax'),
-      cascadia: num(eb, 'tax'),
+      entity_a: num(ea, 'tax'),
+      entity_b: num(eb, 'tax'),
       adjustments: 0,
       combined: num(comb, 'tax'),
     },
     {
       line_item: 'Net Income',
-      meridian: num(ea, 'net_income'),
-      cascadia: num(eb, 'net_income'),
+      entity_a: num(ea, 'net_income'),
+      entity_b: num(eb, 'net_income'),
       adjustments: adjNum('total_ebitda_impact') - adjNum('depreciation'),
       combined: num(comb, 'net_income'),
     },
@@ -625,8 +628,8 @@ function transformCrossSellResponse(raw: Record<string, unknown>): CrossSellData
   const opportunities = (raw.opportunities as Array<Record<string, unknown>>) || []
   const ctx_entity_a = (raw.entity_pair as string[])?.[0] || ''
 
-  const m_to_c: import('./types').CrossSellCandidate[] = []
-  const c_to_m: import('./types').CrossSellCandidate[] = []
+  const a_to_b: import('./types').CrossSellCandidate[] = []
+  const b_to_a: import('./types').CrossSellCandidate[] = []
 
   for (const opp of opportunities) {
     const candidate: import('./types').CrossSellCandidate = {
@@ -650,32 +653,32 @@ function transformCrossSellResponse(raw: Record<string, unknown>): CrossSellData
       segment: opp.segment as string,
     }
     if (opp.current_entity === ctx_entity_a) {
-      m_to_c.push(candidate)
+      a_to_b.push(candidate)
     } else {
-      c_to_m.push(candidate)
+      b_to_a.push(candidate)
     }
   }
 
   const HIGH_CONF_THRESHOLD = 80
-  const m2cHigh = m_to_c.filter(c => c.propensity_score >= HIGH_CONF_THRESHOLD)
-  const c2mHigh = c_to_m.filter(c => c.propensity_score >= HIGH_CONF_THRESHOLD)
+  const a2bHigh = a_to_b.filter(c => c.propensity_score >= HIGH_CONF_THRESHOLD)
+  const b2aHigh = b_to_a.filter(c => c.propensity_score >= HIGH_CONF_THRESHOLD)
   const sumAcv = (arr: import('./types').CrossSellCandidate[]) => arr.reduce((s, c) => s + c.estimated_acv, 0)
 
   return {
-    m_to_c,
-    c_to_m,
+    a_to_b,
+    b_to_a,
     summary: {
-      m_to_c_candidates: m_to_c.length,
-      m_to_c_total_acv: sumAcv(m_to_c),
-      m_to_c_high_conf_count: m2cHigh.length,
-      m_to_c_high_conf_acv: sumAcv(m2cHigh),
-      c_to_m_candidates: c_to_m.length,
-      c_to_m_total_acv: sumAcv(c_to_m),
-      c_to_m_high_conf_count: c2mHigh.length,
-      c_to_m_high_conf_acv: sumAcv(c2mHigh),
+      a_to_b_candidates: a_to_b.length,
+      a_to_b_total_acv: sumAcv(a_to_b),
+      a_to_b_high_conf_count: a2bHigh.length,
+      a_to_b_high_conf_acv: sumAcv(a2bHigh),
+      b_to_a_candidates: b_to_a.length,
+      b_to_a_total_acv: sumAcv(b_to_a),
+      b_to_a_high_conf_count: b2aHigh.length,
+      b_to_a_high_conf_acv: sumAcv(b2aHigh),
       total_candidates: opportunities.length,
-      total_pipeline_acv: sumAcv(m_to_c) + sumAcv(c_to_m),
-      total_high_conf_acv: sumAcv(m2cHigh) + sumAcv(c2mHigh),
+      total_pipeline_acv: sumAcv(a_to_b) + sumAcv(b_to_a),
+      total_high_conf_acv: sumAcv(a2bHigh) + sumAcv(b2aHigh),
     },
   }
 }
@@ -697,8 +700,8 @@ function transformUpsellResponse(raw: Record<string, unknown>): UpsellData {
   const opportunities = (raw.opportunities as Array<Record<string, unknown>>) || []
   const ctx_entity_a = (raw.entity_pair as string[])?.[0] || ''
 
-  const m_to_c: import('./types').UpsellCandidate[] = []
-  const c_to_m: import('./types').UpsellCandidate[] = []
+  const a_to_b: import('./types').UpsellCandidate[] = []
+  const b_to_a: import('./types').UpsellCandidate[] = []
 
   for (const opp of opportunities) {
     const candidate: import('./types').UpsellCandidate = {
@@ -723,9 +726,9 @@ function transformUpsellResponse(raw: Record<string, unknown>): UpsellData {
       rationale: (opp.rationale as string) || '',
     }
     if (opp.source_entity === ctx_entity_a) {
-      m_to_c.push(candidate)
+      a_to_b.push(candidate)
     } else {
-      c_to_m.push(candidate)
+      b_to_a.push(candidate)
     }
   }
 
@@ -737,17 +740,17 @@ function transformUpsellResponse(raw: Record<string, unknown>): UpsellData {
     : 0
 
   return {
-    m_to_c,
-    c_to_m,
+    a_to_b,
+    b_to_a,
     summary: {
       total_shared_customers: allCustomers.size,
       total_opportunities: opportunities.length,
-      total_expansion_acv: sumAcv(m_to_c) + sumAcv(c_to_m),
+      total_expansion_acv: sumAcv(a_to_b) + sumAcv(b_to_a),
       avg_score: avgScore,
-      m_to_c_count: m_to_c.length,
-      m_to_c_acv: sumAcv(m_to_c),
-      c_to_m_count: c_to_m.length,
-      c_to_m_acv: sumAcv(c_to_m),
+      a_to_b_count: a_to_b.length,
+      a_to_b_acv: sumAcv(a_to_b),
+      b_to_a_count: b_to_a.length,
+      b_to_a_acv: sumAcv(b_to_a),
     },
   }
 }
@@ -778,7 +781,6 @@ export async function fetchEBITDABridge(): Promise<EBITDABridgeData> {
   const bridgeA = raw.entity_a
   const bridgeB = raw.entity_b
   const combined = raw.combined
-  const [eA, eB] = raw.entity_pair || ['entity_a', 'entity_b']
 
   function confTier(c: number): string {
     if (c >= 0.85) return 'high'
@@ -822,15 +824,17 @@ export async function fetchEBITDABridge(): Promise<EBITDABridgeData> {
   const EV_MULTIPLE = 12.5
 
   return {
-    reported_ebitda: Object.assign(
-      { combined_reported: reportedCombined },
-      { [eA]: bridgeA.reported_ebitda, [eB]: bridgeB.reported_ebitda },
-    ) as EBITDABridgeData['reported_ebitda'],
+    reported_ebitda: {
+      entity_a: bridgeA.reported_ebitda,
+      entity_b: bridgeB.reported_ebitda,
+      combined_reported: reportedCombined,
+    },
     entity_adjustments: entityAdjustments,
-    entity_adjusted_ebitda: Object.assign(
-      { combined: entityAdjCombined },
-      { [eA]: entityAdjA, [eB]: entityAdjB },
-    ) as EBITDABridgeData['entity_adjusted_ebitda'],
+    entity_adjusted_ebitda: {
+      entity_a: entityAdjA,
+      entity_b: entityAdjB,
+      combined: entityAdjCombined,
+    },
     combination_synergies: combinationSynergies,
     pro_forma_ebitda: {
       year_1: { low: pfLow, high: pfHigh, current: pfCurrent },

@@ -66,8 +66,8 @@ export type EntitySelection = string
 
 export interface CombiningLineItem {
   line_item: string
-  meridian: number
-  cascadia: number
+  entity_a: number
+  entity_b: number
   adjustments: number
   combined: number
 }
@@ -140,22 +140,22 @@ export interface CrossSellCandidate {
 }
 
 export interface CrossSellSummary {
-  m_to_c_candidates: number
-  m_to_c_total_acv: number
-  m_to_c_high_conf_count: number
-  m_to_c_high_conf_acv: number
-  c_to_m_candidates: number
-  c_to_m_total_acv: number
-  c_to_m_high_conf_count: number
-  c_to_m_high_conf_acv: number
+  a_to_b_candidates: number
+  a_to_b_total_acv: number
+  a_to_b_high_conf_count: number
+  a_to_b_high_conf_acv: number
+  b_to_a_candidates: number
+  b_to_a_total_acv: number
+  b_to_a_high_conf_count: number
+  b_to_a_high_conf_acv: number
   total_candidates: number
   total_pipeline_acv: number
   total_high_conf_acv: number
 }
 
 export interface CrossSellData {
-  m_to_c: CrossSellCandidate[]
-  c_to_m: CrossSellCandidate[]
+  a_to_b: CrossSellCandidate[]
+  b_to_a: CrossSellCandidate[]
   summary: CrossSellSummary
 }
 
@@ -188,15 +188,15 @@ export interface UpsellSummary {
   total_opportunities: number
   total_expansion_acv: number
   avg_score: number
-  m_to_c_count: number
-  m_to_c_acv: number
-  c_to_m_count: number
-  c_to_m_acv: number
+  a_to_b_count: number
+  a_to_b_acv: number
+  b_to_a_count: number
+  b_to_a_acv: number
 }
 
 export interface UpsellData {
-  m_to_c: UpsellCandidate[]
-  c_to_m: UpsellCandidate[]
+  a_to_b: UpsellCandidate[]
+  b_to_a: UpsellCandidate[]
   summary: UpsellSummary
 }
 
@@ -239,9 +239,9 @@ export interface BridgeAdjustment {
 }
 
 export interface EBITDABridgeData {
-  reported_ebitda: { meridian: number; cascadia: number; combined_reported: number }
+  reported_ebitda: { entity_a: number; entity_b: number; combined_reported: number }
   entity_adjustments: BridgeAdjustment[]
-  entity_adjusted_ebitda: { meridian: number; cascadia: number; combined: number }
+  entity_adjusted_ebitda: { entity_a: number; entity_b: number; combined: number }
   combination_synergies: BridgeAdjustment[]
   pro_forma_ebitda: {
     year_1: { low: number; high: number; current: number }

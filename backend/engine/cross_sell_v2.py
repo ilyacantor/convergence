@@ -1,24 +1,21 @@
 """
-CrossSellEngineV2 — cross-sell opportunity scoring from convergence_triples.
+CrossSellEngineV2 — cross-sell opportunity scoring.
 
-Identifies services that Entity A offers to shared customers
-that Entity B could also offer (and vice versa).
-
-Computes propensity scores from customer triple data:
-  - industry_match (0-25): industry alignment between customer and target entity
-  - size_match (0-20): customer size relative to target entity's typical client
-  - behavioral_score (0-30): customer revenue as proxy for engagement depth
-  - engagement_fit (0-15): service/delivery model fit
-  - relationship_strength (0-10): overlap match confidence
-
-All data sourced from PG convergence_triples — no JSON files.
+Uses resolver unmatched records (when available) to identify entity-exclusive
+customers. Falls back to convergence_triples concept-matching when no resolver data.
 """
 
+from __future__ import annotations
+
 from collections import defaultdict
+from typing import TYPE_CHECKING
 
 from backend.core.db import get_connection
 from backend.engine.overlap_v2 import OverlapEngineV2
 from backend.utils.log_utils import get_logger
+
+if TYPE_CHECKING:
+    from backend.engine.engagement_data import EngagementData
 
 logger = get_logger(__name__)
 
@@ -43,10 +40,11 @@ class CrossSellEngineV2:
     Computes propensity scores from customer and service triples.
     """
 
-    def __init__(self, tenant_id: str, pipeline_run_id: str):
-        self.tenant_id = tenant_id
+    def __init__(self, eng_data: EngagementData, pipeline_run_id: str | None = None):
+        self._eng = eng_data
+        self.tenant_id = eng_data.tenant_id
         self.pipeline_run_id = pipeline_run_id
-        self._overlap_engine = OverlapEngineV2(tenant_id, pipeline_run_id)
+        self._overlap_engine = OverlapEngineV2(eng_data, pipeline_run_id)
 
     @property
     def _run_clause(self) -> str:
@@ -106,37 +104,53 @@ class CrossSellEngineV2:
         return result
 
     def _get_exclusive_customer_data(self, entity_id: str, other_entity_id: str) -> dict[str, dict]:
-        """
-        Get customer data for customers exclusive to entity_id (not in other_entity_id).
+        """Get customer data for customers exclusive to entity_id.
 
-        Pushes exclusivity filter into SQL via NOT EXISTS and only fetches the 5
-        properties used by propensity scoring. Excludes subcategory concepts
-        (e.g. customer.pipeline.closed_won) in both outer and subquery.
-
-        Returns dict keyed by top-level customer concept:
-            {"customer.accenture": {"revenue": "12.0", "industry": "...", ...}}
+        When resolver data exists: uses resolver unmatched records for the entity's side.
+        When no resolver data: SQL NOT EXISTS against convergence_triples.
         """
-        sql = f"""
-            SELECT DISTINCT ON (st.concept, st.property)
-                   st.concept, st.property, st.value
-            FROM convergence_triples st
-            WHERE st.tenant_id = %s AND st.{self._run_clause}
-              AND st.concept LIKE 'customer.%%'
-              AND st.concept NOT LIKE 'customer.%%.%%'
-              AND st.entity_id = %s
-              AND st.property IN ('revenue', 'industry', 'segment', 'size', 'avg_service_spend')
-              AND NOT EXISTS (
-                  SELECT 1
-                  FROM convergence_triples other
-                  WHERE other.tenant_id = %s AND other.{self._run_clause}
-                    AND other.concept = st.concept
-                    AND other.concept LIKE 'customer.%%'
-                    AND other.concept NOT LIKE 'customer.%%.%%'
-                    AND other.entity_id = %s
-              )
-            ORDER BY st.concept, st.property, st.created_at DESC
-        """
-        rows = self._query(sql, [self.tenant_id, *self._run_params, entity_id, self.tenant_id, *self._run_params, other_entity_id])
+        if self._eng.has_resolver_data("customer"):
+            role = self._eng.role_for_entity_id(entity_id)
+            unmatched_ids = self._eng.get_unmatched_records("customer", side=role)
+            if not unmatched_ids:
+                return {}
+            placeholders = ", ".join(["%s"] * len(unmatched_ids))
+            sql = f"""
+                SELECT DISTINCT ON (concept, property)
+                       concept, property, value
+                FROM convergence_triples
+                WHERE tenant_id = %s AND {self._run_clause}
+                  AND concept IN ({placeholders})
+                  AND entity_id = %s
+                  AND property IN ('revenue', 'industry', 'segment', 'size', 'avg_service_spend')
+                ORDER BY concept, property, created_at DESC
+            """
+            rows = self._query(
+                sql,
+                [self.tenant_id, *self._run_params] + unmatched_ids + [entity_id],
+            )
+        else:
+            sql = f"""
+                SELECT DISTINCT ON (st.concept, st.property)
+                       st.concept, st.property, st.value
+                FROM convergence_triples st
+                WHERE st.tenant_id = %s AND st.{self._run_clause}
+                  AND st.concept LIKE 'customer.%%'
+                  AND st.concept NOT LIKE 'customer.%%.%%'
+                  AND st.entity_id = %s
+                  AND st.property IN ('revenue', 'industry', 'segment', 'size', 'avg_service_spend')
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM convergence_triples other
+                      WHERE other.tenant_id = %s AND other.{self._run_clause}
+                        AND other.concept = st.concept
+                        AND other.concept LIKE 'customer.%%'
+                        AND other.concept NOT LIKE 'customer.%%.%%'
+                        AND other.entity_id = %s
+                  )
+                ORDER BY st.concept, st.property, st.created_at DESC
+            """
+            rows = self._query(sql, [self.tenant_id, *self._run_params, entity_id, self.tenant_id, *self._run_params, other_entity_id])
 
         customers: dict[str, dict] = {}
         for row in rows:

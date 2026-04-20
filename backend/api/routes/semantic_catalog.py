@@ -19,8 +19,10 @@ from pydantic import BaseModel, Field
 
 from backend.core.db import PoolExhausted, get_connection
 from backend.db.triple_store import TripleStore
+from backend.engine.engagement import get_active_engagement
+from backend.engine.engagement_data import EngagementData
 from backend.engine.query_resolver_v2 import TripleQueryResolver
-from backend.api.routes.v2_helpers import resolve_tenant_and_run
+from backend.api.routes.v2_helpers import resolve_engagement_or_tenant, build_identity_context
 from backend.utils.log_utils import get_logger
 
 logger = get_logger(__name__)
@@ -471,6 +473,7 @@ class QueryRequest(BaseModel):
 @router.post("/api/convergence/query")
 async def execute_query(
     request: QueryRequest,
+    engagement_id: str = Query(None),
     tenant_id: str = Query(None),
     pipeline_run_id: str = Query(None),
 ):
@@ -481,7 +484,7 @@ async def execute_query(
     tid = request.tenant_id or tenant_id
     rid = pipeline_run_id
     if not tid or not rid:
-        tid_resolved, rid_resolved = resolve_tenant_and_run(tid, rid)
+        eng_data, tid_resolved, rid_resolved = resolve_engagement_or_tenant(engagement_id, tid, rid)
         tid, rid = tid_resolved, rid_resolved
 
     metric_def = _resolve_metric(request.metric)

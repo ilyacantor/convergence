@@ -6,8 +6,8 @@ Migrated from NLQ dcl_proxy.py as part of the Reports surface move to Convergenc
 
 Mounts at /api/convergence/reports/v2:
   GET /api/convergence/reports/v2/pipeline?period=2025-Q1
-  GET /api/convergence/reports/v2/dimensional-detail?line_key=revenue&entity_id=meridian
-  GET /api/convergence/reports/v2/revenue-by-customer?entity_id=meridian
+  GET /api/convergence/reports/v2/dimensional-detail?line_key=revenue&entity_id={entity_id}
+  GET /api/convergence/reports/v2/revenue-by-customer?entity_id={entity_id}
   GET /api/convergence/reports/v2/dimensions
 """
 
@@ -16,9 +16,10 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 
-from backend.api.routes.v2_helpers import resolve_tenant_and_run, build_identity_context
+from backend.api.routes.v2_helpers import resolve_engagement_or_tenant, build_identity_context
 from backend.core.db import PoolExhausted, get_connection
 from backend.engine.engagement import get_active_engagement
+from backend.engine.engagement_data import EngagementData
 from backend.engine.query_resolver_v2 import TripleQueryResolver
 from backend.utils.log_utils import get_logger
 
@@ -132,15 +133,19 @@ def _sum_pipeline_stages(stage_lists: list[list[dict]]) -> list[dict]:
 @router.get("/pipeline")
 async def get_pipeline_report(
     period: str = Query(..., description="Period (e.g. 2025-Q1)"),
+    engagement_id: Optional[str] = Query(None),
     tenant_id: Optional[str] = Query(None),
     pipeline_run_id: Optional[str] = Query(None),
 ):
     """Pipeline funnel data — per-entity panels plus a combined panel."""
-    tid, rid = resolve_tenant_and_run(tenant_id, pipeline_run_id)
-    identity = build_identity_context(tid, rid)
+    eng_data, tid, rid = resolve_engagement_or_tenant(engagement_id, tenant_id, pipeline_run_id)
+    if eng_data is None:
+        eng_cfg = get_active_engagement(tid)
+        eng_data = EngagementData(eng_cfg.engagement_id)
+    identity = build_identity_context(tid, rid, eng_data=eng_data)
     try:
         resolver = TripleQueryResolver(tid, rid)
-        eng = get_active_engagement()
+        eng = eng_data.config
         entity_ids = list(eng.entity_ids())
 
         panels = []
@@ -206,12 +211,16 @@ async def get_dimensional_detail(
     line_key: str = Query(..., description="P&L line item key (revenue, cogs, opex)"),
     entity_id: str = Query(..., description="Entity ID or 'combined'"),
     period: Optional[str] = Query(None, description="Period filter (e.g. 2025-Q1)"),
+    engagement_id: Optional[str] = Query(None),
     tenant_id: Optional[str] = Query(None),
     pipeline_run_id: Optional[str] = Query(None),
 ):
     """Dimensional breakdown for a P&L line item."""
-    tid, rid = resolve_tenant_and_run(tenant_id, pipeline_run_id)
-    identity = build_identity_context(tid, rid)
+    eng_data, tid, rid = resolve_engagement_or_tenant(engagement_id, tenant_id, pipeline_run_id)
+    if eng_data is None:
+        eng_cfg = get_active_engagement(tid)
+        eng_data = EngagementData(eng_cfg.engagement_id)
+    identity = build_identity_context(tid, rid, eng_data=eng_data)
 
     mapping = _DIMENSIONAL_MAP.get(line_key)
     if not mapping:
@@ -219,7 +228,7 @@ async def get_dimensional_detail(
 
     try:
         resolver = TripleQueryResolver(tid, rid)
-        eng = get_active_engagement()
+        eng = eng_data.config
 
         if entity_id == "combined":
             query_entity_ids = list(eng.entity_ids())
@@ -293,12 +302,16 @@ async def get_dimensional_detail(
 @router.get("/revenue-by-customer")
 async def get_revenue_by_customer(
     entity_id: str = Query(..., description="Entity ID"),
+    engagement_id: Optional[str] = Query(None),
     tenant_id: Optional[str] = Query(None),
     pipeline_run_id: Optional[str] = Query(None),
 ):
     """Revenue by customer pivoted into a quarterly table."""
-    tid, rid = resolve_tenant_and_run(tenant_id, pipeline_run_id)
-    identity = build_identity_context(tid, rid)
+    eng_data, tid, rid = resolve_engagement_or_tenant(engagement_id, tenant_id, pipeline_run_id)
+    if eng_data is None:
+        eng_cfg = get_active_engagement(tid)
+        eng_data = EngagementData(eng_cfg.engagement_id)
+    identity = build_identity_context(tid, rid, eng_data=eng_data)
     try:
         resolver = TripleQueryResolver(tid, rid)
 
@@ -363,6 +376,7 @@ async def get_revenue_by_customer(
 
 @router.get("/dimensions")
 async def get_report_dimensions(
+    engagement_id: Optional[str] = Query(None),
     tenant_id: Optional[str] = Query(None),
     pipeline_run_id: Optional[str] = Query(None),
 ):
@@ -371,11 +385,14 @@ async def get_report_dimensions(
     Queries convergence_triples for distinct periods and derives segments
     from concepts that have property-based dimensional breakdowns.
     """
-    tid, rid = resolve_tenant_and_run(tenant_id, pipeline_run_id)
-    identity = build_identity_context(tid, rid)
+    eng_data, tid, rid = resolve_engagement_or_tenant(engagement_id, tenant_id, pipeline_run_id)
+    if eng_data is None:
+        eng_cfg = get_active_engagement(tid)
+        eng_data = EngagementData(eng_cfg.engagement_id)
+    identity = build_identity_context(tid, rid, eng_data=eng_data)
     try:
         resolver = TripleQueryResolver(tid, rid)
-        eng = get_active_engagement()
+        eng = eng_data.config
         entity_ids = list(eng.entity_ids())
 
         # Distinct periods with data

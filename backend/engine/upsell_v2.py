@@ -14,11 +14,17 @@ Scoring model (100-point, 4 components):
 All data sourced from PG convergence_triples — no JSON files.
 """
 
+from __future__ import annotations
+
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from backend.core.db import get_connection
 from backend.engine.overlap_v2 import OverlapEngineV2
 from backend.utils.log_utils import get_logger
+
+if TYPE_CHECKING:
+    from backend.engine.engagement_data import EngagementData
 
 logger = get_logger(__name__)
 
@@ -52,10 +58,11 @@ class UpsellEngineV2:
     opportunity based on engagement quality and service fit.
     """
 
-    def __init__(self, tenant_id: str, pipeline_run_id: str):
-        self.tenant_id = tenant_id
+    def __init__(self, eng_data: EngagementData, pipeline_run_id: str | None = None):
+        self._eng = eng_data
+        self.tenant_id = eng_data.tenant_id
         self.pipeline_run_id = pipeline_run_id
-        self._overlap_engine = OverlapEngineV2(tenant_id, pipeline_run_id)
+        self._overlap_engine = OverlapEngineV2(eng_data, pipeline_run_id)
 
     @property
     def _run_clause(self) -> str:

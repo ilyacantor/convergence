@@ -1,16 +1,18 @@
 """
-Shared helpers for v2 route files — tenant_id and pipeline_run_id validation.
+Shared helpers for v2 route files — engagement_id / tenant_id resolution.
 
-Every v2 endpoint that needs a tenant_id or pipeline_run_id must use these
-helpers. No hardcoded UUIDs anywhere in route handlers.
+Every v2 endpoint that needs an engagement context must use these helpers.
+No hardcoded UUIDs anywhere in route handlers.
 
-Pattern: explicit param required -> 422 if missing.
-No silent fallback. No engagement_state guessing. No "most recent" lookup.
+Two paths:
+  1. engagement_id provided → EngagementData (preferred, generic two-entity)
+  2. tenant_id only → legacy path (backward compat, uses get_active_engagement)
 """
 
 from fastapi import HTTPException
 
 from backend.engine.engagement import get_active_engagement
+from backend.engine.engagement_data import EngagementData
 from backend.utils.log_utils import get_logger
 
 logger = get_logger(__name__)
@@ -53,17 +55,63 @@ def resolve_tenant_and_run(
     return tid, rid
 
 
-def build_identity_context(tenant_id: str, pipeline_run_id: str | None) -> dict:
+def resolve_engagement_or_tenant(
+    engagement_id: str | None,
+    tenant_id: str | None,
+    pipeline_run_id: str | None,
+) -> tuple[EngagementData | None, str, str | None]:
+    """Resolve context from engagement_id (preferred) or tenant_id (legacy).
+
+    Returns (engagement_data_or_none, tenant_id, pipeline_run_id).
+    When engagement_id is provided, constructs EngagementData and derives tenant_id.
+    When only tenant_id is provided, returns None for EngagementData (legacy path).
+    422 if neither is provided.
+    """
+    rid = resolve_pipeline_run_id(pipeline_run_id)
+
+    if engagement_id:
+        try:
+            eng_data = EngagementData(engagement_id)
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail={"error": "INVALID_ENGAGEMENT", "message": str(e)})
+        return eng_data, eng_data.tenant_id, rid
+
+    if tenant_id:
+        return None, tenant_id, rid
+
+    raise HTTPException(
+        status_code=422,
+        detail={
+            "error": "MISSING_REQUIRED_FIELD",
+            "message": (
+                "Either engagement_id or tenant_id is required. "
+                "engagement_id is preferred for generic two-entity routing."
+            ),
+        },
+    )
+
+
+def build_identity_context(
+    tenant_id: str,
+    pipeline_run_id: str | None,
+    eng_data: EngagementData | None = None,
+) -> dict:
     """Build the identity context dict required on every API response (I2).
 
-    Returns tenant_id, pipeline_run_id, engagement_id, entity_pair, run_name.
+    Returns tenant_id, pipeline_run_id, engagement_id, entity_pair, run_name,
+    entity_a_name, entity_b_name.
     """
-    eng = get_active_engagement()
-    run_name = f"{eng.short_name}-{pipeline_run_id[:4]}" if pipeline_run_id else eng.short_name
+    if eng_data:
+        cfg = eng_data.config
+    else:
+        cfg = get_active_engagement()
+    run_name = f"{cfg.short_name}-{pipeline_run_id[:4]}" if pipeline_run_id else cfg.short_name
     return {
         "tenant_id": tenant_id,
         "pipeline_run_id": pipeline_run_id,
-        "engagement_id": eng.engagement_id,
-        "entity_pair": [eng.entity_a.id, eng.entity_b.id],
+        "engagement_id": cfg.engagement_id,
+        "entity_pair": [cfg.entity_a.id, cfg.entity_b.id],
+        "entity_a_name": cfg.entity_a.display_name,
+        "entity_b_name": cfg.entity_b.display_name,
         "run_name": run_name,
     }

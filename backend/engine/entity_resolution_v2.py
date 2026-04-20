@@ -4,14 +4,24 @@ EntityResolutionV2 — PG-backed entity resolution derived from triple overlap.
 Workspaces are created from concepts that appear under both entity_ids
 in convergence_triples (customer.*, vendor.*, employee.* domains).
 
+When resolver_decisions already exist for a domain (from the identity
+resolver pipeline), workspace creation is skipped for that domain —
+the resolver output supersedes concept-matching.
+
 Decisions (confirm/reject/escalate) are persisted to resolution_workspaces_v2
 table and survive restarts.
 """
 
+from __future__ import annotations
+
 import uuid as _uuid_mod
+from typing import TYPE_CHECKING
 
 from backend.core.db import get_connection
 from backend.utils.log_utils import get_logger
+
+if TYPE_CHECKING:
+    from backend.engine.engagement_data import EngagementData
 
 logger = get_logger(__name__)
 
@@ -38,14 +48,27 @@ class EntityResolutionV2:
     Workspaces are created from concepts that appear under both entity_ids
     in convergence_triples (customer.*, vendor.*, employee.* domains).
 
+    When EngagementData is provided, resolver_decisions are checked first —
+    domains with resolver data skip workspace creation (concept-matching
+    is superseded by the identity resolver).
+
     Decisions (confirm/reject/escalate) are persisted to resolution_workspaces_v2
     table and survive restarts.
     """
 
-    def __init__(self, tenant_id: str, pipeline_run_id: str):
-        """Store tenant/run context."""
-        self.tenant_id = tenant_id
-        self.pipeline_run_id = pipeline_run_id
+    def __init__(self, eng_data: EngagementData | None = None, *,
+                 tenant_id: str | None = None,
+                 pipeline_run_id: str | None = None):
+        if eng_data is not None:
+            self._eng = eng_data
+            self.tenant_id = eng_data.tenant_id
+            self.pipeline_run_id = pipeline_run_id
+        elif tenant_id is not None:
+            self._eng = None
+            self.tenant_id = tenant_id
+            self.pipeline_run_id = pipeline_run_id
+        else:
+            raise ValueError("EntityResolutionV2 requires eng_data or tenant_id")
 
     @property
     def _run_clause(self) -> str:
@@ -103,25 +126,39 @@ class EntityResolutionV2:
         """
         Scan convergence_triples for concepts in customer.*, vendor.*, employee.*
         that appear under both entity_ids. Create one workspace per overlapping
-        concept. Returns {"created": int, "by_domain": {"customer": int, ...}}.
+        concept. Returns {"created": int, "by_domain": {"customer": int, ...},
+        "skipped_domains": [str]}.
 
         Idempotent: if workspace already exists for a concept, skip it.
+        Domains with resolver_decisions data are skipped entirely — the
+        identity resolver supersedes concept-matching for those domains.
         """
         by_domain: dict[str, int] = {}
+        skipped: list[str] = []
         total_created = 0
 
         for domain in _ALLOWED_DOMAINS:
+            if self._eng is not None and self._eng.has_resolver_data(domain):
+                logger.info(
+                    "EntityResolutionV2: skipping workspace creation for domain '%s' — "
+                    "resolver_decisions exist (identity resolver supersedes concept-matching)",
+                    domain,
+                )
+                skipped.append(domain)
+                continue
+
             overlapping = self._find_overlapping_concepts(domain)
             created_in_domain = self._batch_create_workspaces(overlapping, domain)
             by_domain[domain] = created_in_domain
             total_created += created_in_domain
 
         logger.info(
-            f"EntityResolutionV2: created {total_created} workspaces from overlap "
-            f"(by_domain={by_domain}) for tenant={self.tenant_id}, run={self.pipeline_run_id}"
+            "EntityResolutionV2: created %d workspaces from overlap "
+            "(by_domain=%s, skipped=%s) for tenant=%s, run=%s",
+            total_created, by_domain, skipped, self.tenant_id, self.pipeline_run_id,
         )
 
-        return {"created": total_created, "by_domain": by_domain}
+        return {"created": total_created, "by_domain": by_domain, "skipped_domains": skipped}
 
     def _find_overlapping_concepts(self, domain: str) -> list[str]:
         """Find entity-level concepts in a domain that appear under both entity_ids.

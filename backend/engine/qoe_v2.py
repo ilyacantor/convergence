@@ -10,10 +10,17 @@ QoE assesses how reliable the reported earnings are by analyzing:
 All data sourced from convergence_triples in PG — no JSON files.
 """
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 from backend.core.db import get_connection
 from backend.engine.ebitda_bridge_v2 import EBITDABridgeV2
 from backend.engine.cross_sell_v2 import CrossSellEngineV2
 from backend.utils.log_utils import get_logger
+
+if TYPE_CHECKING:
+    from backend.engine.engagement_data import EngagementData
 
 logger = get_logger(__name__)
 
@@ -45,10 +52,11 @@ class QualityOfEarningsV2:
     4. Margin trends over time
     """
 
-    def __init__(self, tenant_id: str, pipeline_run_id: str):
-        self.tenant_id = tenant_id
+    def __init__(self, eng_data: EngagementData, pipeline_run_id: str | None = None):
+        self._eng = eng_data
+        self.tenant_id = eng_data.tenant_id
         self.pipeline_run_id = pipeline_run_id
-        self._bridge_engine = EBITDABridgeV2(tenant_id, pipeline_run_id)
+        self._bridge_engine = EBITDABridgeV2(eng_data, pipeline_run_id)
 
     @property
     def _run_clause(self) -> str:
@@ -361,7 +369,7 @@ class QualityOfEarningsV2:
         # cross_sell_summary is tenant-wide (both entities) — accept pre-computed
         # to avoid recomputing 3x in get_combined_qoe.
         if cross_sell_summary is None:
-            cross_sell_engine = CrossSellEngineV2(self.tenant_id, self.pipeline_run_id)
+            cross_sell_engine = CrossSellEngineV2(self._eng, self.pipeline_run_id)
             cross_sell_summary = cross_sell_engine.get_cross_sell_summary()
         total_candidates = cross_sell_summary["total_opportunities"]
         total_pipeline_acv_M = round(cross_sell_summary["total_potential_acv"], 2)
@@ -493,7 +501,7 @@ class QualityOfEarningsV2:
         per-entity and combined paths. Cross-sell summary is tenant-wide
         (both entities together), so one call covers all three consumers.
         """
-        entity_a, entity_b = self._bridge_engine._get_entities()
+        entity_a, entity_b = self._eng.entity_a_id, self._eng.entity_b_id
 
         # Compute bridges once — these are the heaviest DB calls
         bridge_a = self._bridge_engine.get_bridge(entity_a)
@@ -510,7 +518,7 @@ class QualityOfEarningsV2:
 
         # Cross-sell summary is tenant-wide — one invocation covers all three
         # revenue_quality consumers (qoe_a, qoe_b, combined).
-        cross_sell_engine = CrossSellEngineV2(self.tenant_id, self.pipeline_run_id)
+        cross_sell_engine = CrossSellEngineV2(self._eng, self.pipeline_run_id)
         cross_sell_summary = cross_sell_engine.get_cross_sell_summary()
 
         qoe_a = self._get_qoe_summary_with_bridge(

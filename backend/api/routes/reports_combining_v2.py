@@ -12,9 +12,10 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 
-from backend.api.routes.v2_helpers import resolve_tenant_and_run, build_identity_context
+from backend.api.routes.v2_helpers import resolve_engagement_or_tenant, build_identity_context
 from backend.core.db import PoolExhausted
 from backend.engine.combining_v2 import CombiningEngineV2
+from backend.engine.engagement_data import EngagementData
 from backend.engine.query_resolver_v2 import TripleQueryResolver
 from backend.utils.log_utils import get_logger
 
@@ -26,14 +27,19 @@ router = APIRouter(prefix="/api/convergence/reports/v2", tags=["Reports V2"])
 @router.get("/combining/income-statement")
 async def get_combining_income_statement_v2(
     period: str = "2025-Q1",
+    engagement_id: Optional[str] = Query(None),
     tenant_id: Optional[str] = Query(None),
     pipeline_run_id: Optional[str] = Query(None),
 ):
     """Four-column combining income statement from convergence_triples."""
-    tid, rid = resolve_tenant_and_run(tenant_id, pipeline_run_id)
-    identity = build_identity_context(tid, rid)
+    eng_data, tid, rid = resolve_engagement_or_tenant(engagement_id, tenant_id, pipeline_run_id)
+    if eng_data is None:
+        from backend.engine.engagement import get_active_engagement
+        eng_cfg = get_active_engagement(tid)
+        eng_data = EngagementData(eng_cfg.engagement_id)
+    identity = build_identity_context(tid, rid, eng_data=eng_data)
     try:
-        engine = CombiningEngineV2(tid, rid)
+        engine = CombiningEngineV2(eng_data, rid)
         result = engine.get_combining_income_statement(period)
         return {**identity, **result}
     except ValueError as e:
@@ -50,14 +56,19 @@ async def get_combining_income_statement_v2(
 @router.get("/combining/balance-sheet")
 async def get_combining_balance_sheet_v2(
     period: str = "2025-Q1",
+    engagement_id: Optional[str] = Query(None),
     tenant_id: Optional[str] = Query(None),
     pipeline_run_id: Optional[str] = Query(None),
 ):
     """Four-column combining balance sheet from convergence_triples."""
-    tid, rid = resolve_tenant_and_run(tenant_id, pipeline_run_id)
-    identity = build_identity_context(tid, rid)
+    eng_data, tid, rid = resolve_engagement_or_tenant(engagement_id, tenant_id, pipeline_run_id)
+    if eng_data is None:
+        from backend.engine.engagement import get_active_engagement
+        eng_cfg = get_active_engagement(tid)
+        eng_data = EngagementData(eng_cfg.engagement_id)
+    identity = build_identity_context(tid, rid, eng_data=eng_data)
     try:
-        engine = CombiningEngineV2(tid, rid)
+        engine = CombiningEngineV2(eng_data, rid)
         result = engine.get_combining_balance_sheet(period)
         return {**identity, **result}
     except ValueError as e:
@@ -74,14 +85,19 @@ async def get_combining_balance_sheet_v2(
 @router.get("/combining/cash-flow")
 async def get_combining_cash_flow_v2(
     period: str = "2025-Q1",
+    engagement_id: Optional[str] = Query(None),
     tenant_id: Optional[str] = Query(None),
     pipeline_run_id: Optional[str] = Query(None),
 ):
     """Four-column combining cash flow from convergence_triples."""
-    tid, rid = resolve_tenant_and_run(tenant_id, pipeline_run_id)
-    identity = build_identity_context(tid, rid)
+    eng_data, tid, rid = resolve_engagement_or_tenant(engagement_id, tenant_id, pipeline_run_id)
+    if eng_data is None:
+        from backend.engine.engagement import get_active_engagement
+        eng_cfg = get_active_engagement(tid)
+        eng_data = EngagementData(eng_cfg.engagement_id)
+    identity = build_identity_context(tid, rid, eng_data=eng_data)
     try:
-        engine = CombiningEngineV2(tid, rid)
+        engine = CombiningEngineV2(eng_data, rid)
         result = engine.get_combining_cash_flow(period)
         return {**identity, **result}
     except ValueError as e:
@@ -98,14 +114,19 @@ async def get_combining_cash_flow_v2(
 @router.get("/cofa-adjustments")
 async def get_cofa_adjustments_v2(
     period: Optional[str] = None,
+    engagement_id: Optional[str] = Query(None),
     tenant_id: Optional[str] = Query(None),
     pipeline_run_id: Optional[str] = Query(None),
 ):
     """Get all COFA adjustments from convergence_triples."""
-    tid, rid = resolve_tenant_and_run(tenant_id, pipeline_run_id)
-    identity = build_identity_context(tid, rid)
+    eng_data, tid, rid = resolve_engagement_or_tenant(engagement_id, tenant_id, pipeline_run_id)
+    if eng_data is None:
+        from backend.engine.engagement import get_active_engagement
+        eng_cfg = get_active_engagement(tid)
+        eng_data = EngagementData(eng_cfg.engagement_id)
+    identity = build_identity_context(tid, rid, eng_data=eng_data)
     try:
-        engine = CombiningEngineV2(tid, rid)
+        engine = CombiningEngineV2(eng_data, rid)
         result = engine.get_cofa_adjustments(period=period)
         return {**identity, **result}
     except ValueError as e:
@@ -128,12 +149,17 @@ async def get_cofa_adjustments_v2(
 async def get_income_statement_v2(
     entity_id: str = Query(..., description="Entity ID"),
     period: str = Query(..., description="Period (e.g., 2025-Q1)"),
+    engagement_id: Optional[str] = Query(None),
     tenant_id: Optional[str] = Query(None),
     pipeline_run_id: Optional[str] = Query(None),
 ):
     """Single-entity income statement from convergence_triples."""
-    tid, rid = resolve_tenant_and_run(tenant_id, pipeline_run_id)
-    identity = build_identity_context(tid, rid)
+    eng_data, tid, rid = resolve_engagement_or_tenant(engagement_id, tenant_id, pipeline_run_id)
+    if eng_data is None:
+        from backend.engine.engagement import get_active_engagement
+        eng_cfg = get_active_engagement(tid)
+        eng_data = EngagementData(eng_cfg.engagement_id)
+    identity = build_identity_context(tid, rid, eng_data=eng_data)
     try:
         resolver = TripleQueryResolver(tid, rid)
         result = resolver.get_income_statement(entity_id, period)
@@ -153,12 +179,17 @@ async def get_income_statement_v2(
 async def get_balance_sheet_v2(
     entity_id: str = Query(..., description="Entity ID"),
     period: str = Query(..., description="Period (e.g., 2025-Q1)"),
+    engagement_id: Optional[str] = Query(None),
     tenant_id: Optional[str] = Query(None),
     pipeline_run_id: Optional[str] = Query(None),
 ):
     """Single-entity balance sheet from convergence_triples."""
-    tid, rid = resolve_tenant_and_run(tenant_id, pipeline_run_id)
-    identity = build_identity_context(tid, rid)
+    eng_data, tid, rid = resolve_engagement_or_tenant(engagement_id, tenant_id, pipeline_run_id)
+    if eng_data is None:
+        from backend.engine.engagement import get_active_engagement
+        eng_cfg = get_active_engagement(tid)
+        eng_data = EngagementData(eng_cfg.engagement_id)
+    identity = build_identity_context(tid, rid, eng_data=eng_data)
     try:
         resolver = TripleQueryResolver(tid, rid)
         result = resolver.get_balance_sheet(entity_id, period)
@@ -178,12 +209,17 @@ async def get_balance_sheet_v2(
 async def get_cash_flow_v2(
     entity_id: str = Query(..., description="Entity ID"),
     period: str = Query(..., description="Period (e.g., 2025-Q1)"),
+    engagement_id: Optional[str] = Query(None),
     tenant_id: Optional[str] = Query(None),
     pipeline_run_id: Optional[str] = Query(None),
 ):
     """Single-entity cash flow statement from convergence_triples."""
-    tid, rid = resolve_tenant_and_run(tenant_id, pipeline_run_id)
-    identity = build_identity_context(tid, rid)
+    eng_data, tid, rid = resolve_engagement_or_tenant(engagement_id, tenant_id, pipeline_run_id)
+    if eng_data is None:
+        from backend.engine.engagement import get_active_engagement
+        eng_cfg = get_active_engagement(tid)
+        eng_data = EngagementData(eng_cfg.engagement_id)
+    identity = build_identity_context(tid, rid, eng_data=eng_data)
     try:
         resolver = TripleQueryResolver(tid, rid)
         result = resolver.get_cash_flow(entity_id, period)
