@@ -5,7 +5,9 @@ import { MergePanel } from './components/MergePanel';
 const ReportPortal = React.lazy(() =>
   import('./components/report-portal/ReportPortal').then(m => ({ default: m.ReportPortal }))
 );
-const EngagementMonitor = React.lazy(() => import('./components/EngagementMonitor'));
+const EngagementList = React.lazy(() => import('./components/EngagementList'));
+const EngagementDetail = React.lazy(() => import('./components/EngagementDetail'));
+const PairSelector = React.lazy(() => import('./components/PairSelector'));
 const Upload = React.lazy(() => import('./components/Upload'));
 
 function NavBar() {
@@ -52,7 +54,7 @@ function NavBar() {
 // ── Parent-frame bridge ────────────────────────────────────────────────
 // Listens for postMessage commands from the AOS Platform demo shell.
 // Supported actions:
-//   { action: 'reportNavigate', entity: 'combined'|'meridian'|'cascadia', tab: 'pl'|... }
+//   { action: 'reportNavigate', entity: 'combined'|<entity_id>, tab: 'pl'|... }
 //
 // On reportNavigate we must (a) route to /reports so the ReportPortal lazy
 // component mounts, and (b) dispatch the 'aos-report-navigate' CustomEvent
@@ -120,7 +122,35 @@ function App() {
                     </div>
                   }
                 >
-                  <EngagementMonitor />
+                  <EngagementList />
+                </React.Suspense>
+              }
+            />
+            <Route
+              path="/engagements/new"
+              element={
+                <React.Suspense
+                  fallback={
+                    <div style={{ color: 'var(--text-muted)', fontSize: '12px', padding: '40px', textAlign: 'center' }}>
+                      Loading...
+                    </div>
+                  }
+                >
+                  <PairSelector />
+                </React.Suspense>
+              }
+            />
+            <Route
+              path="/engagements/:id"
+              element={
+                <React.Suspense
+                  fallback={
+                    <div style={{ color: 'var(--text-muted)', fontSize: '12px', padding: '40px', textAlign: 'center' }}>
+                      Loading Engagement...
+                    </div>
+                  }
+                >
+                  <EngagementDetail />
                 </React.Suspense>
               }
             />
