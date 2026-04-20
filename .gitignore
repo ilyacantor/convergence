@@ -9,3 +9,4 @@ dist/
 .pytest_cache/
 .venv/
 test-results/
+.env.development
