@@ -103,7 +103,7 @@ class COFAValidationRequest(BaseModel):
     )
     mapping_entries: list[dict[str, Any]] = Field(
         ...,
-        description="COFA mapping entries produced by Maestra. "
+        description="COFA mapping entries produced by Mai. "
         "Each entry should reference source accounts via "
         "'entity_a_account_number' and/or 'entity_b_account_number'.",
     )
