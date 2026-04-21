@@ -218,3 +218,117 @@ def check_aos_contract(
 
     all_passed = all(d.passed for d in domain_results)
     return ContractResult(passed=all_passed, tenant_id=tid, domains=domain_results)
+
+
+# ---------------------------------------------------------------------------
+# Entity-level contract check (reads convergence_triples, not semantic_triples)
+# ---------------------------------------------------------------------------
+
+
+def check_entity_contract(
+    tenant_id: str | UUID,
+    entity_id: str,
+) -> ContractResult:
+    """Validate an entity's convergence_triples have enough data for Convergence.
+
+    Lighter than check_aos_contract: validates namespace_type declarations
+    exist and domains have records. Property/identifier coverage is diagnostic
+    only — the resolver works with whatever properties Farm provides.
+
+    Uses a single bulk query instead of per-domain queries for performance.
+    """
+    tid = str(tenant_id)
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT split_part(concept, '.', 1) AS domain,
+                       concept, property, value #>> '{}'
+                FROM convergence_triples
+                WHERE tenant_id = %s::uuid
+                  AND entity_id = %s
+                  AND is_active = true
+                """,
+                (tid, entity_id),
+            )
+            rows = cur.fetchall()
+
+    namespace_types: dict[str, str] = {}
+    domain_records: dict[str, dict[str, dict[str, str]]] = {}
+
+    for domain, concept, prop, val in rows:
+        if prop == "namespace_type":
+            namespace_types[domain] = val
+        else:
+            if domain not in domain_records:
+                domain_records[domain] = {}
+            if concept not in domain_records[domain]:
+                domain_records[domain][concept] = {}
+            domain_records[domain][concept][prop] = val
+
+    if not namespace_types:
+        return ContractResult(
+            passed=False,
+            tenant_id=tid,
+            domains=[DomainResult(
+                domain="(none)",
+                namespace_type="unknown",
+                record_count=0,
+                property_coverage={},
+                identifier_coverage={},
+                issues=[
+                    f"No namespaces found for entity_id={entity_id} in tenant_id={tid}. "
+                    "Farm may not have pushed triples or _meta concepts are missing namespace_type."
+                ],
+            )],
+        )
+
+    domain_results: list[DomainResult] = []
+    has_data = False
+
+    for domain, ns_type in sorted(namespace_types.items()):
+        issues: list[str] = []
+
+        if ns_type not in ("business_record", "financial_fact"):
+            issues.append(
+                f"namespace_type '{ns_type}' is not recognized. "
+                f"Expected 'business_record' or 'financial_fact'."
+            )
+            domain_results.append(DomainResult(
+                domain=domain,
+                namespace_type=ns_type,
+                record_count=0,
+                property_coverage={},
+                identifier_coverage={},
+                issues=issues,
+            ))
+            continue
+
+        records = domain_records.get(domain, {})
+        record_count = len(records)
+        if record_count > 0:
+            has_data = True
+
+        prop_coverage: dict[str, float] = {}
+        id_coverage: dict[str, float] = {}
+        if ns_type == "business_record" and record_count > 0:
+            for prop in REQUIRED_BUSINESS_RECORD_PROPERTIES:
+                count = sum(1 for r in records.values() if r.get(prop))
+                prop_coverage[prop] = round(count / record_count, 3)
+            identifiers = IDENTIFIER_PRIORITY.get(domain, ["normalized_name"])
+            for ident in identifiers:
+                count = sum(1 for r in records.values() if r.get(ident))
+                id_coverage[ident] = round(count / record_count, 3)
+
+        domain_results.append(DomainResult(
+            domain=domain,
+            namespace_type=ns_type,
+            record_count=record_count,
+            property_coverage=prop_coverage,
+            identifier_coverage=id_coverage,
+            issues=issues,
+        ))
+
+    passed = has_data and all(d.passed for d in domain_results)
+    return ContractResult(passed=passed, tenant_id=tid, domains=domain_results)

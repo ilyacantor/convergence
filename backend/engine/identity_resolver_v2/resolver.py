@@ -87,20 +87,36 @@ def _compute_content_hash(record: dict, domain: str) -> str:
     return hashlib.sha256(canonical.encode()).hexdigest()[:16]
 
 
-def _get_domain_records(tenant_id: str, domain: str) -> dict[str, dict[str, str]]:
-    """Get all business_record concepts for a domain from semantic_triples."""
+def _get_domain_records(
+    tenant_id: str, domain: str, entity_id: str | None = None,
+) -> dict[str, dict[str, str]]:
+    """Get business_record concepts for a domain.
+
+    When entity_id is provided, reads convergence_triples (entity-keyed model).
+    Otherwise falls back to semantic_triples (legacy tenant-keyed model).
+    """
+    if entity_id:
+        table = "convergence_triples"
+        where_extra = "AND entity_id = %s"
+        params = (tenant_id, domain, entity_id)
+    else:
+        table = "semantic_triples"
+        where_extra = ""
+        params = (tenant_id, domain)
+
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                """
-                SELECT concept, property, value #>> '{}'
-                FROM semantic_triples
+                f"""
+                SELECT concept, property, value #>> '{{}}'
+                FROM {table}
                 WHERE tenant_id = %s::uuid
                   AND split_part(concept, '.', 1) = %s
                   AND property NOT IN ('namespace_type')
                   AND is_active = true
+                  {where_extra}
                 """,
-                (tenant_id, domain),
+                params,
             )
             records: dict[str, dict[str, str]] = {}
             for concept, prop, val in cur.fetchall():
@@ -128,11 +144,13 @@ def resolve(
     acquirer_tenant_id: str | UUID,
     target_tenant_id: str | UUID,
     config: dict | None = None,
+    acquirer_entity_id: str | None = None,
+    target_entity_id: str | None = None,
 ) -> ResolverOutput:
     """Run the identity resolver across one domain for an engagement pair.
 
-    Reads acquirer and target triples from DCL (SELECT only).
-    Returns ResolverOutput with mappings, unmatched_acq, unmatched_tgt.
+    When entity_ids are provided, reads convergence_triples by entity_id
+    within the shared tenant. Otherwise reads semantic_triples by tenant_id.
     """
     cfg = config or {}
     auto_accept = cfg.get("auto_accept_threshold", DEFAULT_AUTO_ACCEPT_THRESHOLD)
@@ -140,8 +158,12 @@ def resolve(
     fuzzy_token_threshold = cfg.get("fuzzy_token_threshold", DEFAULT_FUZZY_TOKEN_THRESHOLD)
     fuzzy_lev_max = cfg.get("fuzzy_levenshtein_max", DEFAULT_FUZZY_LEVENSHTEIN_MAX)
 
-    acq_records = _get_domain_records(str(acquirer_tenant_id), domain)
-    tgt_records = _get_domain_records(str(target_tenant_id), domain)
+    acq_records = _get_domain_records(
+        str(acquirer_tenant_id), domain, entity_id=acquirer_entity_id,
+    )
+    tgt_records = _get_domain_records(
+        str(target_tenant_id), domain, entity_id=target_entity_id,
+    )
 
     if not acq_records and not tgt_records:
         return ResolverOutput(domain=domain)
@@ -276,29 +298,61 @@ def resolve_all_domains(
     acquirer_tenant_id: str | UUID,
     target_tenant_id: str | UUID,
     config: dict | None = None,
+    acquirer_entity_id: str | None = None,
+    target_entity_id: str | None = None,
 ) -> list[ResolverOutput]:
-    """Resolve all business_record domains for an engagement pair."""
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            acq_domains = set()
-            tgt_domains = set()
-            for tid, domain_set in [
-                (str(acquirer_tenant_id), acq_domains),
-                (str(target_tenant_id), tgt_domains),
-            ]:
-                cur.execute(
-                    """
-                    SELECT DISTINCT split_part(concept, '.', 1)
-                    FROM semantic_triples
-                    WHERE tenant_id = %s::uuid
-                      AND is_active = true
-                      AND property = 'namespace_type'
-                      AND value #>> '{}' = 'business_record'
-                    """,
-                    (tid,),
-                )
-                for (d,) in cur.fetchall():
-                    domain_set.add(d)
+    """Resolve all business_record domains for an engagement pair.
+
+    When entity_ids are provided, discovers domains from convergence_triples.
+    Otherwise falls back to semantic_triples.
+    """
+    if acquirer_entity_id and target_entity_id:
+        table = "convergence_triples"
+        tid = str(acquirer_tenant_id)
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                acq_domains = set()
+                tgt_domains = set()
+                for eid, domain_set in [
+                    (acquirer_entity_id, acq_domains),
+                    (target_entity_id, tgt_domains),
+                ]:
+                    cur.execute(
+                        f"""
+                        SELECT DISTINCT split_part(concept, '.', 1)
+                        FROM {table}
+                        WHERE tenant_id = %s::uuid
+                          AND entity_id = %s
+                          AND is_active = true
+                          AND property = 'namespace_type'
+                          AND value #>> '{{}}' = 'business_record'
+                        """,
+                        (tid, eid),
+                    )
+                    for (d,) in cur.fetchall():
+                        domain_set.add(d)
+    else:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                acq_domains = set()
+                tgt_domains = set()
+                for tid, domain_set in [
+                    (str(acquirer_tenant_id), acq_domains),
+                    (str(target_tenant_id), tgt_domains),
+                ]:
+                    cur.execute(
+                        """
+                        SELECT DISTINCT split_part(concept, '.', 1)
+                        FROM semantic_triples
+                        WHERE tenant_id = %s::uuid
+                          AND is_active = true
+                          AND property = 'namespace_type'
+                          AND value #>> '{{}}' = 'business_record'
+                        """,
+                        (tid,),
+                    )
+                    for (d,) in cur.fetchall():
+                        domain_set.add(d)
 
     all_domains = sorted(acq_domains | tgt_domains)
     results = []
@@ -309,6 +363,8 @@ def resolve_all_domains(
             acquirer_tenant_id=acquirer_tenant_id,
             target_tenant_id=target_tenant_id,
             config=config,
+            acquirer_entity_id=acquirer_entity_id,
+            target_entity_id=target_entity_id,
         )
         results.append(output)
     return results

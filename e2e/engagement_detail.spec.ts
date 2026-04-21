@@ -55,16 +55,16 @@ test.describe('Engagement detail page', () => {
     await page.waitForLoadState('networkidle');
 
     await page.locator('[data-testid="tab-resolutions"]').click();
-    await expect(page.getByText(/navigate|pending|auto/i)).toBeVisible({ timeout: 5000 });
+    await expect(page.locator('.text-xs').filter({ hasText: 'navigate' })).toContainText('navigate', { timeout: 5000 });
 
     await page.locator('[data-testid="tab-cofa"]').click();
-    await expect(page.getByText('COFA Merge')).toBeVisible({ timeout: 3000 });
+    await expect(page.locator('h2').filter({ hasText: 'COFA Merge' })).toContainText('COFA Merge', { timeout: 3000 });
 
     await page.locator('[data-testid="tab-reports"]').click();
-    await expect(page.getByText('Reports')).toBeVisible({ timeout: 3000 });
+    await expect(page.locator('h2').filter({ hasText: 'Reports' })).toContainText('Reports', { timeout: 3000 });
 
     await page.locator('[data-testid="tab-overview"]').click();
-    await expect(page.getByText('Run Ledger')).toBeVisible({ timeout: 3000 });
+    await expect(page.locator('h2').filter({ hasText: 'Run Ledger' })).toContainText('Run Ledger', { timeout: 3000 });
   });
 
   test('back button returns to engagement list', async ({ page }) => {

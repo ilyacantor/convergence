@@ -18,7 +18,7 @@ from pydantic import BaseModel
 
 from backend.db import resolver_store
 from backend.db.engagement_store import get_engagement
-from backend.engine.contract_check import check_aos_contract
+from backend.engine.contract_check import check_aos_contract, check_entity_contract
 from backend.engine.identity_resolver_v2.resolver import (
     resolve_all_domains,
 )
@@ -41,22 +41,25 @@ class ResolveRequest(BaseModel):
 async def run_resolver(engagement_id: str, req: ResolveRequest | None = None):
     """Run identity resolver across all business_record domains for an engagement.
 
-    Reads acquirer and target triples from DCL (SELECT only).
-    Persists decisions to resolver_decisions table.
+    Entity-keyed: reads convergence_triples by entity_id within shared tenant.
+    Falls back to semantic_triples by tenant_id for legacy tenant-pair engagements.
     """
     eng = get_engagement(engagement_id)
     if not eng:
         raise HTTPException(status_code=404, detail=f"Engagement not found: {engagement_id}")
 
-    acq_tid = eng.get("acquirer_tenant_id", "")
-    tgt_tid = eng.get("target_tenant_id", "")
+    acq_eid = eng.get("acquirer_entity_id", "")
+    tgt_eid = eng.get("target_entity_id", "")
+    tenant_id = eng.get("tenant_id", "")
 
-    if not acq_tid or not tgt_tid:
+    if not acq_eid or not tgt_eid:
         raise HTTPException(
             status_code=422,
-            detail=f"Engagement {engagement_id} missing acquirer_tenant_id or target_tenant_id. "
-                   f"V2 engagements require AOS tenant pair identity.",
+            detail=f"Engagement {engagement_id} missing acquirer_entity_id or target_entity_id.",
         )
+
+    acq_tid = eng.get("acquirer_tenant_id") or tenant_id
+    tgt_tid = eng.get("target_tenant_id") or tenant_id
 
     config = (req.config if req else None) or {}
 
@@ -65,6 +68,8 @@ async def run_resolver(engagement_id: str, req: ResolveRequest | None = None):
         acquirer_tenant_id=acq_tid,
         target_tenant_id=tgt_tid,
         config=config,
+        acquirer_entity_id=acq_eid,
+        target_entity_id=tgt_eid,
     )
 
     total_auto = 0
@@ -172,67 +177,68 @@ async def update_resolution(engagement_id: str, decision_id: str, req: HITLUpdat
 
 @router.get("/catalog")
 async def get_catalog():
-    """AOS tenants that pass the contract check, annotated with existing engagements.
+    """Entity snapshots available for Convergence engagements.
 
-    Calls GET /api/farm/catalog, then runs contract check on each
-    tenant that has been generated, filters to passing.
+    Each snapshot = one entity_id under one tenant_id in convergence_triples.
+    The pair selector picks two entity_ids as acquirer and target.
     """
-    farm_url = FARM_API_URL.rstrip("/")
-    try:
-        with httpx.Client(timeout=10.0) as client:
-            resp = client.get(f"{farm_url}/api/farm/catalog")
-            resp.raise_for_status()
-    except httpx.HTTPError as e:
-        raise HTTPException(
-            status_code=502,
-            detail=f"Cannot reach Farm catalog at {farm_url}/api/farm/catalog — {e}",
-        )
-
-    catalog_data = resp.json()
-    templates = catalog_data.get("templates", [])
-
     from backend.core.db import get_connection
 
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT DISTINCT tenant_id FROM semantic_triples WHERE is_active = true"
+                "SELECT tenant_id, entity_id, COUNT(*) as triple_count "
+                "FROM convergence_triples "
+                "WHERE is_active = true "
+                "GROUP BY tenant_id, entity_id "
+                "ORDER BY triple_count DESC"
             )
-            known_tenants = {str(row[0]) for row in cur.fetchall()}
+            snapshots_raw = [
+                {"tenant_id": str(tid), "entity_id": eid, "triple_count": cnt}
+                for tid, eid, cnt in cur.fetchall()
+            ]
 
-    passing = []
-    for template in templates:
-        tid = template.get("tenant_id")
-        if not tid or str(tid) not in known_tenants:
-            continue
-        contract = check_aos_contract(str(tid))
-        if contract.passed:
-            passing.append({
-                "tenant_id": str(tid),
-                "template_id": template.get("template_id"),
-                "display_name": template.get("display_name"),
-                "industry": template.get("industry"),
-                "revenue_scale": template.get("revenue_scale"),
-                "domain_coverage": template.get("domain_coverage", []),
-                "contract_check": contract.to_dict(),
-            })
+    if not snapshots_raw:
+        return {"passing_entities": [], "existing_engagements": []}
+
+    contract_cache: dict[tuple[str, str], object] = {}
+    for snap in snapshots_raw:
+        key = (snap["tenant_id"], snap["entity_id"])
+        if key not in contract_cache:
+            contract_cache[key] = check_entity_contract(snap["tenant_id"], snap["entity_id"])
+
+    entities = []
+    for snap in snapshots_raw:
+        key = (snap["tenant_id"], snap["entity_id"])
+        contract = contract_cache[key]
+        domain_coverage = [d.domain for d in contract.domains if d.record_count > 0]
+        display_name = snap["entity_id"].replace("-", " ").rsplit(" ", 1)[0]
+        entities.append({
+            "tenant_id": snap["tenant_id"],
+            "entity_id": snap["entity_id"],
+            "display_name": display_name,
+            "triple_count": snap["triple_count"],
+            "domain_coverage": domain_coverage,
+            "contract_passed": contract.passed,
+        })
 
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT engagement_id, acquirer_tenant_id, target_tenant_id "
+                "SELECT engagement_id, acquirer_entity_id, target_entity_id "
                 "FROM engagements "
-                "WHERE acquirer_tenant_id IS NOT NULL AND target_tenant_id IS NOT NULL"
+                "WHERE acquirer_entity_id IS NOT NULL AND target_entity_id IS NOT NULL"
             )
             existing_pairs: list[dict] = []
             for row in cur.fetchall():
                 existing_pairs.append({
                     "engagement_id": str(row[0]),
-                    "acquirer_tenant_id": str(row[1]),
-                    "target_tenant_id": str(row[2]),
+                    "acquirer_entity_id": str(row[1]),
+                    "target_entity_id": str(row[2]),
                 })
 
     return {
-        "passing_tenants": passing,
+        "passing_entities": [e for e in entities if e["contract_passed"]],
+        "all_entities": entities,
         "existing_engagements": existing_pairs,
     }
