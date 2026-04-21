@@ -10,7 +10,7 @@ operator surface) calls it directly.
 
 Flow:
   1. Resolve engagement -> entity_a / entity_b
-  2. Load CoA account names from triples (current_triples + convergence_triples)
+  2. Load CoA account names from convergence_triples
   3. record_run_step(step_name="cofa_merge")  -> step_id
   4. update_run_step(step_id, "running")
   5. invoke_semantic_mapper(...)  -> SemanticMapping
@@ -65,27 +65,14 @@ class COFARunRequest(BaseModel):
 # ── Helpers (forked from the deleted cofa_mapping.py route) ────────────────
 
 def _load_coa_accounts(cur, entity_id: str) -> dict[str, str]:
-    """Return {account_name: account_number} for an entity.
-
-    SE-side reads come from current_triples (the flat live mirror DCL
-    rebuild established). ME-side reads stay on convergence_triples until
-    that store undergoes its own rebuild.
-    """
+    """Return {account_name: account_number} for an entity from convergence_triples."""
     cur.execute(
-        "SELECT acct_num, acct_name FROM ("
-        "  SELECT split_part(concept, '.', 2) AS acct_num, "
-        "         value #>> '{}' AS acct_name, created_at "
-        "  FROM current_triples "
-        "  WHERE concept LIKE 'coa.%%' AND entity_id = %s "
-        "    AND property = 'account_name' "
-        "  UNION ALL "
-        "  SELECT split_part(concept, '.', 2) AS acct_num, "
-        "         value #>> '{}' AS acct_name, created_at "
-        "  FROM convergence_triples "
-        "  WHERE concept LIKE 'coa.%%' AND entity_id = %s "
-        "    AND property = 'account_name' AND is_active = true "
-        ") sub",
-        (entity_id, entity_id),
+        "SELECT split_part(concept, '.', 2) AS acct_num, "
+        "       value #>> '{}' AS acct_name "
+        "FROM convergence_triples "
+        "WHERE concept LIKE 'coa.%%' AND entity_id = %s "
+        "  AND property = 'account_name' AND is_active = true ",
+        (entity_id,),
     )
     return {
         row[1].strip('"'): row[0]

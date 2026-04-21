@@ -1,61 +1,51 @@
-/**
- * Engagement Monitor tab — verify it loads without errors and
- * has zero references to constitution, tools, or Mai.
- */
-import { test, expect } from '@playwright/test'
+// Operator-visible outcome: /engagements page renders engagement list with real entity_ids from API, zero Mai/Constitution/Tools references, zero console errors, zero failed API requests
+import { test, expect } from '@playwright/test';
 
-test.describe('Engagement Monitor — clean of Mai concepts', () => {
+const TENANT_ID = process.env.VITE_AOS_TENANT_ID || '69688df3-fc8e-51f8-a77c-9c13f9b3a784';
+
+test.describe('Engagement list — clean of Mai concepts', () => {
   test('loads with engagement data, no errors, no Mai references', async ({ page }) => {
-    // Collect console errors
-    const consoleErrors: string[] = []
+    const consoleErrors: string[] = [];
     page.on('console', (msg) => {
-      if (msg.type() === 'error') consoleErrors.push(msg.text())
-    })
+      if (msg.type() === 'error') consoleErrors.push(msg.text());
+    });
 
-    // Collect failed network requests
-    const failedRequests: string[] = []
+    const failedRequests: string[] = [];
     page.on('response', (resp) => {
       if (resp.status() >= 400 && !resp.url().includes('favicon')) {
-        failedRequests.push(`${resp.status()} ${resp.url()}`)
+        failedRequests.push(`${resp.status()} ${resp.url()}`);
       }
-    })
+    });
 
-    await page.goto('/engagements')
-    await page.waitForTimeout(3000)
+    const apiResp = await page.request.get(
+      `/api/convergence/engagements?tenant_id=${TENANT_ID}`,
+    );
+    const engagements = await apiResp.json();
+    expect(engagements.length).toBeGreaterThanOrEqual(1);
 
-    // Header must say "Engagement Monitor"
-    await expect(page.getByText('Engagement Monitor')).toBeVisible()
+    await page.goto('/engagements');
+    await expect(page.getByText('Engagements').first()).toContainText('Engagements', { timeout: 10000 });
 
-    // Must NOT contain Mai, Constitution, or Tools panel text
-    const pageText = await page.textContent('body') ?? ''
-    expect(pageText).not.toContain('Mai')
-    expect(pageText).not.toContain('Constitution')
-    expect(pageText).not.toContain('Available Tools')
-    expect(pageText).not.toContain('check_module_status')
-    expect(pageText).not.toContain('trigger_pipeline_run')
+    const firstEng = engagements[0];
+    const eid = firstEng.acquirer_entity_id || firstEng.engagement_id?.slice(0, 8);
+    await expect(page.getByText(eid).first()).toContainText(eid, { timeout: 10000 });
 
-    // Must show engagement data (not "No active engagement" with no engagement)
-    // The engagement_id or entity names should be visible
-    const hasEngagement = pageText.includes('3c299509') || pageText.includes('meridian')
-    console.log('[EM] Has engagement data:', hasEngagement)
-    expect(hasEngagement, 'Engagement data must be visible').toBe(true)
+    const pageText = await page.textContent('body') ?? '';
+    expect(pageText).not.toContain('Mai');
+    expect(pageText).not.toContain('Constitution');
+    expect(pageText).not.toContain('Available Tools');
+    expect(pageText).not.toContain('check_module_status');
+    expect(pageText).not.toContain('trigger_pipeline_run');
+    expect(pageText).not.toContain('API route not found');
 
-    // No "API route not found" errors
-    expect(pageText).not.toContain('API route not found')
+    expect(pageText).toContain(eid);
 
-    // No failed API requests (except 404s for constitution/tools which are now removed)
     const relevantFailures = failedRequests.filter(
-      r => !r.includes('favicon') && !r.includes('hot-update')
-    )
-    console.log('[EM] Failed requests:', relevantFailures)
-    expect(relevantFailures.length, `Unexpected failed requests: ${relevantFailures.join(', ')}`).toBe(0)
+      r => !r.includes('favicon') && !r.includes('hot-update'),
+    );
+    expect(relevantFailures).toEqual([]);
+    expect(consoleErrors).toEqual([]);
 
-    // Check for console errors referencing constitution or tools
-    const maiErrors = consoleErrors.filter(
-      e => e.includes('constitution') || e.includes('tools') || e.includes('Mai')
-    )
-    expect(maiErrors.length, `Mai-related console errors: ${maiErrors.join(', ')}`).toBe(0)
-
-    await page.screenshot({ path: 'e2e/screenshots/engagement-monitor-clean.png' })
-  })
-})
+    await page.screenshot({ path: 'e2e/screenshots/engagement-monitor-clean.png' });
+  });
+});

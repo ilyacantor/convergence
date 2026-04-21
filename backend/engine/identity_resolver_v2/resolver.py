@@ -324,8 +324,6 @@ def resolve_all_domains(
                         WHERE tenant_id = %s::uuid
                           AND entity_id = %s
                           AND is_active = true
-                          AND property = 'namespace_type'
-                          AND value #>> '{{}}' = 'business_record'
                         """,
                         (tid, eid),
                     )
@@ -346,8 +344,6 @@ def resolve_all_domains(
                         FROM semantic_triples
                         WHERE tenant_id = %s::uuid
                           AND is_active = true
-                          AND property = 'namespace_type'
-                          AND value #>> '{{}}' = 'business_record'
                         """,
                         (tid,),
                     )

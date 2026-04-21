@@ -1,3 +1,4 @@
+// Operator-visible outcome: /reports page renders P&L, BS, CF, Combining, Overlap, X-Sell, Upsell, Pipeline, What-If, QofE tabs with financial data from the active engagement, entity toggle buttons using real entity names from API, and zero error banners
 import { test, expect } from '@playwright/test';
 
 /**
@@ -16,6 +17,15 @@ async function waitForDataAndNoErrors(page: import('@playwright/test').Page) {
   await expect(page.locator('text=/Loading/i')).not.toBeVisible({ timeout: 30_000 });
   await expect(page.locator('text=/Error loading/i')).not.toBeVisible({ timeout: 5_000 });
   await expect(page.locator('text=/query failed/i')).not.toBeVisible({ timeout: 2_000 });
+}
+
+async function getEntityNames(page: import('@playwright/test').Page): Promise<{ a: string; b: string }> {
+  const resp = await page.request.get('/api/convergence/engagement/active');
+  const eng = await resp.json();
+  return {
+    a: eng.entity_pair?.[0] || eng.entity_a?.id || 'acquirer',
+    b: eng.entity_pair?.[1] || eng.entity_b?.id || 'target',
+  };
 }
 
 // ─── Combined entity tabs ─────────────────────────────────────────────────────
@@ -79,6 +89,7 @@ test.describe('Reports Portal — Combined Entity Tabs (B17 Gate)', () => {
   });
 
   test('Overlap tab renders entity overlap cards and breakdown table', async ({ page }) => {
+    const names = await getEntityNames(page);
     await page.getByRole('button', { name: 'Overlap' }).click();
     await expect(page.locator('text=/Loading entity overlap/i')).not.toBeVisible({ timeout: 30_000 });
 
@@ -89,13 +100,14 @@ test.describe('Reports Portal — Combined Entity Tabs (B17 Gate)', () => {
 
     // Breakdown table with entity-name columns
     await expect(page.locator('text=Overlap Breakdown')).toBeVisible({ timeout: 5_000 });
-    await expect(page.locator('th', { hasText: /Meridian Total/ })).toBeVisible({ timeout: 5_000 });
-    await expect(page.locator('th', { hasText: /Cascadia Total/ })).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('th', { hasText: new RegExp(`${names.a}.*Total`, 'i') })).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('th', { hasText: new RegExp(`${names.b}.*Total`, 'i') })).toBeVisible({ timeout: 5_000 });
 
     await waitForDataAndNoErrors(page);
   });
 
   test('Overlap tab drill-through — click IT Assets card and entity-only lines', async ({ page }) => {
+    const names = await getEntityNames(page);
     await page.getByRole('button', { name: 'Overlap' }).click();
     await expect(page.locator('text=/Loading entity overlap/i')).not.toBeVisible({ timeout: 30_000 });
     await expect(page.locator('text=Overlap Breakdown')).toBeVisible({ timeout: 10_000 });
@@ -107,13 +119,14 @@ test.describe('Reports Portal — Combined Entity Tabs (B17 Gate)', () => {
     await expect(overlapDrill.locator('text=/Shared IT Assets — detail/i')).toBeVisible({ timeout: 5_000 });
     await expect(overlapDrill.locator('tbody tr').first()).toBeVisible({ timeout: 10_000 });
 
-    // Click Meridian-only line on the IT Assets card → entity-only drill replaces overlap drill
+    // Click entity-A-only line on the IT Assets card → entity-only drill replaces overlap drill
     await overlapDrill.isVisible();
     const itAssetsCard = page.getByRole('button', { name: /Drill into IT Assets overlap/i }).locator('..');
-    await itAssetsCard.getByRole('button', { name: /Meridian-only:/ }).click();
+    const aOnlyPattern = new RegExp(`${names.a}-only:`, 'i');
+    await itAssetsCard.getByRole('button', { name: aOnlyPattern }).click();
     const aOnlyDrill = page.locator('[data-testid="overlap-drill-it_asset-a_only"]');
     await expect(aOnlyDrill).toBeVisible({ timeout: 15_000 });
-    await expect(aOnlyDrill.locator('text=/Meridian-only IT Assets/i')).toBeVisible({ timeout: 5_000 });
+    await expect(aOnlyDrill.locator(`text=/${names.a}-only IT Assets/i`)).toBeVisible({ timeout: 5_000 });
     await expect(aOnlyDrill.locator('tbody tr').first()).toBeVisible({ timeout: 10_000 });
 
     // Close via the Close button → drill disappears
@@ -132,9 +145,10 @@ test.describe('Reports Portal — Combined Entity Tabs (B17 Gate)', () => {
     await expect(page.locator('text=/High Confidence/').first()).toBeVisible({ timeout: 5_000 });
     await expect(page.locator('text=/candidates/i').first()).toBeVisible({ timeout: 5_000 });
 
-    // Direction toggle buttons (use getByRole with specific text to avoid strict mode)
-    await expect(page.getByRole('button', { name: /Meridian Advisory/ })).toBeVisible({ timeout: 5_000 });
-    await expect(page.getByRole('button', { name: /Cascadia BPM/ })).toBeVisible({ timeout: 5_000 });
+    // Direction toggle buttons — entity names from active engagement
+    const xsNames = await getEntityNames(page);
+    await expect(page.getByRole('button', { name: new RegExp(xsNames.a, 'i') }).first()).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByRole('button', { name: new RegExp(xsNames.b, 'i') }).first()).toBeVisible({ timeout: 5_000 });
 
     await waitForDataAndNoErrors(page);
   });
@@ -179,9 +193,10 @@ test.describe('Reports Portal — Combined Entity Tabs (B17 Gate)', () => {
     await expect(page.locator('text=/Opportunities/').first()).toBeVisible({ timeout: 5_000 });
     await expect(page.locator('text=/Expansion ACV/').first()).toBeVisible({ timeout: 5_000 });
 
-    // Direction toggle buttons
-    await expect(page.getByRole('button', { name: /Meridian Services/ })).toBeVisible({ timeout: 5_000 });
-    await expect(page.getByRole('button', { name: /Cascadia Services/ })).toBeVisible({ timeout: 5_000 });
+    // Direction toggle buttons — entity names from active engagement
+    const upNames = await getEntityNames(page);
+    await expect(page.getByRole('button', { name: new RegExp(upNames.a, 'i') }).first()).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByRole('button', { name: new RegExp(upNames.b, 'i') }).first()).toBeVisible({ timeout: 5_000 });
 
     await waitForDataAndNoErrors(page);
   });
@@ -336,7 +351,7 @@ test.describe('Reports Portal — Entity Switching (B17 Gate)', () => {
 
   test('no error banners on initial load', async ({ page }) => {
     await page.waitForTimeout(3_000);
-    await expect(page.locator('text=/Error loading/i')).not.toBeVisible();
-    await expect(page.locator('text=/failed/i')).not.toBeVisible();
+    await expect(page.locator('text=/Error loading/i')).not.toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('text=/failed/i')).not.toBeVisible({ timeout: 5_000 });
   });
 });

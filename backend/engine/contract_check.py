@@ -225,15 +225,26 @@ def check_aos_contract(
 # ---------------------------------------------------------------------------
 
 
+KNOWN_BUSINESS_DOMAINS = {
+    "customer", "vendor", "employee", "coa", "product", "it_asset",
+    "contract", "project", "location", "department",
+}
+
+KNOWN_FINANCIAL_DOMAINS = {
+    "revenue", "expense", "asset", "liability", "equity",
+    "cash_flow", "budget", "forecast",
+}
+
+
 def check_entity_contract(
     tenant_id: str | UUID,
     entity_id: str,
 ) -> ContractResult:
     """Validate an entity's convergence_triples have enough data for Convergence.
 
-    Lighter than check_aos_contract: validates namespace_type declarations
-    exist and domains have records. Property/identifier coverage is diagnostic
-    only — the resolver works with whatever properties Farm provides.
+    Discovers domains from concept prefixes. Uses explicit namespace_type
+    when available from _meta concepts, otherwise infers from domain name.
+    Property/identifier coverage is diagnostic only.
 
     Uses a single bulk query instead of per-domain queries for performance.
     """
@@ -254,20 +265,7 @@ def check_entity_contract(
             )
             rows = cur.fetchall()
 
-    namespace_types: dict[str, str] = {}
-    domain_records: dict[str, dict[str, dict[str, str]]] = {}
-
-    for domain, concept, prop, val in rows:
-        if prop == "namespace_type":
-            namespace_types[domain] = val
-        else:
-            if domain not in domain_records:
-                domain_records[domain] = {}
-            if concept not in domain_records[domain]:
-                domain_records[domain][concept] = {}
-            domain_records[domain][concept][prop] = val
-
-    if not namespace_types:
+    if not rows:
         return ContractResult(
             passed=False,
             tenant_id=tid,
@@ -278,33 +276,41 @@ def check_entity_contract(
                 property_coverage={},
                 identifier_coverage={},
                 issues=[
-                    f"No namespaces found for entity_id={entity_id} in tenant_id={tid}. "
-                    "Farm may not have pushed triples or _meta concepts are missing namespace_type."
+                    f"No triples found for entity_id={entity_id} in tenant_id={tid}. "
+                    "Farm may not have pushed triples for this entity."
                 ],
             )],
         )
 
+    explicit_ns_types: dict[str, str] = {}
+    domain_records: dict[str, dict[str, dict[str, str]]] = {}
+
+    for domain, concept, prop, val in rows:
+        if prop == "namespace_type":
+            explicit_ns_types[domain] = val
+        else:
+            if domain not in domain_records:
+                domain_records[domain] = {}
+            if concept not in domain_records[domain]:
+                domain_records[domain][concept] = {}
+            domain_records[domain][concept][prop] = val
+
+    all_domains = sorted(set(explicit_ns_types.keys()) | set(domain_records.keys()))
+
     domain_results: list[DomainResult] = []
     has_data = False
 
-    for domain, ns_type in sorted(namespace_types.items()):
+    for domain in all_domains:
+        ns_type = explicit_ns_types.get(domain)
+        if not ns_type:
+            if domain in KNOWN_BUSINESS_DOMAINS:
+                ns_type = "business_record"
+            elif domain in KNOWN_FINANCIAL_DOMAINS:
+                ns_type = "financial_fact"
+            else:
+                ns_type = "business_record"
+
         issues: list[str] = []
-
-        if ns_type not in ("business_record", "financial_fact"):
-            issues.append(
-                f"namespace_type '{ns_type}' is not recognized. "
-                f"Expected 'business_record' or 'financial_fact'."
-            )
-            domain_results.append(DomainResult(
-                domain=domain,
-                namespace_type=ns_type,
-                record_count=0,
-                property_coverage={},
-                identifier_coverage={},
-                issues=issues,
-            ))
-            continue
-
         records = domain_records.get(domain, {})
         record_count = len(records)
         if record_count > 0:
