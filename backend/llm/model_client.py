@@ -130,6 +130,12 @@ Conflict rules:
 - impact_area / revenue_impact / expense_impact / ebitda_impact must be internally consistent
   (recognition -> revenue + ebitda; classification -> from/to categories, ebitda zero;
    capitalization -> negative expense, positive ebitda; policy -> depreciation/ebitda).
+- dollar_impact, revenue_impact, expense_impact, ebitda_impact MUST be non-zero when the
+  policy text provides dollar bases. For policy conflicts (e.g., depreciation method
+  differences), compute the annual expense delta from the stated bases and methods. If one
+  entity has $X D&A straight-line 5yr and the other has accelerated 3yr on $Y PP&E, the
+  annual depreciation difference is calculable — compute it. 0.0 is only acceptable when
+  there is truly no basis for estimation in the supplied text.
 
 Return JSON only. No reasoning, no explanation, no fence.
 """

@@ -1,3 +1,4 @@
+// Operator-visible outcome: MergePanel renders COFA Merge heading, entity cards with display names from /merge/overview API, FS Impact table with Category/Dollar Impact/EBITDA headers and a Combined row, Conflict Resolution button with N total / N pending counts, conflict table with Type/Description/Annual Impact headers, engagement dropdown populated from API, and per-bucket FS impact cells with non-zero dollar values for recognition/capitalization/policy buckets
 import { test, expect } from '@playwright/test';
 
 test.describe('MergePanel', () => {
@@ -11,27 +12,27 @@ test.describe('MergePanel', () => {
   });
 
   test('shows entity cards for Acquirer and Target', async ({ page }) => {
-    // Wait for data to load — entity labels appear after fetch completes
     const acquirerLabel = page.locator('text=Acquirer').first();
     await expect(acquirerLabel).toBeVisible({ timeout: 15_000 });
 
     const targetLabel = page.locator('text=Target').first();
-    await expect(targetLabel).toBeVisible();
+    await expect(targetLabel).toBeVisible({ timeout: 5000 });
 
-    // Entity display names from the merge overview.
-    // Use exact match because the run_name badge (e.g. me-meridian-cascadia-d14f)
-    // also contains "meridian"/"cascadia" and would otherwise match.
-    await expect(page.getByText('Meridian', { exact: true })).toBeVisible();
-    await expect(page.getByText('Cascadia', { exact: true })).toBeVisible();
+    const overviewResp = await page.request.get('/api/convergence/merge/overview');
+    const overview = await overviewResp.json();
+    const acqName = overview.acquirer?.display_name;
+    const tgtName = overview.target?.display_name;
+    expect(typeof acqName, 'acquirer display_name missing from overview API').toBe('string');
+    expect(typeof tgtName, 'target display_name missing from overview API').toBe('string');
+    await expect(page.getByText(acqName, { exact: true })).toBeVisible({ timeout: 5000 });
+    await expect(page.getByText(tgtName, { exact: true })).toBeVisible({ timeout: 5000 });
   });
 
   test('shows triple counts for both entities', async ({ page }) => {
-    // Wait for merge overview data
     await expect(page.locator('text=Acquirer').first()).toBeVisible({ timeout: 15_000 });
 
-    // Both entities should show triple counts (non-zero)
     const triplesLabels = page.locator('text=triples');
-    await expect(triplesLabels.first()).toBeVisible();
+    await expect(triplesLabels.first()).toBeVisible({ timeout: 5000 });
     const count = await triplesLabels.count();
     expect(count).toBeGreaterThanOrEqual(2);
   });
@@ -40,71 +41,55 @@ test.describe('MergePanel', () => {
     const impactHeading = page.locator('text=Financial Statement Impact');
     await expect(impactHeading).toBeVisible({ timeout: 15_000 });
 
-    // Table headers
-    await expect(page.locator('th', { hasText: 'Category' })).toBeVisible();
-    await expect(page.locator('th', { hasText: 'Dollar Impact' }).first()).toBeVisible();
-    await expect(page.locator('th', { hasText: 'EBITDA' }).first()).toBeVisible();
+    await expect(page.locator('th', { hasText: 'Category' })).toBeVisible({ timeout: 5000 });
+    await expect(page.locator('th', { hasText: 'Dollar Impact' }).first()).toBeVisible({ timeout: 5000 });
+    await expect(page.locator('th', { hasText: 'EBITDA' }).first()).toBeVisible({ timeout: 5000 });
 
-    // Combined row at the bottom of the impact table.
-    // Exact match to avoid colliding with conflict-description cells that
-    // mention "Sales & Marketing Combined" or "combined" in prose.
     await expect(
       page.getByRole('cell', { name: 'Combined', exact: true })
-    ).toBeVisible();
+    ).toBeVisible({ timeout: 5000 });
   });
 
   test('shows Conflict Resolution section with conflicts', async ({ page }) => {
-    const conflictSection = page.locator('text=Conflict Resolution').first();
-    await expect(conflictSection).toBeVisible({ timeout: 15_000 });
+    const conflictBtn = page.getByRole('button', { name: /Conflict Resolution/ });
+    await expect(conflictBtn).toBeVisible({ timeout: 15_000 });
 
-    // Should show total/resolved/pending counts
-    await expect(page.locator('text=/\\d+ total/')).toBeVisible();
-    await expect(page.locator('text=/\\d+ pending/')).toBeVisible();
+    await expect(conflictBtn).toContainText(/\d+ total/);
+    await expect(conflictBtn).toContainText(/\d+ pending/);
 
-    // Conflict table headers
-    await expect(page.locator('th', { hasText: 'Type' }).first()).toBeVisible();
-    await expect(page.locator('th', { hasText: 'Description' }).first()).toBeVisible();
-    await expect(page.locator('th', { hasText: 'Annual Impact' })).toBeVisible();
+    await expect(page.locator('th', { hasText: 'Type' }).first()).toBeVisible({ timeout: 5000 });
+    await expect(page.locator('th', { hasText: 'Description' }).first()).toBeVisible({ timeout: 5000 });
+    await expect(page.locator('th', { hasText: 'Annual Impact' })).toBeVisible({ timeout: 5000 });
   });
 
   test('engagements load from Platform via HTTP contract', async ({ page }) => {
-    // After Mai↔Convergence HTTP migration, Platform's engagements
-    // endpoint is reachable from Convergence. The MergePanel must populate
-    // its dropdown and not surface an engagement error.
     await expect(page.locator('h2', { hasText: 'COFA Merge' })).toBeVisible({ timeout: 15_000 });
 
-    // Wait for the engagements API call to complete with 200.
     await page.waitForResponse(resp =>
-      resp.url().includes('/api/convergence/engagements') && resp.status() === 200,
+      resp.url().includes('/api/convergence/engagements') && resp.ok(),
       { timeout: 15_000 }
     );
 
-    // No "No engagements" error message should be visible.
-    await expect(page.locator('text=No engagements')).not.toBeVisible();
+    await expect(page.locator('text=No engagements')).not.toBeVisible({ timeout: 5000 });
 
-    // Engagement dropdown should be populated (at least one option).
     const dropdown = page.locator('select').first();
-    await expect(dropdown).toBeVisible();
+    await expect(dropdown).toBeVisible({ timeout: 5000 });
   });
 
   test('no "not found" or error state visible', async ({ page }) => {
-    // Wait for the page to finish loading
     await expect(page.locator('h2', { hasText: 'COFA Merge' })).toBeVisible({ timeout: 15_000 });
 
-    // Should not show loading spinner after data loads
     const loadingText = page.locator('text=Loading merge overview...');
     await expect(loadingText).not.toBeVisible({ timeout: 10_000 });
 
-    // No error messages should be visible
     const retryButton = page.locator('button', { hasText: 'Retry' });
-    await expect(retryButton).not.toBeVisible();
+    await expect(retryButton).not.toBeVisible({ timeout: 5000 });
   });
 
   test('merge overview API returns real data (not 404)', async ({ page }) => {
-    // Intercept the API call and verify it returns 200
     const [response] = await Promise.all([
       page.waitForResponse(resp =>
-        resp.url().includes('/api/convergence/merge/overview') && resp.status() === 200
+        resp.url().includes('/api/convergence/merge/overview') && resp.ok()
       ),
       page.goto('/'),
     ]);
@@ -119,7 +104,7 @@ test.describe('MergePanel', () => {
   test('conflicts API returns real data', async ({ page }) => {
     const [response] = await Promise.all([
       page.waitForResponse(resp =>
-        resp.url().includes('/api/convergence/merge/conflicts') && resp.status() === 200
+        resp.url().includes('/api/convergence/merge/conflicts') && resp.ok()
       ),
       page.goto('/'),
     ]);
@@ -153,19 +138,14 @@ test.describe('MergePanel', () => {
       const revCell = page.locator(`[data-testid="fs-impact-${type}-revenue"]`);
       const expCell = page.locator(`[data-testid="fs-impact-${type}-expense"]`);
       const ebCell = page.locator(`[data-testid="fs-impact-${type}-ebitda"]`);
-      await expect(revCell, `revenue cell missing for bucket ${type}`).toBeVisible();
-      await expect(expCell, `expense cell missing for bucket ${type}`).toBeVisible();
-      await expect(ebCell, `ebitda cell missing for bucket ${type}`).toBeVisible();
+      await expect(revCell, `revenue cell missing for bucket ${type}`).toBeVisible({ timeout: 5000 });
+      await expect(expCell, `expense cell missing for bucket ${type}`).toBeVisible({ timeout: 5000 });
+      await expect(ebCell, `ebitda cell missing for bucket ${type}`).toBeVisible({ timeout: 5000 });
 
       const revText = (await revCell.textContent() ?? '').trim();
       const expText = (await expCell.textContent() ?? '').trim();
       const ebText = (await ebCell.textContent() ?? '').trim();
 
-      // Em-dash is the legitimate render for zero on a single line.
-      // The A1-violation surface would have been all-dash rows across every
-      // bucket — what we assert is that per bucket at least one of the three
-      // lines has a non-dash numeric value, i.e. the bucket carries real FS
-      // impact data and not a fallback placeholder.
       const cells = [
         { label: 'revenue', text: revText },
         { label: 'expense', text: expText },
@@ -185,7 +165,6 @@ test.describe('MergePanel', () => {
       impactsByBucket[type] = { revenue: rev, expense: exp, ebitda: eb };
     }
 
-    // Across all three buckets, at least one value must be non-zero.
     const anyNonZero = Object.values(impactsByBucket).some(
       v => v.revenue !== 0 || v.expense !== 0 || v.ebitda !== 0,
     );
