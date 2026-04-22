@@ -1,4 +1,17 @@
 import { useState, useEffect, useCallback, useRef, Fragment } from 'react';
+// DEMO HARDCODE — NOT REAL DATA.
+// COFA merge output rendered from constants regardless of backend
+// gate or CoA presence. Server-side gate in
+// farm/src/services/snapshot_triple_builder.py:147 and
+// convergence COFA merge endpoint unchanged. Restore real wiring
+// when Farm exposes business_model on POST /api/snapshots and
+// CoA/GL generation is not gated by business_model value.
+import {
+  DEMO_CONFLICT_DATA,
+  DEMO_POST_MERGE_OVERVIEW,
+  DEMO_MERGE_MAPPING_COUNT,
+  DEMO_MERGE_FAKE_LATENCY_S,
+} from './demoCofaMerge';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -293,6 +306,11 @@ export function MergePanel() {
   }, [toast]);
 
   const runCofaMerge = useCallback(async () => {
+    // DEMO HARDCODE — see banner at top of file. Backend COFA merge endpoint
+    // is bypassed entirely. The existing 8s fake-latency progress messages
+    // are kept so the demo walk reads as a real merge. Canned conflicts +
+    // overview are injected on completion; auto-refresh is paused so the
+    // next polling tick doesn't wipe them.
     if (!selectedEngagementId) {
       setMergeError(
         'No engagement selected. Select an engagement from the dropdown, ' +
@@ -306,70 +324,67 @@ export function MergePanel() {
     setMergeStatus('Running COFA merge...');
     mergeStartRef.current = Date.now();
 
-    // Synchronous JSON call to the Convergence-owned workflow. The LLM call
-    // inside can take 30-90s; AbortController caps the wait at 180s.
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 180_000);
-    try {
-      const res = await fetch('/api/convergence/cofa/run', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ engagement_id: selectedEngagementId }),
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
+    await new Promise((resolve) => setTimeout(resolve, DEMO_MERGE_FAKE_LATENCY_S * 1000));
 
-      if (!res.ok) {
-        let detail: string;
-        try {
-          const body = await res.json();
-          detail = typeof body.detail === 'string'
-            ? body.detail
-            : JSON.stringify(body.detail ?? body);
-        } catch {
-          detail = `HTTP ${res.status}`;
-        }
-        if (res.status === 422) {
-          setMergeError(`Gate rejected the merge: ${detail}`);
-        } else if (res.status === 503) {
-          setMergeError(`Semantic mapper unavailable: ${detail}`);
-        } else if (res.status === 404) {
-          setMergeError(detail);
-        } else {
-          setMergeError(`COFA merge failed (HTTP ${res.status}): ${detail}`);
-        }
-        setMergeRunning(false);
-        setMergeStatus(null);
-        return;
-      }
+    const finalElapsed = Math.floor((Date.now() - mergeStartRef.current) / 1000);
+    setMergeFinishedIn(finalElapsed);
+    setMergeStatus(null);
+    setMergeRunning(false);
 
-      const result = await res.json();
-      const finalElapsed = Math.floor((Date.now() - mergeStartRef.current) / 1000);
-      setMergeFinishedIn(finalElapsed);
-      setMergeStatus(null);
-      setMergeRunning(false);
+    setConflictData({
+      conflicts: DEMO_CONFLICT_DATA.conflicts,
+      summary: DEMO_CONFLICT_DATA.summary,
+      category_summary: DEMO_CONFLICT_DATA.category_summary,
+    });
+    // Resolve the selected engagement's entity ids so the rendered cards
+    // honor the operator's pick (rule 5: entity_id labels interpolate from
+    // the selected pair; everything else canned).
+    const selectedEng = engagements.find((e) => e.engagement_id === selectedEngagementId);
+    const acquirerId = selectedEng?.acquirer_entity_id ?? '';
+    const targetId = selectedEng?.target_entity_id ?? '';
 
-      // Refresh MergePanel data from read endpoints now that triples landed.
-      await fetchMerge(false);
-      fetchConflicts();
+    setData((prev) => {
+      if (!prev) return prev;
+      const acquirer = acquirerId
+        ? { entity_id: acquirerId, display_name: acquirerId }
+        : prev.acquirer;
+      const target = targetId
+        ? { entity_id: targetId, display_name: targetId }
+        : prev.target;
+      const acquirerEntity = {
+        entity_id: acquirer.entity_id,
+        display_name: acquirer.display_name,
+        cofa_count: DEMO_POST_MERGE_OVERVIEW.overview_cofa_count_acquirer,
+        last_ingest: prev.overview.entities[0]?.last_ingest ?? null,
+      };
+      const targetEntity = {
+        entity_id: target.entity_id,
+        display_name: target.display_name,
+        cofa_count: DEMO_POST_MERGE_OVERVIEW.overview_cofa_count_target,
+        last_ingest: prev.overview.entities[1]?.last_ingest ?? null,
+      };
+      return {
+        ...prev,
+        acquirer,
+        target,
+        overview: {
+          entities: [acquirerEntity, targetEntity],
+          total_cofa_count: DEMO_POST_MERGE_OVERVIEW.total_cofa_count,
+        },
+        orphans: DEMO_POST_MERGE_OVERVIEW.orphans,
+        matches: { ...prev.matches, ...DEMO_POST_MERGE_OVERVIEW.matches },
+        policy_sources: DEMO_POST_MERGE_OVERVIEW.policy_sources,
+        financial_summary: DEMO_POST_MERGE_OVERVIEW.financial_summary,
+      };
+    });
+    // Pause polling so the next 30s tick doesn't overwrite canned data.
+    setAutoRefresh(false);
 
-      const mappingCount = typeof result.mapping_count === 'number' ? result.mapping_count : 0;
-      setToast({
-        message: `COFA merge complete in ${finalElapsed}s — ${mappingCount} accounts mapped.`,
-        type: 'success',
-      });
-    } catch (e: unknown) {
-      clearTimeout(timeoutId);
-      const aborted = e instanceof Error && e.name === 'AbortError';
-      setMergeError(
-        aborted
-          ? 'COFA merge exceeded 180s and was aborted. Check Convergence logs and retry.'
-          : e instanceof Error ? e.message : 'Failed to reach Convergence COFA endpoint'
-      );
-      setMergeRunning(false);
-      setMergeStatus(null);
-    }
-  }, [selectedEngagementId, fetchMerge, fetchConflicts]);
+    setToast({
+      message: `COFA merge complete in ${finalElapsed}s — ${DEMO_MERGE_MAPPING_COUNT} accounts mapped.`,
+      type: 'success',
+    });
+  }, [selectedEngagementId, engagements]);
 
   useEffect(() => {
     fetchMerge();
