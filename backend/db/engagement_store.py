@@ -97,15 +97,41 @@ def _fetch_sanctioned_entities() -> set[str]:
     return entities
 
 
+def _fetch_convergence_entities() -> set[str]:
+    """Shape-compliant entity_ids already present in convergence_triples.
+
+    Convergence's own triple store is authoritative for what data exists.
+    Any entity_id carrying active rows AND matching the shape regex is
+    sanctioned for engagement creation — whether it arrived via Farm
+    template push or via scripts/sync_entity_catalog.py.
+    """
+    from backend.core.db import get_connection
+    from backend.core.entity_id import ENTITY_ID_PATTERN
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT DISTINCT entity_id FROM convergence_triples "
+                "WHERE is_active = true AND entity_id ~ %s",
+                (ENTITY_ID_PATTERN,),
+            )
+            return {row[0] for row in cur.fetchall()}
+
+
 def _validate_sanctioned_entities(acquirer: str, target: str) -> None:
-    sanctioned = _fetch_sanctioned_entities()
+    from backend.core.entity_id import is_valid_entity_id
+
+    farm_set = _fetch_sanctioned_entities()
+    convergence_set = _fetch_convergence_entities()
+    sanctioned = {e for e in (farm_set | convergence_set) if is_valid_entity_id(e)}
     rejected = sorted({e for e in (acquirer, target) if e not in sanctioned})
     if rejected:
         raise UnsanctionedEntityError(
-            f"entity_id(s) not in Farm's sanctioned set: {rejected}. "
-            f"Farm configured entities: {sorted(sanctioned)}. "
-            f"Add farm_config_{{entity}}.yaml in Farm before creating "
-            f"engagements with new entities."
+            f"entity_id(s) not sanctioned: {rejected}. "
+            f"Sanctioned = shape-compliant entities with active triples in "
+            f"convergence_triples or Farm templates. Current sanctioned set: "
+            f"{sorted(sanctioned)}. Run scripts/sync_entity_catalog.py to "
+            f"add more Farm-sourced entities."
         )
 
 
