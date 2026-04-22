@@ -20,29 +20,28 @@ from backend.engine.what_if_v2 import WhatIfEngineV2
 from backend.engine.revenue_bridge import RevenueBridgeV2
 from backend.engine.entity_resolution_v2 import EntityResolutionV2
 
-# --- Load seed constants ---
-_manifest_path = Path(__file__).parent.parent / "data" / "seed_manifest.json"
-with open(_manifest_path) as f:
-    _manifest = json.load(f)
-
-TENANT_ID = _manifest["tenant_id"]
-RUN_ID = _manifest["run_id"]
-ENTITY_A = _manifest["entity_a_id"]
-ENTITY_B = _manifest["entity_b_id"]
-
-# Ground truth from Farm API (B10)
-from tests.conftest import gt_metric, gt_overlap_count, _get_ground_truth
+# --- Seed constants resolved from live catalog (no seed_manifest dependency) ---
+from tests.conftest import TENANT_ID, RUN_ID, ENTITY_A, ENTITY_B, gt_metric, gt_overlap_count
 
 
 def _sum_ebitda_adjustments(entity: str) -> float:
-    """Sum all EBITDA adjustment amount_current values for an entity from ground truth."""
-    gt = _get_ground_truth()
-    agt = gt.get("atemporal_ground_truth", {}).get(entity, {})
-    total = sum(
-        props.get("amount_current", 0)
-        for concept, props in agt.items()
-        if concept.startswith("ebitda_adjustment.")
-    )
+    """Sum latest-stage ebitda_adjustment amounts for entity from convergence_triples."""
+    import os
+    import psycopg2
+    with psycopg2.connect(os.environ["DATABASE_URL"]) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT value FROM convergence_triples "
+                "WHERE is_active = true AND entity_id = %s "
+                "  AND concept LIKE 'ebitda_adjustment.%%' "
+                "  AND property = 'amount_current'",
+                (entity,),
+            )
+            rows = cur.fetchall()
+    total = 0.0
+    for (raw,) in rows:
+        val = json.loads(raw) if isinstance(raw, str) else raw
+        total += float(val)
     return round(total, 2)
 
 
@@ -134,7 +133,6 @@ def test_resolver_to_cross_sell(cross_sell):
 # --- Test 7: Resolver → EBITDA Bridge ---
 def test_resolver_to_ebitda_bridge(resolver, bridge):
     """Bridge reported EBITDA matches resolver's income statement EBITDA."""
-    # Meridian bridge
     m_bridge = bridge.get_bridge(ENTITY_A)
     m_stmt = resolver.get_income_statement(ENTITY_A, "2025-Q1")
     # The bridge may use annual or quarterly EBITDA — check it's consistent

@@ -7,7 +7,7 @@ import pytest
 from backend.engine.overlap_v2 import OverlapEngineV2
 from backend.engine.cross_sell_v2 import CrossSellEngineV2
 
-from tests.conftest import TENANT_ID, RUN_ID, gt_overlap_count
+from tests.conftest import TENANT_ID, RUN_ID, ENTITY_A, ENTITY_B, gt_overlap_count
 
 
 @pytest.fixture
@@ -39,12 +39,11 @@ def test_overlap_percentages(overlap):
     assert summary["vendor"]["overlap_pct_a"] == 100.0
     assert summary["vendor"]["overlap_pct_b"] == 100.0
 
-# --- Test 4: Overlapping concept list ---
+# --- Test 4: Overlapping concept list (structural count only) ---
 def test_customer_overlap_list(overlap):
     concepts = overlap.get_overlapping_concepts("customer")
     assert len(concepts) == gt_overlap_count("customer")
-    names = [c["concept"] for c in concepts]
-    assert "customer.accenture" in names
+    # Concept names vary with catalog entity — no specific-name assertion.
 
 # --- Test 5: Vendor complete overlap ---
 def test_vendor_complete_overlap(overlap):
@@ -53,12 +52,12 @@ def test_vendor_complete_overlap(overlap):
 
 # --- Test 6: fixture-tied entity-only concepts, deleted ---
 
-# --- Test 7: Entity-only vendors ---
+# --- Test 7: Entity-only vendors (structural — complete overlap) ---
 def test_vendor_only(overlap):
-    only_m = overlap.get_entity_only_concepts("vendor", "meridian")
-    only_c = overlap.get_entity_only_concepts("vendor", "cascadia")
-    assert len(only_m) == 0
-    assert len(only_c) == 0
+    only_a = overlap.get_entity_only_concepts("vendor", ENTITY_A)
+    only_b = overlap.get_entity_only_concepts("vendor", ENTITY_B)
+    assert len(only_a) == 0
+    assert len(only_b) == 0
 
 # --- Test 8: Cross-sell opportunities exist ---
 def test_cross_sell_has_opportunities(cross_sell):
@@ -76,8 +75,8 @@ def test_cross_sell_summary(cross_sell):
 # --- Test 10: Cross-sell has at least one direction ---
 def test_cross_sell_bidirectional(cross_sell):
     summary = cross_sell.get_cross_sell_summary()
-    # Service portfolios may not be symmetric — Cascadia (BPM) has services
-    # cross-sellable to Meridian's clients but not always vice versa.
+    # Service portfolios may not be symmetric between the two synced entities;
+    # assert at least one direction is populated.
     a_to_b = summary["by_direction"]["a_to_b"]
     b_to_a = summary["by_direction"]["b_to_a"]
     assert (a_to_b + b_to_a) > 0, f"Expected cross-sell in at least one direction, got a_to_b={a_to_b}, b_to_a={b_to_a}"

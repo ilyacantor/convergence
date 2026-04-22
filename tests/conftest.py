@@ -1,269 +1,90 @@
+"""Shared test fixtures — catalog-sourced entities + live-DB ground truth.
+
+The fixture seed that previously lived in seed_manifest.json was removed in
+feature/entity-id-freely-selectable. Tests now resolve their entity pair
+via the live Convergence catalog (GET /api/convergence/catalog) at session
+start, and ground-truth values are read from convergence_triples directly
+— the same store the engines read. Structural assertions (identity checks,
+field presence, counts) are what survives; value-specific assertions that
+bound to a particular entity's content were deleted in Commit 3.
+
+Required environment:
+- Convergence backend running at CONVERGENCE_API_URL (default localhost:8010)
+- convergence_triples populated via scripts/sync_entity_catalog.py (at least
+  two shape-compliant entities present). The conftest fails loudly if the
+  catalog returns fewer than 2 passing entities.
 """
-Shared test fixtures — tenant_id, run_id, and ground truth from Farm.
 
-Copied from DCL's conftest.py. Convergence tests use the same seed data
-and Farm ground truth as DCL tests.
-
-Auto-seed: if the expected overlap data is missing from the DB (e.g. because
-a Console ME pipeline replaced the data), this conftest re-generates
-comprehensive triples via Farm and pushes them to Convergence before tests run.
-"""
-
-import json
 import os
-from pathlib import Path
 
 import httpx
-import psycopg2
 import pytest
 
-_MANIFEST_PATH = Path(__file__).resolve().parent.parent / "data" / "seed_manifest.json"
+
+CONVERGENCE_URL = os.environ.get("CONVERGENCE_API_URL", "http://localhost:8010")
 
 
-def _load_manifest() -> dict:
-    """Load seed_manifest.json. Fails loudly if missing."""
-    if not _MANIFEST_PATH.exists():
-        raise FileNotFoundError(
-            f"seed_manifest.json not found at {_MANIFEST_PATH}. "
-            f"Run the seed pipeline before executing tests."
-        )
-    with open(_MANIFEST_PATH) as f:
-        return json.load(f)
-
-
-def _db_has_overlap_data(tenant_id: str, run_id: str) -> bool:
-    """Check if convergence_triples has customer overlap data for this run."""
-    db_url = os.environ.get("DATABASE_URL")
-    if not db_url:
-        return False
+def _fetch_catalog() -> dict:
+    url = f"{CONVERGENCE_URL}/api/convergence/catalog"
     try:
-        conn = psycopg2.connect(db_url)
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT count(*) FROM ("
-            "  SELECT concept FROM convergence_triples"
-            "  WHERE tenant_id=%s AND run_id=%s"
-            "    AND concept LIKE 'customer.%%'"
-            "    AND concept NOT LIKE 'customer.%%.%%'"
-            "  GROUP BY concept HAVING COUNT(DISTINCT entity_id) > 1"
-            ") x",
-            (tenant_id, run_id),
-        )
-        overlap_count = cur.fetchone()[0]
-        conn.close()
-        return overlap_count > 0
-    except Exception:
-        return False
-
-
-def _reseed_from_farm(manifest: dict) -> dict:
-    """Generate comprehensive triples via Farm and push to Convergence.
-
-    Returns updated manifest dict with new run_id and farm_run_id.
-    Raises on failure — no silent fallback.
-    """
-    farm_url = os.environ.get("FARM_API_URL", "http://localhost:8003")
-    convergence_url = os.environ.get(
-        "CONVERGENCE_API_URL", "http://localhost:8010"
-    )
-    tenant_id = manifest["tenant_id"]
-
-    # Step 1: generate comprehensive triples (includes overlap data)
-    gen_resp = httpx.post(
-        f"{farm_url}/api/business-data/generate-multi-entity-triples",
-        json={
-            "tenant_id": tenant_id,
-            "entities": [manifest["entity_a_id"], manifest["entity_b_id"]],
-            "seed": 42,
-        },
-        timeout=120.0,
-    )
-    if gen_resp.status_code != 200:
-        raise RuntimeError(
-            f"Farm generate-multi-entity-triples failed: "
-            f"HTTP {gen_resp.status_code} — {gen_resp.text[:300]}"
-        )
-    gen_data = gen_resp.json()
-    if "error" in gen_data:
-        raise RuntimeError(
-            "Farm comprehensive generation endpoint returned an error: "
-            f"{gen_data['error']} — this is an upstream regression, "
-            "not a seed data problem."
-        )
-    farm_run_id = gen_data["farm_manifest_id"]
-
-    # Step 2: push to Convergence ingest
-    push_resp = httpx.post(
-        f"{farm_url}/api/business-data/triple-runs/{farm_run_id}/push-to-dcl",
-        json={
-            "dcl_url": f"{convergence_url}/api/convergence/ingest-triples",
-            "tenant_id": tenant_id,
-        },
-        timeout=120.0,
-    )
-    if push_resp.status_code != 200:
-        raise RuntimeError(
-            f"Farm push-to-dcl failed: "
-            f"HTTP {push_resp.status_code} — {push_resp.text[:300]}"
-        )
-    push_data = push_resp.json()
-    if not push_data.get("success"):
-        raise RuntimeError(
-            f"Farm push-to-dcl returned success=false: {push_data}"
-        )
-
-    # Step 3: read the new run_id from convergence_tenant_runs
-    db_url = os.environ.get("DATABASE_URL")
-    conn = psycopg2.connect(db_url)
-    cur = conn.cursor()
-    cur.execute(
-        "SELECT current_run_id FROM convergence_tenant_runs WHERE tenant_id=%s",
-        (tenant_id,),
-    )
-    new_run_id = cur.fetchone()[0]
-    cur.execute(
-        "SELECT count(*) FROM convergence_triples WHERE run_id=%s",
-        (new_run_id,),
-    )
-    triple_count = cur.fetchone()[0]
-
-    # Verify all required entity-level identity types are present
-    cur.execute(
-        "SELECT DISTINCT split_part(concept, '.', 1) "
-        "FROM convergence_triples "
-        "WHERE run_id=%s "
-        "  AND (concept LIKE 'customer.%%' "
-        "       OR concept LIKE 'vendor.%%' "
-        "       OR concept LIKE 'employee.%%')",
-        (new_run_id,),
-    )
-    found_types = {row[0] for row in cur.fetchall()}
-    conn.close()
-
-    missing_types = {"customer", "vendor", "employee"} - found_types
-    if missing_types:
-        raise RuntimeError(
-            "Farm comprehensive generation endpoint did not produce expected "
-            "entity-level identity triples — this is an upstream regression, "
-            "not a seed data problem. "
-            f"Missing concept prefixes: {sorted(missing_types)}. "
-            f"Found: {sorted(found_types)}."
-        )
-
-    # Step 4: update manifest file
-    manifest["run_id"] = new_run_id
-    manifest["farm_run_id"] = farm_run_id
-    manifest["total_triples"] = triple_count
-    with open(_MANIFEST_PATH, "w") as f:
-        json.dump(manifest, f, indent=2)
-        f.write("\n")
-
-    return manifest
-
-
-def _ensure_seed_data() -> dict:
-    """Load manifest and re-seed if overlap data is missing."""
-    manifest = _load_manifest()
-    if not _db_has_overlap_data(manifest["tenant_id"], manifest["run_id"]):
-        manifest = _reseed_from_farm(manifest)
-    return manifest
-
-
-_manifest = _ensure_seed_data()
-
-TENANT_ID: str = _manifest["tenant_id"]
-RUN_ID: str = _manifest["run_id"]
-FARM_RUN_ID: str = _manifest["farm_run_id"]
-
-
-def _fetch_ground_truth() -> dict:
-    """Fetch ground truth from Farm's API. Fails loudly if unavailable."""
-    farm_url = os.environ.get("FARM_API_URL", "http://localhost:8003")
-    url = f"{farm_url}/api/business-data/ground-truth/{FARM_RUN_ID}"
-    try:
-        response = httpx.get(url, timeout=30.0)
+        resp = httpx.get(url, timeout=10.0)
     except httpx.ConnectError as e:
         raise ConnectionError(
-            f"Cannot reach Farm at {farm_url} — is Farm running? "
-            f"Ground truth is required for test verification (B10). Error: {e}"
+            f"Cannot reach Convergence catalog at {url} — is the service "
+            f"running? Error: {e}"
         ) from e
-    if response.status_code != 200:
-        raise ValueError(
-            f"Ground truth not available from Farm at {url}: "
-            f"HTTP {response.status_code} — {response.text[:200]}. "
-            f"Ensure Farm is running and has data for {FARM_RUN_ID}."
+    if resp.status_code != 200:
+        raise RuntimeError(
+            f"Catalog endpoint returned HTTP {resp.status_code}: "
+            f"{resp.text[:200]}"
         )
-    return response.json()
+    return resp.json()
 
 
-_ground_truth_cache = None
+def _resolve_catalog_pair() -> tuple[str, str, str, str]:
+    """Return (tenant_id, entity_a, entity_b, pipeline_run_id).
 
-
-def _get_ground_truth() -> dict:
-    global _ground_truth_cache
-    if _ground_truth_cache is None:
-        _ground_truth_cache = _fetch_ground_truth()
-    return _ground_truth_cache
-
-
-def gt_metric(entity: str, period: str, concept: str) -> float:
-    """Look up a single ground truth value by entity/period/concept."""
-    gt = _get_ground_truth()
-    tgt = gt.get("triple_ground_truth", {})
-    entity_data = tgt.get(entity)
-    if entity_data is None:
-        raise KeyError(
-            f"Entity '{entity}' not found in ground truth. "
-            f"Available: {list(tgt.keys())}"
+    tenant_id is a real UUID owned by the sync script's synthetic tenant.
+    pipeline_run_id is resolved from convergence_tenant_runs; None means
+    'use is_active = true' in SQL scopes.
+    """
+    cat = _fetch_catalog()
+    passing = cat.get("passing_entities") or []
+    if len(passing) < 2:
+        raise RuntimeError(
+            f"Convergence catalog has fewer than 2 shape-compliant entities "
+            f"({len(passing)}). Run scripts/sync_entity_catalog.py to seed."
         )
-    period_data = entity_data.get(period)
-    if period_data is None:
-        raise KeyError(
-            f"Period '{period}' not found for entity '{entity}'. "
-            f"Available: {sorted(entity_data.keys())}"
-        )
-    if concept not in period_data:
-        raise KeyError(
-            f"Concept '{concept}' not found for {entity}/{period}. "
-            f"Available: {sorted(period_data.keys())}"
-        )
-    return period_data[concept]
+    entity_a_row, entity_b_row = passing[0], passing[1]
+    tenant_id = entity_a_row["tenant_id"]
+    entity_a = entity_a_row["entity_id"]
+    entity_b = entity_b_row["entity_id"]
+    return tenant_id, entity_a, entity_b, None
 
 
-def gt_overlap_count(category: str) -> int:
-    """Look up overlap count by category (customer, vendor, employee)."""
-    gt = _get_ground_truth()
-    counts = gt.get("overlap_counts", {})
-    if category not in counts:
-        raise KeyError(
-            f"Overlap category '{category}' not found. "
-            f"Available: {list(counts.keys())}"
-        )
-    return counts[category]
+_TENANT_ID, _ENTITY_A, _ENTITY_B, _RUN_ID = _resolve_catalog_pair()
+
+# Module-level exports that legacy tests import directly.
+TENANT_ID: str = _TENANT_ID
+RUN_ID = _RUN_ID  # None means tests use is_active scoping in SQL
+ENTITY_A: str = _ENTITY_A
+ENTITY_B: str = _ENTITY_B
 
 
-def gt_atemporal(entity: str, concept: str, prop: str = "amount_current") -> float:
-    """Look up an atemporal ground truth value."""
-    gt = _get_ground_truth()
-    agt = gt.get("atemporal_ground_truth", {})
-    entity_data = agt.get(entity)
-    if entity_data is None:
-        raise KeyError(
-            f"Entity '{entity}' not found in atemporal ground truth. "
-            f"Available: {list(agt.keys())}"
-        )
-    concept_data = entity_data.get(concept)
-    if concept_data is None:
-        raise KeyError(
-            f"Concept '{concept}' not found for entity '{entity}'. "
-            f"Available: {sorted(k for k in entity_data.keys())}"
-        )
-    if prop not in concept_data:
-        raise KeyError(
-            f"Property '{prop}' not found for {entity}/{concept}. "
-            f"Available: {sorted(concept_data.keys())}"
-        )
-    return concept_data[prop]
+@pytest.fixture(scope="session")
+def catalog_pair() -> dict:
+    """Session-scoped entity pair resolved from the live catalog.
+
+    Yields:
+        {'tenant_id': str, 'entity_a': str, 'entity_b': str,
+         'pipeline_run_id': str | None}
+    """
+    return {
+        "tenant_id": TENANT_ID,
+        "entity_a": ENTITY_A,
+        "entity_b": ENTITY_B,
+        "pipeline_run_id": RUN_ID,
+    }
 
 
 @pytest.fixture
@@ -272,5 +93,96 @@ def seed_tenant_id() -> str:
 
 
 @pytest.fixture
-def seed_run_id() -> str:
+def seed_run_id():
     return RUN_ID
+
+
+# --- Ground-truth helpers: query convergence_triples directly ----------------
+#
+# Previous Farm-API ground truth was keyed on fixture entity names. Since
+# sync_entity_catalog.py remaps entity_ids when loading triples, Farm ground
+# truth is not reachable by catalog entity_id. Instead, the live triples in
+# convergence_triples ARE the ground truth: whatever the engines compute,
+# they compute from these rows.
+#
+# Tests using these helpers assert 'engine output matches raw triple value'
+# — a structural check, not a fixture-value check.
+
+
+def _db_conn():
+    import psycopg2
+    db_url = os.environ.get("DATABASE_URL")
+    if not db_url:
+        raise RuntimeError("DATABASE_URL is not set — cannot read ground truth")
+    return psycopg2.connect(db_url)
+
+
+def gt_metric(entity: str, period: str, concept: str) -> float:
+    """Query the raw value for (entity, period, concept) from convergence_triples.
+
+    Returns the value from the property='amount' row. Raises KeyError if
+    the triple does not exist in the active snapshot for this entity.
+    """
+    with _db_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT value FROM convergence_triples "
+                "WHERE is_active = true AND entity_id = %s "
+                "  AND concept = %s AND period = %s AND property = 'amount' "
+                "ORDER BY created_at DESC LIMIT 1",
+                (entity, concept, period),
+            )
+            row = cur.fetchone()
+    if row is None:
+        raise KeyError(
+            f"No triple for entity={entity!r} period={period!r} "
+            f"concept={concept!r} in convergence_triples"
+        )
+    val = row[0]
+    if isinstance(val, str):
+        import json
+        val = json.loads(val)
+    return float(val)
+
+
+def gt_overlap_count(category: str) -> int:
+    """Count distinct concepts in `category` that both entities share."""
+    with _db_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT COUNT(*) FROM ("
+                "  SELECT concept FROM convergence_triples "
+                "  WHERE is_active = true "
+                "    AND concept LIKE %s "
+                "    AND concept NOT LIKE %s "
+                "    AND entity_id IN (%s, %s) "
+                "  GROUP BY concept "
+                "  HAVING COUNT(DISTINCT entity_id) > 1"
+                ") sub",
+                (f"{category}.%", f"{category}.%.%", ENTITY_A, ENTITY_B),
+            )
+            return int(cur.fetchone()[0])
+
+
+def gt_atemporal(entity: str, concept: str, prop: str = "amount_current") -> float:
+    """Return an atemporal property (e.g. ebitda_adjustment.*) value."""
+    with _db_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT value FROM convergence_triples "
+                "WHERE is_active = true AND entity_id = %s "
+                "  AND concept LIKE %s AND property = %s "
+                "ORDER BY created_at DESC LIMIT 1",
+                (entity, f"{concept}%", prop),
+            )
+            row = cur.fetchone()
+    if row is None:
+        raise KeyError(
+            f"No atemporal triple for entity={entity!r} concept={concept!r} "
+            f"property={prop!r}"
+        )
+    val = row[0]
+    if isinstance(val, str):
+        import json
+        val = json.loads(val)
+    return float(val)
