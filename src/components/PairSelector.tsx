@@ -14,6 +14,7 @@ interface CatalogEntity {
 interface CatalogResponse {
   passing_entities: CatalogEntity[];
   existing_engagements: { engagement_id: string; acquirer_entity_id: string; target_entity_id: string }[];
+  empty_reason?: string;
 }
 
 const BASE = '/api/convergence';
@@ -173,9 +174,10 @@ export default function PairSelector() {
       {entities.length === 0 && !error ? (
         <div className="bg-amber-950/40 border border-amber-800/50 rounded-lg px-4 py-8 text-center">
           <AlertTriangle className="w-6 h-6 text-amber-400 mx-auto mb-3" />
-          <p className="text-amber-200 text-sm mb-1">No entities pass the contract check.</p>
+          <p className="text-amber-200 text-sm mb-1">No entities available for pair selection.</p>
           <p className="text-amber-400/60 text-xs">
-            Farm must push entities with namespace_type and business_record properties before pair selection is available.
+            {catalog?.empty_reason ||
+              'No shape-compliant entities in convergence_triples. Run: python scripts/sync_entity_catalog.py'}
           </p>
         </div>
       ) : (
