@@ -86,6 +86,22 @@ class UpsellEngineV2:
         """Get the two entity_ids, ordered descending (entity_a first)."""
         return self._overlap_engine._get_entities()
 
+    def _has_triples_for_entity(self, entity_id: str) -> bool:
+        """True if the entity has any active triple rows in convergence_triples.
+
+        Used to report per-entity snapshot presence in informative error
+        messages when a required concept family is missing. Answers
+        'is this entity's snapshot present at all' vs 'does it have the
+        specific concept we need'.
+        """
+        sql = f"""
+            SELECT 1
+            FROM convergence_triples
+            WHERE tenant_id = %s AND {self._run_clause} AND entity_id = %s
+            LIMIT 1
+        """
+        return bool(self._query(sql, [self.tenant_id, *self._run_params, entity_id]))
+
     def _get_service_portfolio(self, entity_id: str) -> dict[str, dict]:
         """
         Get service portfolio for an entity from service.* triples.
@@ -290,10 +306,14 @@ class UpsellEngineV2:
         b_engagements = self._get_customer_service_engagements(entity_b)
 
         if not a_engagements and not b_engagements:
+            a_snapshot_present = self._has_triples_for_entity(entity_a)
+            b_snapshot_present = self._has_triples_for_entity(entity_b)
             raise ValueError(
-                f"UpsellEngineV2: no customer_service.* triples found for either entity "
-                f"in tenant_id='{self.tenant_id}' — run the Farm pipeline to generate "
-                f"customer-service engagement triples before using the upsell report"
+                "UpsellEngineV2: customer_service.* triples absent.\n"
+                f"  {entity_a} snapshot present: {a_snapshot_present}.\n"
+                f"  {entity_b} snapshot present: {b_snapshot_present}.\n"
+                f"  Regenerate the SE snapshot(s) with customer_service "
+                f"extractors enabled, then retry."
             )
 
         # Find shared customers
