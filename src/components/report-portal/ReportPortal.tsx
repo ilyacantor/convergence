@@ -1,5 +1,12 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { fetchReport, fetchDimensionalDetail, fetchCombiningStatement, fetchCrossSell, fetchUpsell, fetchRevenueByCustomer, fetchEBITDABridge, fetchWhatIf, fetchQofE, fetchReportDimensions, fetchOverlapSummary, fetchOverlapDomain, fetchOverlapEntityOnly, getEngagementContext } from "./api";
+import { fetchReport, fetchDimensionalDetail, fetchCombiningStatement, fetchRevenueByCustomer, fetchEBITDABridge, fetchWhatIf, fetchReportDimensions, fetchOverlapSummary, fetchOverlapDomain, fetchOverlapEntityOnly, getEngagementContext } from "./api";
+// DEMO HARDCODE — NOT REAL DATA.
+// X-Sell / Upsell / QofE tabs render identical canned numbers
+// regardless of entity pair selection. Engines, Farm templates,
+// and backend data are bypassed entirely. Restore real wiring
+// when Farm's Multi-Entity templates emit customer/service data
+// and engines are validated against them.
+import { DEMO_CROSS_SELL, DEMO_UPSELL, DEMO_QOFE } from "./demoReportData";
 import type { OverlapDomain } from "./api";
 import type { PeriodDimension, DimensionalDetailResponse } from "./api";
 import React from "react";
@@ -978,27 +985,22 @@ function OverlapTab() {
 // ============================================================
 
 function CrossSellTab() {
-  const [data, setData] = useState<CrossSellData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  // DEMO HARDCODE — see banner at top of file. Canned data regardless of
+  // entity pair selection; entity names interpolate from engagement context.
+  const data: CrossSellData = DEMO_CROSS_SELL;
   const [direction, setDirection] = useState<"a_to_b" | "b_to_a">("a_to_b");
   const [expanded, setExpanded] = useState<string | null>(null);
   const [entityAName, setEntityAName] = useState('Entity A');
   const [entityBName, setEntityBName] = useState('Entity B');
 
   useEffect(() => {
-    Promise.all([fetchCrossSell(), getEngagementContext()])
-      .then(([crossSellData, ctx]) => {
-        setData(crossSellData);
+    getEngagementContext()
+      .then((ctx) => {
         setEntityAName(ctx.entity_a.display_name);
         setEntityBName(ctx.entity_b.display_name);
       })
-      .catch((err) => setError(err instanceof Error ? err.message : String(err)))
-      .finally(() => setLoading(false));
+      .catch(() => { /* keep placeholder names */ });
   }, []);
-
-  if (loading) return <LoadingState message="Loading cross-sell pipeline..." />;
-  if (error || !data) return <ErrorState error={error || "No data"} onRetry={() => { setLoading(true); setError(null); fetchCrossSell().then(setData).catch((e) => setError(String(e))).finally(() => setLoading(false)); }} />;
 
   const s = data.summary;
   const candidates = direction === "a_to_b" ? data.a_to_b : data.b_to_a;
@@ -1127,27 +1129,22 @@ function CrossSellTab() {
 // ============================================================
 
 function UpsellTab() {
-  const [data, setData] = useState<UpsellData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  // DEMO HARDCODE — see banner at top of file. Canned data regardless of
+  // entity pair selection; entity names interpolate from engagement context.
+  const data: UpsellData = DEMO_UPSELL;
   const [direction, setDirection] = useState<"a_to_b" | "b_to_a">("a_to_b");
   const [expanded, setExpanded] = useState<string | null>(null);
   const [entityAName, setEntityAName] = useState('Entity A');
   const [entityBName, setEntityBName] = useState('Entity B');
 
   useEffect(() => {
-    Promise.all([fetchUpsell(), getEngagementContext()])
-      .then(([upsellData, ctx]) => {
-        setData(upsellData);
+    getEngagementContext()
+      .then((ctx) => {
         setEntityAName(ctx.entity_a.display_name);
         setEntityBName(ctx.entity_b.display_name);
       })
-      .catch((err) => setError(err instanceof Error ? err.message : String(err)))
-      .finally(() => setLoading(false));
+      .catch(() => { /* keep placeholder names */ });
   }, []);
-
-  if (loading) return <LoadingState message="Loading upsell opportunities..." />;
-  if (error || !data) return <ErrorState error={error || "No data"} onRetry={() => { setLoading(true); setError(null); fetchUpsell().then(setData).catch((e) => setError(String(e))).finally(() => setLoading(false)); }} />;
 
   const s = data.summary;
   const candidates = direction === "a_to_b" ? data.a_to_b : data.b_to_a;
@@ -2042,21 +2039,11 @@ function WhatIfTab({ period }: { period: string }) {
 type QofESubView = "bridge" | "ebitda_bridge" | "sustainability" | "revenue" | "working_capital" | "new_items";
 
 function QofETab() {
-  const [data, setData] = useState<QofEData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  // DEMO HARDCODE — see banner at top of file. Canned data regardless of
+  // entity pair selection; engines and backend are bypassed entirely.
+  const data: QofEData = DEMO_QOFE;
   const [subView, setSubView] = useState<QofESubView>("bridge");
   const [expandedAdj, setExpandedAdj] = useState<string | null>(null);
-
-  useEffect(() => {
-    fetchQofE()
-      .then(setData)
-      .catch((err) => setError(err instanceof Error ? err.message : String(err)))
-      .finally(() => setLoading(false));
-  }, []);
-
-  if (loading) return <LoadingState message="Loading Quality of Earnings..." />;
-  if (error || !data) return <ErrorState error={error || "No data"} onRetry={() => { setLoading(true); setError(null); fetchQofE().then(setData).catch((e) => setError(String(e))).finally(() => setLoading(false)); }} />;
 
   const sus = data.sustainability_score;
   const rq = data.revenue_quality;
