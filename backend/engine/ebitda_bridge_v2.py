@@ -193,22 +193,48 @@ class EBITDABridgeV2:
             )
 
         # Group by (base_concept, stage) -> {property: value}
+        # Step 4 Validate: every adjustment row must carry a non-NULL period.
+        # A row with NULL/missing period means the upstream writer produced a
+        # malformed triple — fail loud with the full offending triple so the
+        # operator can see exactly what broke.
         stage_data: dict[str, dict[str, dict[str, object]]] = {}
         period_map: dict[str, str | None] = {}
         for row in rows:
             base_concept, stage = _parse_concept(row["concept"])
+            period_val = row.get("period")
+            if period_val is None or (isinstance(period_val, str) and not period_val.strip()):
+                raise ValueError(
+                    "ebitda_adjustment triple rejected by Validate step — "
+                    "missing period. Offending triple: "
+                    f"(entity_id={entity_id!r}, concept={row['concept']!r}, "
+                    f"property={row['property']!r}, lifecycle_stage={stage!r}, "
+                    f"period={period_val!r})"
+                )
             if base_concept not in stage_data:
                 stage_data[base_concept] = {}
             if stage not in stage_data[base_concept]:
                 stage_data[base_concept][stage] = {}
             stage_data[base_concept][stage][row["property"]] = row["value"]
-            if row.get("period"):
-                period_map[base_concept] = row["period"]
+            period_map[base_concept] = period_val
 
         # Build adjustment list — one entry per base concept
         adjustments = []
         for base_concept in sorted(stage_data.keys()):
             stages = stage_data[base_concept]
+
+            # _meta suffix is a fixture-era artifact that must never reach
+            # the lever map. If it does, an upstream writer wrote a
+            # malformed concept — fail loud with the offending triple.
+            if base_concept.endswith("_meta") or "_meta" in base_concept.split("."):
+                sample_stage = next(iter(stages.keys()))
+                sample_props = stages[sample_stage]
+                raise ValueError(
+                    "ebitda_adjustment concept contains banned _meta suffix — "
+                    "refusing to classify. Offending triple sample: "
+                    f"(entity_id={entity_id!r}, concept={base_concept!r}, "
+                    f"lifecycle_stage={sample_stage!r}, "
+                    f"properties={list(sample_props.keys())})"
+                )
 
             lever = _LEVER_MAP.get(base_concept)
             if lever is None:
