@@ -154,7 +154,8 @@ export default function PairSelector() {
   }
 
   return (
-    <div className="max-w-[900px] mx-auto p-6 space-y-6">
+    <div className="h-full overflow-y-auto">
+      <div className="max-w-[900px] mx-auto p-6 space-y-6">
       <div className="flex items-center gap-3">
         <button
           onClick={() => navigate('/engagements')}
@@ -249,6 +250,7 @@ export default function PairSelector() {
           </div>
         </>
       )}
+      </div>
     </div>
   );
 }
