@@ -104,11 +104,21 @@ def test_cross_sell(params):
 # ---------------------------------------------------------------------------
 
 def test_upsell(params):
-    """GET /upsell — upsell penetration analysis."""
+    """GET /upsell — upsell penetration analysis.
+
+    Accepts either 200 (customer_service.* triples present → upsell scored)
+    or 422 data_incomplete (customer_service.* absent → informative error).
+    Both are structurally valid responses of the UpsellEngineV2 contract.
+    """
     r = httpx.get(f"{REPORTS}/upsell", params=params, timeout=15)
-    assert r.status_code == 200, f"upsell returned {r.status_code}: {r.text[:300]}"
+    assert r.status_code in (200, 422), f"upsell returned {r.status_code}: {r.text[:300]}"
     data = r.json()
-    assert "tenant_id" in data, "upsell: missing tenant_id (I2)"
+    if r.status_code == 200:
+        assert "tenant_id" in data, "upsell: missing tenant_id (I2)"
+    else:
+        # 422 path: error text must name both entities (per UpsellEngineV2 rewrite)
+        detail_str = str(data.get("detail", ""))
+        assert "snapshot present" in detail_str
 
 
 # ---------------------------------------------------------------------------

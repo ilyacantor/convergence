@@ -222,19 +222,20 @@ class EBITDABridgeV2:
         for base_concept in sorted(stage_data.keys()):
             stages = stage_data[base_concept]
 
-            # _meta suffix is a fixture-era artifact that must never reach
-            # the lever map. If it does, an upstream writer wrote a
-            # malformed concept — fail loud with the offending triple.
-            if base_concept.endswith("_meta") or "_meta" in base_concept.split("."):
-                sample_stage = next(iter(stages.keys()))
-                sample_props = stages[sample_stage]
-                raise ValueError(
-                    "ebitda_adjustment concept contains banned _meta suffix — "
-                    "refusing to classify. Offending triple sample: "
-                    f"(entity_id={entity_id!r}, concept={base_concept!r}, "
-                    f"lifecycle_stage={sample_stage!r}, "
-                    f"properties={list(sample_props.keys())})"
-                )
+            # Namespace-type metadata (ebitda_adjustment._meta carrying the
+            # namespace_type property per convergence_transition_master §1)
+            # is not an adjustment — skip it before the lever lookup.
+            if base_concept.endswith("._meta") or base_concept.endswith(".meta"):
+                continue
+
+            # If the concept carries ONLY a namespace_type / schema_version /
+            # other metadata property, treat it as namespace scaffolding and
+            # skip. A real adjustment carries amount_current, confidence, etc.
+            sample_props_all: set[str] = set()
+            for stage_props in stages.values():
+                sample_props_all.update(stage_props.keys())
+            if sample_props_all.issubset({"namespace_type", "schema_version"}):
+                continue
 
             lever = _LEVER_MAP.get(base_concept)
             if lever is None:

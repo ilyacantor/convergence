@@ -10,17 +10,17 @@ import pytest
 from backend.engine.what_if_v2 import WhatIfEngineV2
 from backend.engine.revenue_bridge import RevenueBridgeV2
 
-from tests.conftest import TENANT_ID, RUN_ID, ENTITY_A
+from tests.conftest import TENANT_ID, RUN_ID, WHATIF_RUN_ID, ENG_DATA, ENTITY_A
 
 
 @pytest.fixture
 def whatif():
-    return WhatIfEngineV2(TENANT_ID, RUN_ID)
+    return WhatIfEngineV2(ENG_DATA, WHATIF_RUN_ID)
 
 
 @pytest.fixture
 def bridge():
-    return RevenueBridgeV2(TENANT_ID, RUN_ID)
+    return RevenueBridgeV2(ENG_DATA)
 
 
 # --- What-if scenario: 10% revenue decline ---
