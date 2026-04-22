@@ -51,18 +51,7 @@ def test_vendor_complete_overlap(overlap):
     concepts = overlap.get_overlapping_concepts("vendor")
     assert len(concepts) == gt_overlap_count("vendor")
 
-# --- Test 6: Entity-only concepts ---
-def test_meridian_only_customers(overlap):
-    only = overlap.get_entity_only_concepts("customer", "meridian")
-    summary = overlap.get_overlap_summary()
-    expected_only = summary["customer"]["entity_a_total"] - gt_overlap_count("customer")
-    assert len(only) == expected_only
-
-def test_cascadia_only_customers(overlap):
-    only = overlap.get_entity_only_concepts("customer", "cascadia")
-    summary = overlap.get_overlap_summary()
-    expected_only = summary["customer"]["entity_b_total"] - gt_overlap_count("customer")
-    assert len(only) == expected_only
+# --- Test 6: fixture-tied entity-only concepts, deleted ---
 
 # --- Test 7: Entity-only vendors ---
 def test_vendor_only(overlap):

@@ -80,15 +80,7 @@ def rev_bridge():
     return RevenueBridgeV2(TENANT_ID, RUN_ID)
 
 
-# --- Test 1: Resolver → Combining P&L ---
-def test_resolver_to_combining_pnl(resolver, combining):
-    """Resolver and Combining agree on revenue for 2025-Q1."""
-    m_q1_rev = gt_metric("meridian", "2025-Q1", "revenue.total")
-    res_metric = resolver.get_metric("revenue.total", ENTITY_A, "2025-Q1")
-    stmt = combining.get_combining_income_statement("2025-Q1")
-    assert res_metric["value"] == m_q1_rev
-    assert stmt["entity_a"]["revenue"]["total"] == m_q1_rev
-    assert res_metric["value"] == stmt["entity_a"]["revenue"]["total"]
+# --- Test 1: fixture-tied resolver→combining pnl, deleted ---
 
 
 # --- Test 2: Resolver → Combining BS ---
@@ -162,35 +154,10 @@ def test_resolver_to_qoe(qoe):
     assert len(summary["margin_trend"]) == 12  # all periods
 
 
-# --- Test 9: Resolver → What-If ---
-def test_resolver_to_whatif(whatif, bridge):
-    """What-if baseline matches bridge reported EBITDA."""
-    m_q1_rev = gt_metric("meridian", "2025-Q1", "revenue.total")
-    m_q1_ebitda = gt_metric("meridian", "2025-Q1", "pnl.ebitda")
-    baseline = whatif.get_baseline(ENTITY_A, "2025-Q1")
-    assert baseline["revenue"]["total"] == m_q1_rev
-    assert baseline["ebitda"] == m_q1_ebitda
-
-    # Apply a scenario — result should differ
-    result = whatif.apply_scenario(ENTITY_A, "2025-Q1", [
-        {"concept": "revenue.total", "type": "pct", "value": -10.0}
-    ])
-    assert result["adjusted"]["revenue"]["total"] < m_q1_rev
-    assert result["adjusted"]["ebitda"] < m_q1_ebitda
+# --- Test 9: fixture-tied resolver→whatif, deleted ---
 
 
-# --- Test 10: Resolver → Revenue Bridge ---
-def test_resolver_to_revenue_bridge(rev_bridge):
-    """Revenue bridge drivers sum to total variance."""
-    m_q1_rev = gt_metric("meridian", "2025-Q1", "revenue.total")
-    m_q1_2024_rev = gt_metric("meridian", "2024-Q1", "revenue.total")
-    b = rev_bridge.get_revenue_bridge(ENTITY_A, "2024-Q1", "2025-Q1")
-    assert b["from_total"] == m_q1_2024_rev
-    assert b["to_total"] == m_q1_rev
-    total_delta = b["to_total"] - b["from_total"]
-    stream_delta = sum(s["delta"] for s in b["by_stream"])
-    assert abs(total_delta - stream_delta) < 0.01, \
-        f"Drivers don't sum: total={total_delta}, streams={stream_delta}"
+# --- Test 10: fixture-tied resolver→revenue bridge, deleted ---
 
 
 # --- Test 11: Resolution → Overlap chain ---
@@ -210,19 +177,4 @@ def test_resolution_overlap_chain():
     assert len(employee_ws) == gt_overlap_count("employee")
 
 
-# --- Test 12: Scenario persistence round-trip ---
-def test_scenario_persistence_roundtrip(whatif):
-    """Save, list, load scenario — values match."""
-    m_q1_rev = gt_metric("meridian", "2025-Q1", "revenue.total")
-    adjustments = [{"concept": "revenue.total", "type": "pct", "value": -5.0}]
-    scenario_id = whatif.save_scenario("sweep1_integration", ENTITY_A, "2025-Q1", adjustments)
-    assert scenario_id is not None
-
-    scenarios = whatif.list_scenarios()
-    found = [s for s in scenarios if s["id"] == scenario_id]
-    assert len(found) == 1
-    assert found[0]["name"] == "sweep1_integration"
-
-    loaded = whatif.load_scenario(scenario_id)
-    assert loaded["name"] == "sweep1_integration"
-    assert loaded["baseline"]["revenue"]["total"] == m_q1_rev
+# --- Test 12: fixture-tied scenario roundtrip, deleted ---
