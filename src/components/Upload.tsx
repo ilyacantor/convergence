@@ -81,11 +81,11 @@ function StatusPill({ status }: { status: string }) {
     parsed_with_warnings: { bg: '#FEF9C3', text: '#854D0E' },
     parsing: { bg: '#DBEAFE', text: '#1E40AF' },
     error: { bg: '#FEE2E2', text: '#991B1B' },
-    pending: { bg: '#F3F4F6', text: '#6B7280' },
+    queued: { bg: '#F3F4F6', text: '#6B7280' },
     converted: { bg: '#DCFCE7', text: '#166534' },
     stubbed: { bg: '#FEF3C7', text: '#92400E' },
   };
-  const c = colors[status] ?? colors.pending!;
+  const c = colors[status] ?? colors.queued!;
   return (
     <span style={{ fontSize: '11px', fontWeight: 600, background: c!.bg, color: c!.text, borderRadius: '4px', padding: '2px 8px' }}>
       {status}
@@ -227,7 +227,7 @@ export default function Upload() {
   const [acquirerFile, setAcquirerFile] = useState<PanelFile>({ upload: null, uploading: false, error: null });
   const [targetFile, setTargetFile] = useState<PanelFile>({ upload: null, uploading: false, error: null });
   const [_intakeStep, setIntakeStep] = useState(-1);
-  const [intakeStatuses, setIntakeStatuses] = useState<string[]>(INTAKE_STEPS.map(() => 'pending'));
+  const [intakeStatuses, setIntakeStatuses] = useState<string[]>(INTAKE_STEPS.map(() => 'queued'));
   const [intakeDurations, setIntakeDurations] = useState<(number | null)[]>(INTAKE_STEPS.map(() => null));
   const [proceeding, setProceeding] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -256,7 +256,7 @@ export default function Upload() {
     setAcquirerFile({ upload: null, uploading: false, error: null });
     setTargetFile({ upload: null, uploading: false, error: null });
     setIntakeStep(-1);
-    setIntakeStatuses(INTAKE_STEPS.map(() => 'pending'));
+    setIntakeStatuses(INTAKE_STEPS.map(() => 'queued'));
     setIntakeDurations(INTAKE_STEPS.map(() => null));
     setError(null);
   }, [activeEngagement?.engagement_id]);
@@ -272,7 +272,7 @@ export default function Upload() {
     if (!acquirerFile.upload || !targetFile.upload) return;
     setProceeding(true);
     setError(null);
-    const statuses = INTAKE_STEPS.map(() => 'pending');
+    const statuses = INTAKE_STEPS.map(() => 'queued');
     const durations: (number | null)[] = INTAKE_STEPS.map(() => null);
 
     const markStep = (i: number, status: string, dur: number | null = null) => {
