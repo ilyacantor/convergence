@@ -223,7 +223,7 @@ export default function PairSelector() {
           {existingPair && (
             <div className="bg-amber-950/40 border border-amber-800/50 rounded-lg px-4 py-3 flex items-center gap-2 text-amber-200 text-sm">
               <AlertTriangle className="w-4 h-4 flex-shrink-0" />
-              This pair already has an engagement ({existingPair.engagement_id.slice(0, 8)}). You can still create a new one.
+              This pair already has an engagement (<strong>{existingPair.acquirer_entity_id} + {existingPair.target_entity_id}</strong>). You can still create a new one.
             </div>
           )}
 
