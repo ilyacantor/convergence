@@ -102,8 +102,8 @@ def _fetch_convergence_entities() -> set[str]:
 
     Convergence's own triple store is authoritative for what data exists.
     Any entity_id carrying active rows AND matching the shape regex is
-    sanctioned for engagement creation — whether it arrived via Farm
-    template push or via scripts/sync_entity_catalog.py.
+    sanctioned for engagement creation — whether it arrived via Farm's
+    snapshot push endpoint or any other valid ingest path.
     """
     from backend.core.db import get_connection
     from backend.core.entity_id import ENTITY_ID_PATTERN

@@ -211,11 +211,11 @@ def seed_run_id():
 
 # --- Ground-truth helpers: query convergence_triples directly ----------------
 #
-# Previous Farm-API ground truth was keyed on fixture entity names. Since
-# sync_entity_catalog.py remaps entity_ids when loading triples, Farm ground
-# truth is not reachable by catalog entity_id. Instead, the live triples in
-# convergence_triples ARE the ground truth: whatever the engines compute,
-# they compute from these rows.
+# sync_entity_catalog.py loads per-snapshot triples via Farm's
+# POST /api/snapshots/{id}/push-triples endpoint, which stamps each
+# triple with entity_id = snapshot.meta.tenant_id (business-key shape).
+# Live triples in convergence_triples ARE the ground truth — whatever
+# the engines compute, they compute from these rows.
 #
 # Tests using these helpers assert 'engine output matches raw triple value'
 # — a structural check, not a fixture-value check.
