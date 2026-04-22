@@ -210,16 +210,6 @@ test.describe('Reports Portal — Combined Entity Tabs (B17 Gate)', () => {
     await waitForDataAndNoErrors(page);
   });
 
-  test('Pipeline tab renders pipeline funnel data', async ({ page }) => {
-    await page.getByRole('button', { name: 'Pipeline' }).click();
-    await expect(page.locator('text=/Loading pipeline/i')).not.toBeVisible({ timeout: 30_000 });
-
-    // Pipeline panels show entity names and period year
-    await expect(page.locator('div >> text="2025"').first()).toBeVisible({ timeout: 10_000 });
-
-    await waitForDataAndNoErrors(page);
-  });
-
   test('What-If tab renders sensitivity levers and presets', async ({ page }) => {
     await page.getByRole('button', { name: 'What-If' }).click();
     await expect(page.locator('text=/Loading what-if/i')).not.toBeVisible({ timeout: 30_000 });
@@ -301,15 +291,6 @@ test.describe('Reports Portal — Single Entity Tabs (B17 Gate)', () => {
     await waitForDataAndNoErrors(page);
   });
 
-  test('Pipeline tab renders single-entity pipeline', async ({ page }) => {
-    await page.getByRole('button', { name: 'Pipeline' }).click();
-    await expect(page.locator('text=/Loading pipeline/i')).not.toBeVisible({ timeout: 30_000 });
-
-    // Pipeline panels show period year
-    await expect(page.locator('div >> text="2025"').first()).toBeVisible({ timeout: 10_000 });
-
-    await waitForDataAndNoErrors(page);
-  });
 });
 
 // ─── Entity switching ─────────────────────────────────────────────────────────

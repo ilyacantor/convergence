@@ -1,15 +1,13 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { fetchReport, fetchDimensionalDetail, fetchCombiningStatement, fetchCrossSell, fetchUpsell, fetchRevenueByCustomer, fetchEBITDABridge, fetchWhatIf, fetchQofE, fetchReportDimensions, fetchPipelineReport, fetchOverlapSummary, fetchOverlapDomain, fetchOverlapEntityOnly, getEngagementContext } from "./api";
+import { fetchReport, fetchDimensionalDetail, fetchCombiningStatement, fetchCrossSell, fetchUpsell, fetchRevenueByCustomer, fetchEBITDABridge, fetchWhatIf, fetchQofE, fetchReportDimensions, fetchOverlapSummary, fetchOverlapDomain, fetchOverlapEntityOnly, getEngagementContext } from "./api";
 import type { OverlapDomain } from "./api";
 import type { PeriodDimension, DimensionalDetailResponse } from "./api";
 import React from "react";
-import type { ReportData, ReportVariant, EntitySelection, CombiningStatementData, CrossSellData, UpsellData, RevenueByCustomerData, EBITDABridgeData, BridgeAdjustment, WhatIfResult, QofEData, FinancialStatementData, FinancialStatementLineItem, PipelineReportData, OverlapSummary, OverlapDomainDetail, OverlapEntityOnlyResult } from "./types";
+import type { ReportData, ReportVariant, EntitySelection, CombiningStatementData, CrossSellData, UpsellData, RevenueByCustomerData, EBITDABridgeData, BridgeAdjustment, WhatIfResult, QofEData, FinancialStatementData, FinancialStatementLineItem, OverlapSummary, OverlapDomainDetail, OverlapEntityOnlyResult } from "./types";
 import {
   BarChart, Bar, XAxis, YAxis, Cell, ResponsiveContainer,
   PieChart, Pie,
 } from "recharts";
-
-const SalesFunnel = React.lazy(() => import("../sales-funnel/SalesFunnel"));
 
 // ============================================================
 // FORMATTING
@@ -1726,52 +1724,6 @@ function EBITDABridgeTab() {
 }
 
 // ============================================================
-// PIPELINE TAB
-// ============================================================
-
-function PipelineTab({ period }: { period: string }) {
-  const [data, setData] = useState<PipelineReportData[] | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const load = useCallback(() => {
-    setLoading(true);
-    setError(null);
-    fetchPipelineReport(period)
-      .then(setData)
-      .catch((err) => setError(err instanceof Error ? err.message : String(err)))
-      .finally(() => setLoading(false));
-  }, [period]);
-
-  useEffect(() => { load(); }, [load]);
-
-  if (loading) return <LoadingState message="Loading pipeline data..." />;
-  if (error || !data) return <ErrorState error={error || "No data"} onRetry={load} />;
-
-  return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 24 }}>
-      {data.map((panel) => (
-        <div key={panel.entity_id} style={{ background: COLORS.surface, borderRadius: 8, border: `1px solid ${COLORS.border}`, padding: 20 }}>
-          <div style={{ marginBottom: 12 }}>
-            <div style={{ fontSize: 16, fontWeight: 600, color: COLORS.text }}>{panel.entity_name}</div>
-            <div style={{ fontSize: 15, color: COLORS.textDim }}>{panel.period}</div>
-          </div>
-          {panel.stages.length > 0 ? (
-            <React.Suspense fallback={<div style={{ height: 120, background: COLORS.bg, borderRadius: 4 }} />}>
-              <SalesFunnel data={{ title: '', stages: panel.stages, unit: "usd_millions", format: "currency" }} />
-            </React.Suspense>
-          ) : (
-            <div style={{ padding: 24, textAlign: "center", color: COLORS.textMuted, fontSize: 15 }}>
-              Pipeline data not available for {panel.entity_name}
-            </div>
-          )}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// ============================================================
 // WHAT-IF TAB
 // ============================================================
 
@@ -2606,7 +2558,6 @@ export function ReportPortal({ onClose: _onClose }: { onClose: () => void }) {
         { id: "overlap", label: "Overlap", title: "Entity Overlap" },
         { id: "crosssell", label: "X-Sell", title: "Cross-Sell Pipeline" },
         { id: "upsell", label: "Upsell", title: "Upsell Opportunities" },
-        { id: "pipeline", label: "Pipeline" },
         { id: "whatif", label: "What-If" },
         { id: "qoe", label: "QofE", title: "Quality of Earnings" },
       ];
@@ -2614,7 +2565,6 @@ export function ReportPortal({ onClose: _onClose }: { onClose: () => void }) {
     return [
       ...base,
       { id: "rev_by_customer", label: "Rev/Cust", title: "Revenue by Customer" },
-      { id: "pipeline", label: "Pipeline" },
     ];
   }, [entity]);
 
@@ -2632,7 +2582,7 @@ export function ReportPortal({ onClose: _onClose }: { onClose: () => void }) {
 
   const seg = segment === "all" ? null : segment;
   const isStatementTab = tab === "pl" || tab === "bs" || tab === "cf";
-  const isPeriodTab = isStatementTab || tab === "pipeline" || tab === "whatif";
+  const isPeriodTab = isStatementTab || tab === "whatif";
 
   // Determine the period to pass to the API based on the variant.
   // FY variants send year-level periods (e.g. "2025") — the backend
@@ -2858,7 +2808,6 @@ export function ReportPortal({ onClose: _onClose }: { onClose: () => void }) {
         {tab === "upsell" && entity === "combined" && (
           <div style={{ maxWidth: CONTENT_MAX_WIDTH, margin: "0 auto" }}><UpsellTab /></div>
         )}
-        {tab === "pipeline" && <PipelineTab period={effectivePeriod} />}
         {tab === "whatif" && entity === "combined" && <WhatIfTab period={effectivePeriod} />}
         {tab === "qoe" && entity === "combined" && (
           <div style={{ maxWidth: CONTENT_MAX_WIDTH, margin: "0 auto" }}><QofETab /></div>
