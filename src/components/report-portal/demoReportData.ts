@@ -625,3 +625,245 @@ export const DEMO_QOFE: QofEData = {
     sustainability_grade: "B+",
   },
 };
+
+// ── DEMO JITTER — deterministic per engagement_id, ±10%, not real data. ─────
+//
+// Single helper. Hash (engagement_id + field_path) → factor in [0.9, 1.1].
+// Same engagement always renders the same numbers; different engagements
+// render different numbers; back-to-back demos don't look frozen.
+
+type RoundMode = 'int' | 'one' | 'two';
+
+function _hash32(s: string): number {
+  // FNV-1a, 32-bit
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+export function demoJitter(value: number, engagementId: string, field: string, mode: RoundMode = 'one'): number {
+  if (!engagementId || !Number.isFinite(value) || value === 0) return value;
+  const factor = 0.9 + (_hash32(`${engagementId}::${field}`) / 4294967295) * 0.2;
+  const j = value * factor;
+  if (mode === 'int') return Math.round(j);
+  if (mode === 'one') return Math.round(j * 10) / 10;
+  return Math.round(j * 100) / 100;
+}
+
+// ── Cross-Sell getter ──────────────────────────────────────────────────────
+
+export function getDemoCrossSell(engagementId: string): CrossSellData {
+  const jitterRow = (c: CrossSellData['a_to_b'][number], i: number, dir: 'a2b' | 'b2a') => {
+    const p = `${dir}.${i}`;
+    return {
+      ...c,
+      propensity_score: demoJitter(c.propensity_score, engagementId, `${p}.score`, 'int'),
+      estimated_acv: demoJitter(c.estimated_acv, engagementId, `${p}.acv`, 'one'),
+      industry_match: demoJitter(c.industry_match, engagementId, `${p}.im`, 'int'),
+      size_match: demoJitter(c.size_match, engagementId, `${p}.sm`, 'int'),
+      behavioral_score: demoJitter(c.behavioral_score, engagementId, `${p}.bs`, 'int'),
+      engagement_fit: demoJitter(c.engagement_fit, engagementId, `${p}.ef`, 'int'),
+      relationship_strength: demoJitter(c.relationship_strength, engagementId, `${p}.rs`, 'int'),
+      customer_engagement_M: demoJitter(c.customer_engagement_M, engagementId, `${p}.ce`, 'one'),
+      years_as_client: demoJitter(c.years_as_client, engagementId, `${p}.yc`, 'int'),
+    };
+  };
+
+  const a_to_b = DEMO_CROSS_SELL.a_to_b.map((c, i) => jitterRow(c, i, 'a2b'));
+  const b_to_a = DEMO_CROSS_SELL.b_to_a.map((c, i) => jitterRow(c, i, 'b2a'));
+
+  const r1 = (n: number) => Math.round(n * 10) / 10;
+  const sumAcv = (arr: typeof a_to_b) => r1(arr.reduce((s, c) => s + c.estimated_acv, 0));
+  const highAcv = (arr: typeof a_to_b) => r1(arr.filter(c => c.propensity_score >= 80).reduce((s, c) => s + c.estimated_acv, 0));
+  const highCount = (arr: typeof a_to_b) => arr.filter(c => c.propensity_score >= 80).length;
+
+  const a2b_total = sumAcv(a_to_b);
+  const b2a_total = sumAcv(b_to_a);
+  const a2b_high = highAcv(a_to_b);
+  const b2a_high = highAcv(b_to_a);
+
+  return {
+    a_to_b,
+    b_to_a,
+    summary: {
+      a_to_b_candidates: a_to_b.length,
+      a_to_b_total_acv: a2b_total,
+      a_to_b_high_conf_count: highCount(a_to_b),
+      a_to_b_high_conf_acv: a2b_high,
+      b_to_a_candidates: b_to_a.length,
+      b_to_a_total_acv: b2a_total,
+      b_to_a_high_conf_count: highCount(b_to_a),
+      b_to_a_high_conf_acv: b2a_high,
+      total_candidates: a_to_b.length + b_to_a.length,
+      total_pipeline_acv: r1(a2b_total + b2a_total),
+      total_high_conf_acv: r1(a2b_high + b2a_high),
+    },
+  };
+}
+
+// ── Upsell getter ──────────────────────────────────────────────────────────
+
+export function getDemoUpsell(engagementId: string): UpsellData {
+  const jitterRow = (c: UpsellData['a_to_b'][number], i: number, dir: 'a2b' | 'b2a') => {
+    const p = `${dir}.${i}`;
+    return {
+      ...c,
+      typical_acv: demoJitter(c.typical_acv, engagementId, `${p}.acv`, 'one'),
+      upsell_score: demoJitter(c.upsell_score, engagementId, `${p}.score`, 'int'),
+      relationship_strength: demoJitter(c.relationship_strength, engagementId, `${p}.rs`, 'int'),
+      service_adjacency: demoJitter(c.service_adjacency, engagementId, `${p}.sa`, 'int'),
+      revenue_potential: demoJitter(c.revenue_potential, engagementId, `${p}.rp`, 'int'),
+      contract_recency: demoJitter(c.contract_recency, engagementId, `${p}.cr`, 'int'),
+      current_engagement_revenue_M: demoJitter(c.current_engagement_revenue_M, engagementId, `${p}.cer`, 'one'),
+      satisfaction_score: demoJitter(c.satisfaction_score, engagementId, `${p}.ss`, 'int'),
+    };
+  };
+
+  const a_to_b = DEMO_UPSELL.a_to_b.map((c, i) => jitterRow(c, i, 'a2b'));
+  const b_to_a = DEMO_UPSELL.b_to_a.map((c, i) => jitterRow(c, i, 'b2a'));
+
+  const r1 = (n: number) => Math.round(n * 10) / 10;
+  const sumAcv = (arr: typeof a_to_b) => r1(arr.reduce((s, c) => s + c.typical_acv, 0));
+  const avgScore = [...a_to_b, ...b_to_a].reduce((s, c) => s + c.upsell_score, 0) / (a_to_b.length + b_to_a.length);
+
+  const a2b_acv = sumAcv(a_to_b);
+  const b2a_acv = sumAcv(b_to_a);
+
+  return {
+    a_to_b,
+    b_to_a,
+    summary: {
+      total_shared_customers: demoJitter(DEMO_UPSELL.summary.total_shared_customers, engagementId, 'sum.shared', 'int'),
+      total_opportunities: a_to_b.length + b_to_a.length,
+      total_expansion_acv: r1(a2b_acv + b2a_acv),
+      avg_score: Math.round(avgScore),
+      a_to_b_count: a_to_b.length,
+      a_to_b_acv: a2b_acv,
+      b_to_a_count: b_to_a.length,
+      b_to_a_acv: b2a_acv,
+    },
+  };
+}
+
+// ── QofE getter ────────────────────────────────────────────────────────────
+
+export function getDemoQofE(engagementId: string): QofEData {
+  const j1 = (v: number, f: string) => demoJitter(v, engagementId, f, 'one');
+  const jI = (v: number, f: string) => demoJitter(v, engagementId, f, 'int');
+
+  const ebitda_bridge = DEMO_QOFE.ebitda_bridge.map((r, i) => {
+    const p = `bridge.${i}`;
+    const cur = j1(r.current_amount, `${p}.current`);
+    return {
+      ...r,
+      current_amount: cur,
+      diligence_amount: r.diligence_amount !== null ? j1(r.diligence_amount, `${p}.dil`) : null,
+      prior_amount: r.prior_amount !== null ? j1(r.prior_amount, `${p}.prior`) : null,
+      amount_low: j1(Math.abs(cur) * 0.85, `${p}.low`) * Math.sign(cur || 1),
+      amount_high: j1(Math.abs(cur) * 1.15, `${p}.high`) * Math.sign(cur || 1),
+    };
+  });
+
+  const rq = DEMO_QOFE.revenue_quality;
+  // Jitter recurring_pct; non_recurring = 100 - recurring. Same for contract mix.
+  const recurring_pct = jI(rq.revenue_mix.recurring_pct, 'mix.recurring');
+  const msa_pct = jI(rq.contract_quality.msa_pct, 'ctx.msa');
+  const sow_pct = jI(rq.contract_quality.sow_pct, 'ctx.sow');
+
+  const revenue_quality: QofEData['revenue_quality'] = {
+    customer_concentration: {
+      hhi: jI(rq.customer_concentration.hhi, 'cc.hhi'),
+      top_10_pct: j1(rq.customer_concentration.top_10_pct, 'cc.top10'),
+      top_20_pct: j1(rq.customer_concentration.top_20_pct, 'cc.top20'),
+      top_50_pct: j1(rq.customer_concentration.top_50_pct, 'cc.top50'),
+      threshold_alerts: rq.customer_concentration.threshold_alerts.map((a, i) => ({
+        ...a,
+        pct: j1(a.pct, `cc.alert.${i}`),
+      })),
+      total_customers: jI(rq.customer_concentration.total_customers, 'cc.total'),
+    },
+    contract_quality: {
+      msa_pct,
+      sow_pct,
+      t_and_m_pct: Math.max(0, 100 - msa_pct - sow_pct),
+      avg_tenure_years: j1(rq.contract_quality.avg_tenure_years, 'ctx.tenure'),
+    },
+    revenue_mix: {
+      recurring_pct,
+      non_recurring_pct: 100 - recurring_pct,
+      consulting_tm_M: j1(rq.revenue_mix.consulting_tm_M, 'mix.tm'),
+      managed_services_M: j1(rq.revenue_mix.managed_services_M, 'mix.managed'),
+      per_fte_M: j1(rq.revenue_mix.per_fte_M, 'mix.fte'),
+      per_transaction_M: j1(rq.revenue_mix.per_transaction_M, 'mix.txn'),
+      fixed_fee_M: j1(rq.revenue_mix.fixed_fee_M, 'mix.fixed'),
+    },
+    cohort_retention: rq.cohort_retention.map((c, i) => ({
+      ...c,
+      total_revenue_M: j1(c.total_revenue_M, `cohort.${i}`),
+    })),
+    cross_sell_penetration: {
+      total_candidates: jI(rq.cross_sell_penetration.total_candidates, 'xsp.cand'),
+      total_pipeline_acv_M: j1(rq.cross_sell_penetration.total_pipeline_acv_M, 'xsp.acv'),
+      converted_count: jI(rq.cross_sell_penetration.converted_count, 'xsp.conv'),
+      converted_acv_M: j1(rq.cross_sell_penetration.converted_acv_M, 'xsp.convAcv'),
+      conversion_rate_pct: jI(rq.cross_sell_penetration.conversion_rate_pct, 'xsp.rate'),
+    },
+    upsell_penetration: rq.upsell_penetration && {
+      shared_customers: jI(rq.upsell_penetration.shared_customers, 'usp.shared'),
+      total_gap_services: jI(rq.upsell_penetration.total_gap_services, 'usp.gaps'),
+      total_expansion_acv_M: j1(rq.upsell_penetration.total_expansion_acv_M, 'usp.acv'),
+      avg_upsell_score: jI(rq.upsell_penetration.avg_upsell_score, 'usp.score'),
+    },
+  };
+
+  const sustainability_overall = jI(DEMO_QOFE.sustainability_score.overall, 'sus.overall');
+  const sustainability_score: QofEData['sustainability_score'] = {
+    ...DEMO_QOFE.sustainability_score,
+    overall: sustainability_overall,
+    components: DEMO_QOFE.sustainability_score.components.map((c, i) => ({
+      ...c,
+      score: jI(c.score, `sus.c.${i}`),
+    })),
+  };
+
+  const working_capital: QofEData['working_capital'] = {
+    dso_trend: DEMO_QOFE.working_capital.dso_trend.map((d, i) => ({ ...d, value: j1(d.value, `wc.dso.${i}`) })),
+    dpo_trend: DEMO_QOFE.working_capital.dpo_trend.map((d, i) => ({ ...d, value: j1(d.value, `wc.dpo.${i}`) })),
+    bench_cost_trend: DEMO_QOFE.working_capital.bench_cost_trend.map((d, i) => ({ ...d, value: j1(d.value, `wc.bench.${i}`) })),
+    working_capital_pct_trend: DEMO_QOFE.working_capital.working_capital_pct_trend.map((d, i) => ({ ...d, value: j1(d.value, `wc.pct.${i}`) })),
+    margin_trend: DEMO_QOFE.working_capital.margin_trend.map((m, i) => ({
+      period: m.period,
+      gross_margin_pct: j1(m.gross_margin_pct, `wc.gm.${i}`),
+      ebitda_margin_pct: j1(m.ebitda_margin_pct, `wc.em.${i}`),
+    })),
+  };
+
+  const new_items = DEMO_QOFE.new_items.map((n, i) => ({ ...n, amount: j1(n.amount, `ni.${i}`) }));
+
+  const summary: QofEData['summary'] = {
+    reported_ebitda: j1(DEMO_QOFE.summary.reported_ebitda, 'sum.reported'),
+    entity_adjusted_ebitda: j1(DEMO_QOFE.summary.entity_adjusted_ebitda, 'sum.adjusted'),
+    pro_forma_year_1: j1(DEMO_QOFE.summary.pro_forma_year_1, 'sum.pf1'),
+    pro_forma_steady_state: j1(DEMO_QOFE.summary.pro_forma_steady_state, 'sum.pfss'),
+    total_adjustments: ebitda_bridge.length,
+    active_adjustments: ebitda_bridge.length,
+    resolved_adjustments: 0,
+    new_adjustments: 0,
+    changed_adjustments: 0,
+    sustainability_score: sustainability_overall,
+    sustainability_grade: DEMO_QOFE.summary.sustainability_grade,
+  };
+
+  return {
+    ...DEMO_QOFE,
+    ebitda_bridge,
+    revenue_quality,
+    sustainability_score,
+    working_capital,
+    new_items,
+    summary,
+  };
+}

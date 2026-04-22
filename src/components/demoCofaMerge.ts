@@ -438,3 +438,90 @@ export const DEMO_POST_MERGE_OVERVIEW = {
 
 export const DEMO_MERGE_MAPPING_COUNT = 434;
 export const DEMO_MERGE_FAKE_LATENCY_S = 8;
+
+// ── DEMO JITTER — deterministic per engagement_id, ±10%, not real data. ─────
+//
+// Separate copy of the same helper used in report-portal/demoReportData.ts —
+// co-located with the constants per the demo-jitter rule.
+
+type RoundMode = 'int' | 'one' | 'two';
+
+function _hash32(s: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+function demoJitter(value: number, engagementId: string, field: string, mode: RoundMode = 'one'): number {
+  if (!engagementId || !Number.isFinite(value) || value === 0) return value;
+  const factor = 0.9 + (_hash32(`${engagementId}::${field}`) / 4294967295) * 0.2;
+  const j = value * factor;
+  if (mode === 'int') return Math.round(j);
+  if (mode === 'one') return Math.round(j * 10) / 10;
+  return Math.round(j * 100) / 100;
+}
+
+// ── Jittered getters ──────────────────────────────────────────────────────
+
+export function getDemoConflictData(engagementId: string) {
+  const jitterRow = (c: DemoConflictItem, i: number): DemoConflictItem => {
+    const p = `c.${i}`;
+    return {
+      ...c,
+      dollar_impact: demoJitter(c.dollar_impact, engagementId, `${p}.dollar`, 'one'),
+      revenue_impact: c.revenue_impact !== null ? demoJitter(c.revenue_impact, engagementId, `${p}.rev`, 'one') : null,
+      expense_impact: c.expense_impact !== null ? demoJitter(c.expense_impact, engagementId, `${p}.exp`, 'one') : null,
+      ebitda_impact: c.ebitda_impact !== null ? demoJitter(c.ebitda_impact, engagementId, `${p}.ebitda`, 'one') : null,
+    };
+  };
+
+  const conflicts = CONFLICTS.map(jitterRow);
+  const category_summary = _bucketByType(conflicts);
+  return {
+    conflicts,
+    summary: {
+      total: conflicts.length,
+      pending: conflicts.length,
+      resolved: 0,
+    },
+    category_summary,
+  };
+}
+
+export function getDemoPostMergeOverview(engagementId: string) {
+  const jI = (v: number, f: string) => demoJitter(v, engagementId, f, 'int');
+  const j1 = (v: number, f: string) => demoJitter(v, engagementId, f, 'one');
+  const base = DEMO_POST_MERGE_OVERVIEW;
+  const acquirer_coa = jI(base.orphans.acquirer_coa_total, 'o.acqTotal');
+  const acquirer_mapped = Math.min(acquirer_coa, jI(base.orphans.acquirer_mapped, 'o.acqMapped'));
+  const target_coa = jI(base.orphans.target_coa_total, 'o.tgtTotal');
+  const target_mapped = Math.min(target_coa, jI(base.orphans.target_mapped, 'o.tgtMapped'));
+  return {
+    ...base,
+    orphans: {
+      ...base.orphans,
+      acquirer_coa_total: acquirer_coa,
+      acquirer_mapped,
+      acquirer_unmatched_count: Math.max(0, acquirer_coa - acquirer_mapped),
+      target_coa_total: target_coa,
+      target_mapped,
+      target_unmatched_count: Math.max(0, target_coa - target_mapped),
+    },
+    overview_cofa_count_acquirer: acquirer_coa,
+    overview_cofa_count_target: target_coa,
+    total_cofa_count: acquirer_coa + target_coa,
+    financial_summary: base.financial_summary.map((m, i) => ({
+      ...m,
+      acquirer: m.acquirer !== null ? j1(m.acquirer, `fs.${i}.a`) : null,
+      target: m.target !== null ? j1(m.target, `fs.${i}.t`) : null,
+      consolidated: m.consolidated !== null ? j1(m.consolidated, `fs.${i}.c`) : null,
+    })),
+  };
+}
+
+export function getDemoMergeMappingCount(engagementId: string): number {
+  return demoJitter(DEMO_MERGE_MAPPING_COUNT, engagementId, 'mapping.count', 'int');
+}

@@ -1,12 +1,12 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { fetchReport, fetchDimensionalDetail, fetchCombiningStatement, fetchRevenueByCustomer, fetchEBITDABridge, fetchWhatIf, fetchReportDimensions, fetchOverlapSummary, fetchOverlapDomain, fetchOverlapEntityOnly, getEngagementContext } from "./api";
 // DEMO HARDCODE — NOT REAL DATA.
-// X-Sell / Upsell / QofE tabs render identical canned numbers
-// regardless of entity pair selection. Engines, Farm templates,
+// X-Sell / Upsell / QofE tabs render canned numbers jittered ±10%
+// deterministically per engagement_id. Engines, Farm templates,
 // and backend data are bypassed entirely. Restore real wiring
 // when Farm's Multi-Entity templates emit customer/service data
 // and engines are validated against them.
-import { DEMO_CROSS_SELL, DEMO_UPSELL, DEMO_QOFE } from "./demoReportData";
+import { getDemoCrossSell, getDemoUpsell, getDemoQofE } from "./demoReportData";
 import type { OverlapDomain } from "./api";
 import type { PeriodDimension, DimensionalDetailResponse } from "./api";
 import React from "react";
@@ -985,9 +985,10 @@ function OverlapTab() {
 // ============================================================
 
 function CrossSellTab() {
-  // DEMO HARDCODE — see banner at top of file. Canned data regardless of
-  // entity pair selection; entity names interpolate from engagement context.
-  const data: CrossSellData = DEMO_CROSS_SELL;
+  // DEMO HARDCODE — see banner at top of file. Data jittered ±10% from
+  // engagement_id; entity names interpolate from engagement context.
+  const [engagementId, setEngagementId] = useState<string>('');
+  const data: CrossSellData = useMemo(() => getDemoCrossSell(engagementId), [engagementId]);
   const [direction, setDirection] = useState<"a_to_b" | "b_to_a">("a_to_b");
   const [expanded, setExpanded] = useState<string | null>(null);
   const [entityAName, setEntityAName] = useState('Entity A');
@@ -996,6 +997,7 @@ function CrossSellTab() {
   useEffect(() => {
     getEngagementContext()
       .then((ctx) => {
+        setEngagementId(ctx.engagement_id);
         setEntityAName(ctx.entity_a.display_name);
         setEntityBName(ctx.entity_b.display_name);
       })
@@ -1129,9 +1131,10 @@ function CrossSellTab() {
 // ============================================================
 
 function UpsellTab() {
-  // DEMO HARDCODE — see banner at top of file. Canned data regardless of
-  // entity pair selection; entity names interpolate from engagement context.
-  const data: UpsellData = DEMO_UPSELL;
+  // DEMO HARDCODE — see banner at top of file. Data jittered ±10% from
+  // engagement_id; entity names interpolate from engagement context.
+  const [engagementId, setEngagementId] = useState<string>('');
+  const data: UpsellData = useMemo(() => getDemoUpsell(engagementId), [engagementId]);
   const [direction, setDirection] = useState<"a_to_b" | "b_to_a">("a_to_b");
   const [expanded, setExpanded] = useState<string | null>(null);
   const [entityAName, setEntityAName] = useState('Entity A');
@@ -1140,6 +1143,7 @@ function UpsellTab() {
   useEffect(() => {
     getEngagementContext()
       .then((ctx) => {
+        setEngagementId(ctx.engagement_id);
         setEntityAName(ctx.entity_a.display_name);
         setEntityBName(ctx.entity_b.display_name);
       })
@@ -2039,11 +2043,18 @@ function WhatIfTab({ period }: { period: string }) {
 type QofESubView = "bridge" | "ebitda_bridge" | "sustainability" | "revenue" | "working_capital" | "new_items";
 
 function QofETab() {
-  // DEMO HARDCODE — see banner at top of file. Canned data regardless of
-  // entity pair selection; engines and backend are bypassed entirely.
-  const data: QofEData = DEMO_QOFE;
+  // DEMO HARDCODE — see banner at top of file. Data jittered ±10% from
+  // engagement_id; engines and backend bypassed entirely.
+  const [engagementId, setEngagementId] = useState<string>('');
+  const data: QofEData = useMemo(() => getDemoQofE(engagementId), [engagementId]);
   const [subView, setSubView] = useState<QofESubView>("bridge");
   const [expandedAdj, setExpandedAdj] = useState<string | null>(null);
+
+  useEffect(() => {
+    getEngagementContext()
+      .then((ctx) => setEngagementId(ctx.engagement_id))
+      .catch(() => { /* no jitter */ });
+  }, []);
 
   const sus = data.sustainability_score;
   const rq = data.revenue_quality;

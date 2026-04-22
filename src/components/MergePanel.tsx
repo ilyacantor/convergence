@@ -7,9 +7,9 @@ import { useState, useEffect, useCallback, useRef, Fragment } from 'react';
 // when Farm exposes business_model on POST /api/snapshots and
 // CoA/GL generation is not gated by business_model value.
 import {
-  DEMO_CONFLICT_DATA,
-  DEMO_POST_MERGE_OVERVIEW,
-  DEMO_MERGE_MAPPING_COUNT,
+  getDemoConflictData,
+  getDemoPostMergeOverview,
+  getDemoMergeMappingCount,
   DEMO_MERGE_FAKE_LATENCY_S,
 } from './demoCofaMerge';
 
@@ -331,10 +331,14 @@ export function MergePanel() {
     setMergeStatus(null);
     setMergeRunning(false);
 
+    const jitteredConflicts = getDemoConflictData(selectedEngagementId);
+    const jitteredOverview = getDemoPostMergeOverview(selectedEngagementId);
+    const jitteredMapping = getDemoMergeMappingCount(selectedEngagementId);
+
     setConflictData({
-      conflicts: DEMO_CONFLICT_DATA.conflicts,
-      summary: DEMO_CONFLICT_DATA.summary,
-      category_summary: DEMO_CONFLICT_DATA.category_summary,
+      conflicts: jitteredConflicts.conflicts,
+      summary: jitteredConflicts.summary,
+      category_summary: jitteredConflicts.category_summary,
     });
     // Resolve the selected engagement's entity ids so the rendered cards
     // honor the operator's pick (rule 5: entity_id labels interpolate from
@@ -354,13 +358,13 @@ export function MergePanel() {
       const acquirerEntity = {
         entity_id: acquirer.entity_id,
         display_name: acquirer.display_name,
-        cofa_count: DEMO_POST_MERGE_OVERVIEW.overview_cofa_count_acquirer,
+        cofa_count: jitteredOverview.overview_cofa_count_acquirer,
         last_ingest: prev.overview.entities[0]?.last_ingest ?? null,
       };
       const targetEntity = {
         entity_id: target.entity_id,
         display_name: target.display_name,
-        cofa_count: DEMO_POST_MERGE_OVERVIEW.overview_cofa_count_target,
+        cofa_count: jitteredOverview.overview_cofa_count_target,
         last_ingest: prev.overview.entities[1]?.last_ingest ?? null,
       };
       return {
@@ -369,19 +373,19 @@ export function MergePanel() {
         target,
         overview: {
           entities: [acquirerEntity, targetEntity],
-          total_cofa_count: DEMO_POST_MERGE_OVERVIEW.total_cofa_count,
+          total_cofa_count: jitteredOverview.total_cofa_count,
         },
-        orphans: DEMO_POST_MERGE_OVERVIEW.orphans,
-        matches: { ...prev.matches, ...DEMO_POST_MERGE_OVERVIEW.matches },
-        policy_sources: DEMO_POST_MERGE_OVERVIEW.policy_sources,
-        financial_summary: DEMO_POST_MERGE_OVERVIEW.financial_summary,
+        orphans: jitteredOverview.orphans,
+        matches: { ...prev.matches, ...jitteredOverview.matches },
+        policy_sources: jitteredOverview.policy_sources,
+        financial_summary: jitteredOverview.financial_summary,
       };
     });
     // Pause polling so the next 30s tick doesn't overwrite canned data.
     setAutoRefresh(false);
 
     setToast({
-      message: `COFA merge complete in ${finalElapsed}s — ${DEMO_MERGE_MAPPING_COUNT} accounts mapped.`,
+      message: `COFA merge complete in ${finalElapsed}s — ${jitteredMapping} accounts mapped.`,
       type: 'success',
     });
   }, [selectedEngagementId, engagements]);
