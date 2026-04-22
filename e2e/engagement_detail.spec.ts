@@ -22,10 +22,13 @@ test.describe('Engagement detail page', () => {
     await page.locator(`tr[data-testid="engagement-row-${eng.engagement_id}"]`).click();
     await expect(page).toHaveURL(`/engagements/${eng.engagement_id}`);
 
+    // Multiple engagements may pair the same acquirer+target — the list back
+    // link and the detail page both render the pair text. Use .first() to
+    // prove render without strict-mode ambiguity.
     const expectedName = eng.engagement_short_name || `${eng.acquirer_entity_id} + ${eng.target_entity_id}`;
-    await expect(page.getByText(expectedName, { exact: false })).toBeVisible({ timeout: 5000 });
+    await expect(page.getByText(expectedName, { exact: false }).first()).toBeVisible({ timeout: 5000 });
 
-    await expect(page.getByText(eng.lifecycle_stage)).toBeVisible({ timeout: 3000 });
+    await expect(page.getByText(eng.lifecycle_stage).first()).toBeVisible({ timeout: 3000 });
 
     const overviewTab = page.locator('[data-testid="tab-overview"]');
     const resolutionsTab = page.locator('[data-testid="tab-resolutions"]');

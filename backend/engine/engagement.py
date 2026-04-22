@@ -72,7 +72,7 @@ class EngagementConfig:
 
 
 # Module-level singleton — loaded once, reused.
-_cached_config: EngagementConfig | None = None
+# Module-level engagement cache removed — see get_active_engagement.
 
 
 def _build_config(row: dict) -> EngagementConfig:
@@ -101,17 +101,19 @@ def _build_config(row: dict) -> EngagementConfig:
 
 
 def get_active_engagement(tenant_id: str | None = None) -> EngagementConfig:
-    """Load and return the active engagement config.
+    """Load and return the active engagement config (uncached).
 
-    Cached after first load. Call invalidate_engagement() to force reload.
+    The previous in-process cache held the first resolved engagement
+    forever and never invalidated on create / update / promote. That
+    masked lifecycle changes — a newly promoted engagement wouldn't be
+    picked up until the backend restarted. The SELECT that backs this
+    is cheap (ORDER BY updated_at DESC LIMIT 1) so uncached is
+    correct.
 
     tenant_id: if not provided, reads AOS_TENANT_ID from env.
-    Raises RuntimeError if no tenant_id available or no active engagement found.
+    Raises RuntimeError if no tenant_id available or no active
+    engagement found.
     """
-    global _cached_config
-    if _cached_config is not None:
-        return _cached_config
-
     from backend.db import engagement_store
 
     if not tenant_id:
@@ -129,21 +131,13 @@ def get_active_engagement(tenant_id: str | None = None) -> EngagementConfig:
             f"Create an engagement and set lifecycle_stage='active'."
         )
 
-    config = _build_config(row)
-    _cached_config = config
-    logger.info(
-        "[engagement] Loaded engagement %s: %s (%s) vs %s (%s)",
-        config.engagement_id,
-        config.entity_a.display_name,
-        config.entity_a.id,
-        config.entity_b.display_name,
-        config.entity_b.id,
-    )
-    return config
+    return _build_config(row)
 
 
 def invalidate_engagement() -> None:
-    """Force reload of engagement config on next access."""
-    global _cached_config
-    _cached_config = None
-    logger.info("[engagement] Engagement config cache invalidated")
+    """Legacy no-op — get_active_engagement is uncached.
+
+    Kept for backwards-compatible imports; safe to remove once
+    no call sites remain.
+    """
+    return None
