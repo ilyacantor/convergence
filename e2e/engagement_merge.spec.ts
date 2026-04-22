@@ -9,15 +9,14 @@ test.describe('Engagement merge flow', () => {
       if (msg.type() === 'error') consoleErrors.push(msg.text());
     });
 
-    // Ground truth: fetch catalog and Farm sanctioned set
+    // Ground truth: fetch catalog. The engagement-store sanctioned set now
+    // accepts any shape-compliant entity_id with active triples in
+    // convergence_triples — no Farm triple-configs intersection needed.
     const catalogResp = await page.request.get('/api/convergence/catalog');
     const catalog = await catalogResp.json();
-    const farmResp = await page.request.get('http://localhost:8003/api/business-data/triple-configs');
-    const farmData = await farmResp.json();
-    const farmEntityIds = new Set((farmData.configs || []).map((c: { entity_id: string }) => c.entity_id));
 
     const entities: { entity_id: string; display_name: string; tenant_id: string }[] =
-      (catalog.passing_entities || []).filter((e: { entity_id: string }) => farmEntityIds.has(e.entity_id));
+      catalog.passing_entities || [];
     expect(entities.length).toBeGreaterThanOrEqual(2);
 
     const acquirer = entities[0];

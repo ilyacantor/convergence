@@ -24,8 +24,10 @@ test.describe('MergePanel', () => {
     const tgtName = overview.target?.display_name;
     expect(typeof acqName, 'acquirer display_name missing from overview API').toBe('string');
     expect(typeof tgtName, 'target display_name missing from overview API').toBe('string');
-    await expect(page.getByText(acqName, { exact: true })).toBeVisible({ timeout: 5000 });
-    await expect(page.getByText(tgtName, { exact: true })).toBeVisible({ timeout: 5000 });
+    // entity_id may appear multiple times (card header, generic-policy banner,
+    // entity badges). .first() is sufficient to prove the name is rendered.
+    await expect(page.getByText(acqName, { exact: true }).first()).toBeVisible({ timeout: 5000 });
+    await expect(page.getByText(tgtName, { exact: true }).first()).toBeVisible({ timeout: 5000 });
   });
 
   test('shows triple counts for both entities', async ({ page }) => {
