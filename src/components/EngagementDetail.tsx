@@ -205,6 +205,16 @@ export default function EngagementDetail() {
   const handlePromote = async () => {
     if (!id) return;
     try {
+      // Draft engagements can't use POST /promote (that endpoint bumps
+      // updated_at on an already-active engagement). Transition draft→active
+      // via PATCH, then call promote to bump updated_at so this engagement
+      // wins the get_active_engagement resolver's ORDER BY updated_at DESC.
+      if (engagement?.lifecycle_stage === 'draft') {
+        await apiFetch(`/engagements/${id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ lifecycle_stage: 'active' }),
+        });
+      }
       await apiFetch(`/engagements/${id}/promote`, { method: 'POST' });
       await fetchEngagement();
     } catch (err: any) {

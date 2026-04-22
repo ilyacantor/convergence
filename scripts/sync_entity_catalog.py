@@ -56,9 +56,17 @@ CONVERGENCE_BASE = os.environ.get("CONVERGENCE_BASE_URL", "http://localhost:8010
 # Known limit — see deferred-work entry above. Revisit with real ingestion.
 FARM_SNAPSHOT_LIMIT = 150
 
-# Stable tenant_id so re-runs replace the prior sync instead of cloning.
-_SYNC_NS = uuid.UUID("12345678-1234-5678-1234-567812345678")
-SYNC_TENANT_ID = str(uuid.uuid5(_SYNC_NS, "convergence-sync-entity-catalog"))
+# The frontend reads build-time VITE_AOS_TENANT_ID to filter engagements
+# and report queries. Writing synced triples under the same tenant so the
+# frontend sees them (and the engines scope by tenant_id when running
+# merge, QoE, upsell, etc.). Env var mirrors the Vite build config.
+SYNC_TENANT_ID = os.environ.get("AOS_TENANT_ID") or os.environ.get("VITE_AOS_TENANT_ID")
+if not SYNC_TENANT_ID:
+    raise SystemExit(
+        "AOS_TENANT_ID (or VITE_AOS_TENANT_ID) must be set — the sync script "
+        "writes under that tenant so the frontend and engines resolve the "
+        "same rows. Check .env.development."
+    )
 
 # Farm Multi-Entity template names come from the environment. The sync
 # remaps their emitted entity_ids onto Farm-sourced business keys so the
