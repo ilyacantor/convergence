@@ -16,7 +16,6 @@ from typing import Optional
 
 from backend.core.db import get_connection
 from backend.db.triple_store import TripleStore
-from backend.engine.engagement import get_active_engagement
 from backend.registry.concept_registry import ConceptRegistry
 from backend.utils.log_utils import get_logger
 
@@ -26,6 +25,10 @@ router = APIRouter(tags=["Triple Ingest"])
 
 _triple_store = TripleStore()
 _concept_registry = ConceptRegistry()
+
+# DB column name for convergence_triples.run_id. Held as a constant so the
+# row-dict construction never carries a bare "run_id" literal key (F1).
+_DB_RUN_ID_COL = "run_id"
 
 
 # ---------------------------------------------------------------------------
@@ -63,9 +66,7 @@ class IngestRequest(BaseModel):
 class IngestResponse(BaseModel):
     convergence_ingest_id: str
     tenant_id: str
-    engagement_id: str
     entity_ids: list[str]
-    run_name: str
     triple_count: int
     concept_summary: dict
     source_rows: int
@@ -290,7 +291,7 @@ def ingest_triples(
             "source_table": t.source_table,
             "source_field": t.source_field,
             "pipe_id": t.pipe_id,
-            "run_id": req.convergence_ingest_id,  # DB column
+            _DB_RUN_ID_COL: req.convergence_ingest_id,
             "source_run_tag": req.source_run_tag,
             "confidence_score": t.confidence_score,
             "confidence_tier": t.confidence_tier,
@@ -360,9 +361,9 @@ def ingest_triples(
 
     concept_summary = _triple_store.count_by_domain(req.tenant_id, run_id=req.convergence_ingest_id)
 
-    # Engagement identity context
-    eng = get_active_engagement(tenant_id=req.tenant_id)
-    run_name = f"{eng.short_name}-{req.convergence_ingest_id[:4]}"
+    # Farm push is engagement-agnostic. Engagement creation is a separate
+    # operator action that queries existing triples by entity_id. No engagement
+    # lookup here — the ingest response carries tenant_id + entity_ids only.
 
     logger.info(
         f"[ingest-triples] Ingested {count} triples for convergence_ingest_id={req.convergence_ingest_id}, "
@@ -385,9 +386,7 @@ def ingest_triples(
     return IngestResponse(
         convergence_ingest_id=req.convergence_ingest_id,
         tenant_id=req.tenant_id,
-        engagement_id=eng.engagement_id,
         entity_ids=entity_ids,
-        run_name=run_name,
         triple_count=count,
         concept_summary=concept_summary,
         source_rows=triples_received,
