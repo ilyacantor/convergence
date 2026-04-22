@@ -19,8 +19,8 @@ logger = get_logger(__name__)
 @dataclass(frozen=True)
 class EngagementEntity:
     """One side of the M&A engagement."""
-    id: str              # e.g. "meridian"
-    display_name: str    # e.g. "Meridian Partners"
+    id: str              # shape-compliant entity_id (e.g. "BlueLogic-NEQ8")
+    display_name: str    # human-readable entity name (e.g. "Blue Logic Partners")
     role: str            # "acquirer" or "target"
     business_model: str  # "consultancy", "bpm", "saas"
     source_systems: dict  # {"crm": "salesforce_crm", ...}
@@ -63,7 +63,7 @@ class EngagementConfig:
     def short_name(self) -> str:
         """ME engagement short name — first 3 chars of each entity display name.
 
-        Example: Meridian Partners + Cascadia Solutions -> MerCas
+        Example: "Blue Logic Partners" + "Info Systems" -> BluInf
         Used in run_name generation per I5.
         """
         a_prefix = self.entity_a.display_name[:3]

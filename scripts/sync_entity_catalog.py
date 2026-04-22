@@ -4,10 +4,15 @@
 One-shot seeding path for the freely-selectable entity feature. Pulls
 properly-shaped business keys from Farm's snapshot catalog
 (``GET /api/snapshots?limit=150``), drives a pair of Farm Multi-Entity
-triple runs to get real P&L/BS/CF/EBITDA data under the two available
-industry templates (bpm_services + saas_consultancy), remaps the
-template-derived entity_ids onto Farm-sourced business keys, and POSTs
-the result to Convergence's ingest-triples endpoint.
+triple runs under whatever industry templates Farm currently exposes,
+remaps the template-derived entity_ids onto Farm-sourced business
+keys, and POSTs the result to Convergence's ingest-triples endpoint.
+
+The list of Farm industry templates to drive is read from the
+``CONVERGENCE_SYNC_TEMPLATES`` environment variable (comma-separated),
+or from the ``--templates`` CLI flag. Defaulting is intentional —
+Farm's template catalog is upstream of Convergence and not tracked
+in this repo's code.
 
 Pre-existing Farm gaps tracked in convergence_deferred_work.md:
 
@@ -55,10 +60,12 @@ FARM_SNAPSHOT_LIMIT = 150
 _SYNC_NS = uuid.UUID("12345678-1234-5678-1234-567812345678")
 SYNC_TENANT_ID = str(uuid.uuid5(_SYNC_NS, "convergence-sync-entity-catalog"))
 
-# Farm Multi-Entity templates available today. The sync remaps their
-# emitted entity_ids onto Farm-sourced business keys so the resulting
-# triple rows carry shape-compliant entity_ids end-to-end.
-_TEMPLATE_ORDER = ["bpm_services", "saas_consultancy"]
+# Farm Multi-Entity template names come from the environment. The sync
+# remaps their emitted entity_ids onto Farm-sourced business keys so the
+# resulting triple rows carry shape-compliant entity_ids end-to-end.
+# See deferred-work entry 19: this script is a stub; Farm's template
+# catalog moves to a DCL-sourced contract when that path lands.
+_TEMPLATE_ORDER_ENV = os.environ.get("CONVERGENCE_SYNC_TEMPLATES", "").strip()
 
 logging.basicConfig(
     level=logging.INFO,
@@ -125,12 +132,12 @@ def _poll_farm_generation_idle(timeout_s: float = 180.0) -> None:
     raise RuntimeError("Farm Multi-Entity generation did not return to idle in time")
 
 
-def drive_farm_multi_entity_run(seed: int) -> str:
+def drive_farm_multi_entity_run(seed: int, templates: list[str]) -> str:
     """Kick off a Multi-Entity triple run (skip_push=true) and wait for idle.
 
     Returns the ``farm_manifest_id`` for the run on disk.
     """
-    entities = ",".join(_TEMPLATE_ORDER)
+    entities = ",".join(templates)
     url = (
         f"{FARM_BASE}/api/business-data/generate-multi-entity-triples"
         f"?entities={entities}&seed={seed}&skip_push=true"
@@ -245,20 +252,30 @@ def push_batch_to_convergence(
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--pairs", type=int, default=2,
-                        help="Number of pairs to seed (4 entities per 2 pairs). Default 2.")
+                        help="Number of pairs to seed (one template emits one entity per pair). Default 2.")
+    parser.add_argument("--templates", type=str, default=_TEMPLATE_ORDER_ENV,
+                        help=("Comma-separated Farm industry template names "
+                              "(e.g. consultancy,bpm). Defaults to "
+                              "CONVERGENCE_SYNC_TEMPLATES env var. Required."))
     args = parser.parse_args()
-    n_entities = args.pairs * len(_TEMPLATE_ORDER)
+    templates = [t.strip() for t in (args.templates or "").split(",") if t.strip()]
+    if not templates:
+        raise SystemExit(
+            "No Farm industry templates configured. Set CONVERGENCE_SYNC_TEMPLATES "
+            "in .env.development or pass --templates on the CLI."
+        )
+    n_entities = args.pairs * len(templates)
 
     picks = fetch_shape_compliant_entity_ids(n_entities)
 
     for pair_idx in range(args.pairs):
         seed = 42 + pair_idx * 4200
-        farm_run = drive_farm_multi_entity_run(seed=seed)
+        farm_run = drive_farm_multi_entity_run(seed=seed, templates=templates)
         raw_rows = load_farm_jsonl(farm_run)
-        start = pair_idx * len(_TEMPLATE_ORDER)
+        start = pair_idx * len(templates)
         remap = {
             tpl: picks[start + i]
-            for i, tpl in enumerate(_TEMPLATE_ORDER)
+            for i, tpl in enumerate(templates)
         }
         log.info(f"Pair {pair_idx + 1}/{args.pairs} remap: {remap}")
         triples = remap_to_convergence_triples(raw_rows, remap)
