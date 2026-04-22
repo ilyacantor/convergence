@@ -142,6 +142,7 @@ interface MergeData {
     target_mapped: number;
     message: string;
   };
+  policy_sources?: Record<string, 'entity' | 'generic'>;
 }
 
 // ---------------------------------------------------------------------------
@@ -782,6 +783,18 @@ export function MergePanel() {
               <button onClick={() => fetchMerge()} className="ml-3 px-3 py-1 text-sm rounded bg-primary text-primary-foreground hover:bg-primary/90">
                 Retry
               </button>
+            </div>
+          )}
+
+          {data?.policy_sources && Object.values(data.policy_sources).includes('generic') && (
+            <div
+              data-testid="generic-policy-banner"
+              className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-2.5 text-sm text-amber-200"
+            >
+              Generic accounting policy in use for{' '}
+              <strong>{data.acquirer.entity_id}</strong> and{' '}
+              <strong>{data.target.entity_id}</strong>. Industry-specific policy
+              pending. Results reflect standard US GAAP accrual-basis posture.
             </div>
           )}
 

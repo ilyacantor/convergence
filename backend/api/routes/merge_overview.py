@@ -6,6 +6,7 @@ GET /api/convergence/merge/overview  — COFA triples for acquirer vs target
 
 from datetime import datetime
 from decimal import Decimal
+from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query
 from typing import Optional
@@ -605,6 +606,15 @@ async def merge_overview(
             conflict_total = conflict_row[0] if conflict_row else 0
             conflict_resolved = conflict_row[1] if conflict_row else 0
 
+    # Policy sources — lets the frontend know whether the generic fallback
+    # is in effect for either entity. See backend/policies/_generic_policy.md
+    # and convergence_deferred_work.md (industry verticalization).
+    _policies_dir = Path(__file__).resolve().parent.parent.parent / "policies"
+
+    def _policy_source(entity_id: str) -> str:
+        path = _policies_dir / f"{entity_id}_policy.md"
+        return "entity" if path.is_file() and path.read_text(encoding="utf-8").strip() else "generic"
+
     return {
         "engagement_id": eng_id,
         "run_name": run_name,
@@ -619,4 +629,8 @@ async def merge_overview(
         "mapped_count": acq_cov["mapped"] + tgt_cov["mapped"],
         "conflict_count": conflict_total,
         "resolved_count": conflict_resolved,
+        "policy_sources": {
+            acq_id: _policy_source(acq_id),
+            tgt_id: _policy_source(tgt_id),
+        },
     }
