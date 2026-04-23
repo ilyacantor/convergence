@@ -1,34 +1,12 @@
 {
-  "seed_date": "2026-04-11",
-  "run_id": "aebcb6a2-99b6-4c72-92b3-64c7fb3fc47f",
-  "farm_run_id": "triples_10a9dd081dfd",
-  "tenant_id": "69688df3-fc8e-51f8-a77c-9c13f9b3a784",
-  "entity_a_id": "meridian",
-  "entity_b_id": "cascadia",
-  "total_triples": 37987,
-  "concept_summary": {
-    "customer_service": 14208,
-    "gl": 8229,
-    "customer": 6022,
-    "cofa": 1176,
-    "vendor": 1064,
-    "revenue": 604,
-    "coa": 590,
-    "cash_flow": 336,
-    "ebitda_adjustment": 320,
-    "asset": 208,
-    "cogs": 204,
-    "pnl": 152,
-    "opex": 136,
-    "liability": 130,
-    "equity": 78,
-    "employee": 40,
-    "service": 30
-  },
-  "identity_checks": {
-    "bs_identity": "PASS",
-    "cf_identity": "PASS",
-    "pl_identity": "PASS",
-    "cash_continuity": "PASS"
-  }
+  "_note": "Legacy seed manifest. Fixture entity values were removed in feature/entity-id-freely-selectable. Tests now resolve test entity_ids via a session-scoped catalog fixture against GET /api/convergence/catalog. See tests/conftest.py.",
+  "seed_date": "",
+  "run_id": "",
+  "farm_run_id": "",
+  "tenant_id": "",
+  "entity_a_id": "",
+  "entity_b_id": "",
+  "total_triples": 0,
+  "concept_summary": {},
+  "identity_checks": {}
 }

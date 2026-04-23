@@ -1,15 +1,20 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { fetchReport, fetchDimensionalDetail, fetchCombiningStatement, fetchCrossSell, fetchUpsell, fetchRevenueByCustomer, fetchEBITDABridge, fetchWhatIf, fetchQofE, fetchReportDimensions, fetchPipelineReport, fetchOverlapSummary, fetchOverlapDomain, fetchOverlapEntityOnly, getEngagementContext } from "./api";
+import { fetchReport, fetchDimensionalDetail, fetchCombiningStatement, fetchRevenueByCustomer, fetchEBITDABridge, fetchWhatIf, fetchReportDimensions, fetchOverlapSummary, fetchOverlapDomain, fetchOverlapEntityOnly, getEngagementContext } from "./api";
+// DEMO HARDCODE — NOT REAL DATA.
+// X-Sell / Upsell / QofE tabs render canned numbers jittered ±10%
+// deterministically per engagement_id. Engines, Farm templates,
+// and backend data are bypassed entirely. Restore real wiring
+// when Farm's Multi-Entity templates emit customer/service data
+// and engines are validated against them.
+import { getDemoCrossSell, getDemoUpsell, getDemoQofE } from "./demoReportData";
 import type { OverlapDomain } from "./api";
 import type { PeriodDimension, DimensionalDetailResponse } from "./api";
 import React from "react";
-import type { ReportData, ReportVariant, EntitySelection, CombiningStatementData, CrossSellData, UpsellData, RevenueByCustomerData, EBITDABridgeData, BridgeAdjustment, WhatIfResult, QofEData, FinancialStatementData, FinancialStatementLineItem, PipelineReportData, OverlapSummary, OverlapDomainDetail, OverlapEntityOnlyResult } from "./types";
+import type { ReportData, ReportVariant, EntitySelection, CombiningStatementData, CrossSellData, UpsellData, RevenueByCustomerData, EBITDABridgeData, BridgeAdjustment, WhatIfResult, QofEData, FinancialStatementData, FinancialStatementLineItem, OverlapSummary, OverlapDomainDetail, OverlapEntityOnlyResult } from "./types";
 import {
   BarChart, Bar, XAxis, YAxis, Cell, ResponsiveContainer,
   PieChart, Pie,
 } from "recharts";
-
-const SalesFunnel = React.lazy(() => import("../sales-funnel/SalesFunnel"));
 
 // ============================================================
 // FORMATTING
@@ -980,27 +985,24 @@ function OverlapTab() {
 // ============================================================
 
 function CrossSellTab() {
-  const [data, setData] = useState<CrossSellData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  // DEMO HARDCODE — see banner at top of file. Data jittered ±10% from
+  // engagement_id; entity names interpolate from engagement context.
+  const [engagementId, setEngagementId] = useState<string>('');
+  const data: CrossSellData = useMemo(() => getDemoCrossSell(engagementId), [engagementId]);
   const [direction, setDirection] = useState<"a_to_b" | "b_to_a">("a_to_b");
   const [expanded, setExpanded] = useState<string | null>(null);
   const [entityAName, setEntityAName] = useState('Entity A');
   const [entityBName, setEntityBName] = useState('Entity B');
 
   useEffect(() => {
-    Promise.all([fetchCrossSell(), getEngagementContext()])
-      .then(([crossSellData, ctx]) => {
-        setData(crossSellData);
+    getEngagementContext()
+      .then((ctx) => {
+        setEngagementId(ctx.engagement_id);
         setEntityAName(ctx.entity_a.display_name);
         setEntityBName(ctx.entity_b.display_name);
       })
-      .catch((err) => setError(err instanceof Error ? err.message : String(err)))
-      .finally(() => setLoading(false));
+      .catch(() => { /* keep placeholder names */ });
   }, []);
-
-  if (loading) return <LoadingState message="Loading cross-sell pipeline..." />;
-  if (error || !data) return <ErrorState error={error || "No data"} onRetry={() => { setLoading(true); setError(null); fetchCrossSell().then(setData).catch((e) => setError(String(e))).finally(() => setLoading(false)); }} />;
 
   const s = data.summary;
   const candidates = direction === "a_to_b" ? data.a_to_b : data.b_to_a;
@@ -1129,27 +1131,24 @@ function CrossSellTab() {
 // ============================================================
 
 function UpsellTab() {
-  const [data, setData] = useState<UpsellData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  // DEMO HARDCODE — see banner at top of file. Data jittered ±10% from
+  // engagement_id; entity names interpolate from engagement context.
+  const [engagementId, setEngagementId] = useState<string>('');
+  const data: UpsellData = useMemo(() => getDemoUpsell(engagementId), [engagementId]);
   const [direction, setDirection] = useState<"a_to_b" | "b_to_a">("a_to_b");
   const [expanded, setExpanded] = useState<string | null>(null);
   const [entityAName, setEntityAName] = useState('Entity A');
   const [entityBName, setEntityBName] = useState('Entity B');
 
   useEffect(() => {
-    Promise.all([fetchUpsell(), getEngagementContext()])
-      .then(([upsellData, ctx]) => {
-        setData(upsellData);
+    getEngagementContext()
+      .then((ctx) => {
+        setEngagementId(ctx.engagement_id);
         setEntityAName(ctx.entity_a.display_name);
         setEntityBName(ctx.entity_b.display_name);
       })
-      .catch((err) => setError(err instanceof Error ? err.message : String(err)))
-      .finally(() => setLoading(false));
+      .catch(() => { /* keep placeholder names */ });
   }, []);
-
-  if (loading) return <LoadingState message="Loading upsell opportunities..." />;
-  if (error || !data) return <ErrorState error={error || "No data"} onRetry={() => { setLoading(true); setError(null); fetchUpsell().then(setData).catch((e) => setError(String(e))).finally(() => setLoading(false)); }} />;
 
   const s = data.summary;
   const candidates = direction === "a_to_b" ? data.a_to_b : data.b_to_a;
@@ -1726,52 +1725,6 @@ function EBITDABridgeTab() {
 }
 
 // ============================================================
-// PIPELINE TAB
-// ============================================================
-
-function PipelineTab({ period }: { period: string }) {
-  const [data, setData] = useState<PipelineReportData[] | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const load = useCallback(() => {
-    setLoading(true);
-    setError(null);
-    fetchPipelineReport(period)
-      .then(setData)
-      .catch((err) => setError(err instanceof Error ? err.message : String(err)))
-      .finally(() => setLoading(false));
-  }, [period]);
-
-  useEffect(() => { load(); }, [load]);
-
-  if (loading) return <LoadingState message="Loading pipeline data..." />;
-  if (error || !data) return <ErrorState error={error || "No data"} onRetry={load} />;
-
-  return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 24 }}>
-      {data.map((panel) => (
-        <div key={panel.entity_id} style={{ background: COLORS.surface, borderRadius: 8, border: `1px solid ${COLORS.border}`, padding: 20 }}>
-          <div style={{ marginBottom: 12 }}>
-            <div style={{ fontSize: 16, fontWeight: 600, color: COLORS.text }}>{panel.entity_name}</div>
-            <div style={{ fontSize: 15, color: COLORS.textDim }}>{panel.period}</div>
-          </div>
-          {panel.stages.length > 0 ? (
-            <React.Suspense fallback={<div style={{ height: 120, background: COLORS.bg, borderRadius: 4 }} />}>
-              <SalesFunnel data={{ title: '', stages: panel.stages, unit: "usd_millions", format: "currency" }} />
-            </React.Suspense>
-          ) : (
-            <div style={{ padding: 24, textAlign: "center", color: COLORS.textMuted, fontSize: 15 }}>
-              Pipeline data not available for {panel.entity_name}
-            </div>
-          )}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// ============================================================
 // WHAT-IF TAB
 // ============================================================
 
@@ -2090,21 +2043,18 @@ function WhatIfTab({ period }: { period: string }) {
 type QofESubView = "bridge" | "ebitda_bridge" | "sustainability" | "revenue" | "working_capital" | "new_items";
 
 function QofETab() {
-  const [data, setData] = useState<QofEData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  // DEMO HARDCODE — see banner at top of file. Data jittered ±10% from
+  // engagement_id; engines and backend bypassed entirely.
+  const [engagementId, setEngagementId] = useState<string>('');
+  const data: QofEData = useMemo(() => getDemoQofE(engagementId), [engagementId]);
   const [subView, setSubView] = useState<QofESubView>("bridge");
   const [expandedAdj, setExpandedAdj] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchQofE()
-      .then(setData)
-      .catch((err) => setError(err instanceof Error ? err.message : String(err)))
-      .finally(() => setLoading(false));
+    getEngagementContext()
+      .then((ctx) => setEngagementId(ctx.engagement_id))
+      .catch(() => { /* no jitter */ });
   }, []);
-
-  if (loading) return <LoadingState message="Loading Quality of Earnings..." />;
-  if (error || !data) return <ErrorState error={error || "No data"} onRetry={() => { setLoading(true); setError(null); fetchQofE().then(setData).catch((e) => setError(String(e))).finally(() => setLoading(false)); }} />;
 
   const sus = data.sustainability_score;
   const rq = data.revenue_quality;
@@ -2606,7 +2556,6 @@ export function ReportPortal({ onClose: _onClose }: { onClose: () => void }) {
         { id: "overlap", label: "Overlap", title: "Entity Overlap" },
         { id: "crosssell", label: "X-Sell", title: "Cross-Sell Pipeline" },
         { id: "upsell", label: "Upsell", title: "Upsell Opportunities" },
-        { id: "pipeline", label: "Pipeline" },
         { id: "whatif", label: "What-If" },
         { id: "qoe", label: "QofE", title: "Quality of Earnings" },
       ];
@@ -2614,7 +2563,6 @@ export function ReportPortal({ onClose: _onClose }: { onClose: () => void }) {
     return [
       ...base,
       { id: "rev_by_customer", label: "Rev/Cust", title: "Revenue by Customer" },
-      { id: "pipeline", label: "Pipeline" },
     ];
   }, [entity]);
 
@@ -2632,7 +2580,7 @@ export function ReportPortal({ onClose: _onClose }: { onClose: () => void }) {
 
   const seg = segment === "all" ? null : segment;
   const isStatementTab = tab === "pl" || tab === "bs" || tab === "cf";
-  const isPeriodTab = isStatementTab || tab === "pipeline" || tab === "whatif";
+  const isPeriodTab = isStatementTab || tab === "whatif";
 
   // Determine the period to pass to the API based on the variant.
   // FY variants send year-level periods (e.g. "2025") — the backend
@@ -2858,7 +2806,6 @@ export function ReportPortal({ onClose: _onClose }: { onClose: () => void }) {
         {tab === "upsell" && entity === "combined" && (
           <div style={{ maxWidth: CONTENT_MAX_WIDTH, margin: "0 auto" }}><UpsellTab /></div>
         )}
-        {tab === "pipeline" && <PipelineTab period={effectivePeriod} />}
         {tab === "whatif" && entity === "combined" && <WhatIfTab period={effectivePeriod} />}
         {tab === "qoe" && entity === "combined" && (
           <div style={{ maxWidth: CONTENT_MAX_WIDTH, margin: "0 auto" }}><QofETab /></div>

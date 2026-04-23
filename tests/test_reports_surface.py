@@ -14,7 +14,7 @@ BASE = "http://localhost:8010"
 REPORTS = f"{BASE}/api/convergence/reports/v2"
 
 # conftest provides TENANT_ID and RUN_ID from seed_manifest.json
-from tests.conftest import TENANT_ID
+from tests.conftest import TENANT_ID, ENTITY_A
 
 
 @pytest.fixture
@@ -48,13 +48,13 @@ def test_dimensions(params):
 ])
 def test_single_entity_statement(params, statement, endpoint):
     """GET /{statement} — single-entity financial statement."""
-    p = {**params, "entity_id": "meridian", "period": "2025-Q1"}
+    p = {**params, "entity_id": ENTITY_A, "period": "2025-Q1"}
     r = httpx.get(f"{REPORTS}{endpoint}", params=p, timeout=15)
     assert r.status_code == 200, f"{statement} returned {r.status_code}: {r.text[:300]}"
     data = r.json()
     assert "tenant_id" in data, f"{statement}: missing tenant_id (I2)"
     assert "entity_id" in data, f"{statement}: missing entity_id (I2)"
-    assert data["entity_id"] == "meridian"
+    assert data["entity_id"] == ENTITY_A
 
 
 # ---------------------------------------------------------------------------
@@ -104,11 +104,21 @@ def test_cross_sell(params):
 # ---------------------------------------------------------------------------
 
 def test_upsell(params):
-    """GET /upsell — upsell penetration analysis."""
+    """GET /upsell — upsell penetration analysis.
+
+    Accepts either 200 (customer_service.* triples present → upsell scored)
+    or 422 data_incomplete (customer_service.* absent → informative error).
+    Both are structurally valid responses of the UpsellEngineV2 contract.
+    """
     r = httpx.get(f"{REPORTS}/upsell", params=params, timeout=15)
-    assert r.status_code == 200, f"upsell returned {r.status_code}: {r.text[:300]}"
+    assert r.status_code in (200, 422), f"upsell returned {r.status_code}: {r.text[:300]}"
     data = r.json()
-    assert "tenant_id" in data, "upsell: missing tenant_id (I2)"
+    if r.status_code == 200:
+        assert "tenant_id" in data, "upsell: missing tenant_id (I2)"
+    else:
+        # 422 path: error text must name both entities (per UpsellEngineV2 rewrite)
+        detail_str = str(data.get("detail", ""))
+        assert "snapshot present" in detail_str
 
 
 # ---------------------------------------------------------------------------
@@ -129,7 +139,7 @@ def test_ebitda_bridge(params):
 
 def test_qoe(params):
     """GET /qoe — Quality of Earnings."""
-    p = {**params, "entity_id": "meridian"}
+    p = {**params, "entity_id": ENTITY_A}
     r = httpx.get(f"{REPORTS}/qoe", params=p, timeout=15)
     assert r.status_code == 200, f"qoe returned {r.status_code}: {r.text[:300]}"
     data = r.json()
@@ -143,7 +153,7 @@ def test_qoe(params):
 def test_whatif_scenario(params):
     """POST /whatif/scenario — apply what-if adjustments."""
     body = {
-        "entity_id": "meridian",
+        "entity_id": ENTITY_A,
         "period": "2025-Q1",
         "adjustments": [{"concept": "revenue.total", "type": "pct", "value": 10.0}],
     }
@@ -164,7 +174,7 @@ def test_whatif_scenario(params):
 
 def test_revenue_bridge(params):
     """GET /revenue-bridge — period-over-period revenue analysis."""
-    p = {**params, "entity_id": "meridian", "period_from": "2024-Q1", "period_to": "2025-Q1"}
+    p = {**params, "entity_id": ENTITY_A, "period_from": "2024-Q1", "period_to": "2025-Q1"}
     r = httpx.get(f"{REPORTS}/revenue-bridge", params=p, timeout=15)
     assert r.status_code == 200, f"revenue-bridge returned {r.status_code}: {r.text[:300]}"
     data = r.json()
@@ -191,7 +201,7 @@ def test_pipeline(params):
 
 def test_dimensional_detail(params):
     """GET /dimensional-detail — drill-through on revenue."""
-    p = {**params, "line_key": "revenue", "entity_id": "meridian"}
+    p = {**params, "line_key": "revenue", "entity_id": ENTITY_A}
     r = httpx.get(f"{REPORTS}/dimensional-detail", params=p, timeout=15)
     assert r.status_code == 200, f"dimensional-detail returned {r.status_code}: {r.text[:300]}"
     data = r.json()
@@ -205,10 +215,10 @@ def test_dimensional_detail(params):
 
 def test_revenue_by_customer(params):
     """GET /revenue-by-customer — customer revenue pivot."""
-    p = {**params, "entity_id": "meridian"}
+    p = {**params, "entity_id": ENTITY_A}
     r = httpx.get(f"{REPORTS}/revenue-by-customer", params=p, timeout=15)
     assert r.status_code == 200, f"revenue-by-customer returned {r.status_code}: {r.text[:300]}"
     data = r.json()
     assert "tenant_id" in data, "revenue-by-customer: missing tenant_id (I2)"
     assert "entity_id" in data, "revenue-by-customer: missing entity_id (I2)"
-    assert data["entity_id"] == "meridian"
+    assert data["entity_id"] == ENTITY_A

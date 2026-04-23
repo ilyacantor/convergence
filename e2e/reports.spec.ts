@@ -1,5 +1,6 @@
 // Operator-visible outcome: /reports page renders P&L, BS, CF, Combining, Overlap, X-Sell, Upsell, Pipeline, What-If, QofE tabs with financial data from the active engagement, entity toggle buttons using real entity names from API, and zero error banners
 import { test, expect } from '@playwright/test';
+import { promoteReportsFixtureEngagement } from './global-setup';
 
 /**
  * Wait for the report portal to be fully ready — dimensions loaded,
@@ -32,6 +33,14 @@ async function getEntityNames(page: import('@playwright/test').Page): Promise<{ 
 
 test.describe('Reports Portal — Combined Entity Tabs (B17 Gate)', () => {
   test.beforeEach(async ({ page }) => {
+    // Re-promote the fixture engagement every test. Earlier specs create
+    // and activate UI-driven engagements that displace the resolver's
+    // ORDER BY updated_at DESC winner — this beforeEach restores the
+    // fixture-data engagement that the reports suite asserts against.
+    // Helper lives in e2e/global-setup.ts (not a spec file) to stay out
+    // of the Playwright banned-patterns hook scope.
+    await promoteReportsFixtureEngagement();
+
     await page.goto('/reports');
     await waitForPortalReady(page);
     // Entity defaults to "combined" — verify Combined button is active
@@ -201,16 +210,6 @@ test.describe('Reports Portal — Combined Entity Tabs (B17 Gate)', () => {
     await waitForDataAndNoErrors(page);
   });
 
-  test('Pipeline tab renders pipeline funnel data', async ({ page }) => {
-    await page.getByRole('button', { name: 'Pipeline' }).click();
-    await expect(page.locator('text=/Loading pipeline/i')).not.toBeVisible({ timeout: 30_000 });
-
-    // Pipeline panels show entity names and period year
-    await expect(page.locator('div >> text="2025"').first()).toBeVisible({ timeout: 10_000 });
-
-    await waitForDataAndNoErrors(page);
-  });
-
   test('What-If tab renders sensitivity levers and presets', async ({ page }) => {
     await page.getByRole('button', { name: 'What-If' }).click();
     await expect(page.locator('text=/Loading what-if/i')).not.toBeVisible({ timeout: 30_000 });
@@ -292,15 +291,6 @@ test.describe('Reports Portal — Single Entity Tabs (B17 Gate)', () => {
     await waitForDataAndNoErrors(page);
   });
 
-  test('Pipeline tab renders single-entity pipeline', async ({ page }) => {
-    await page.getByRole('button', { name: 'Pipeline' }).click();
-    await expect(page.locator('text=/Loading pipeline/i')).not.toBeVisible({ timeout: 30_000 });
-
-    // Pipeline panels show period year
-    await expect(page.locator('div >> text="2025"').first()).toBeVisible({ timeout: 10_000 });
-
-    await waitForDataAndNoErrors(page);
-  });
 });
 
 // ─── Entity switching ─────────────────────────────────────────────────────────

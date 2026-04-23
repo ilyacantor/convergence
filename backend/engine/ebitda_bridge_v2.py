@@ -193,22 +193,49 @@ class EBITDABridgeV2:
             )
 
         # Group by (base_concept, stage) -> {property: value}
+        # Step 4 Validate: every adjustment row must carry a non-NULL period.
+        # A row with NULL/missing period means the upstream writer produced a
+        # malformed triple — fail loud with the full offending triple so the
+        # operator can see exactly what broke.
         stage_data: dict[str, dict[str, dict[str, object]]] = {}
         period_map: dict[str, str | None] = {}
         for row in rows:
             base_concept, stage = _parse_concept(row["concept"])
+            period_val = row.get("period")
+            if period_val is None or (isinstance(period_val, str) and not period_val.strip()):
+                raise ValueError(
+                    "ebitda_adjustment triple rejected by Validate step — "
+                    "missing period. Offending triple: "
+                    f"(entity_id={entity_id!r}, concept={row['concept']!r}, "
+                    f"property={row['property']!r}, lifecycle_stage={stage!r}, "
+                    f"period={period_val!r})"
+                )
             if base_concept not in stage_data:
                 stage_data[base_concept] = {}
             if stage not in stage_data[base_concept]:
                 stage_data[base_concept][stage] = {}
             stage_data[base_concept][stage][row["property"]] = row["value"]
-            if row.get("period"):
-                period_map[base_concept] = row["period"]
+            period_map[base_concept] = period_val
 
         # Build adjustment list — one entry per base concept
         adjustments = []
         for base_concept in sorted(stage_data.keys()):
             stages = stage_data[base_concept]
+
+            # Namespace-type metadata (ebitda_adjustment._meta carrying the
+            # namespace_type property per convergence_transition_master §1)
+            # is not an adjustment — skip it before the lever lookup.
+            if base_concept.endswith("._meta") or base_concept.endswith(".meta"):
+                continue
+
+            # If the concept carries ONLY a namespace_type / schema_version /
+            # other metadata property, treat it as namespace scaffolding and
+            # skip. A real adjustment carries amount_current, confidence, etc.
+            sample_props_all: set[str] = set()
+            for stage_props in stages.values():
+                sample_props_all.update(stage_props.keys())
+            if sample_props_all.issubset({"namespace_type", "schema_version"}):
+                continue
 
             lever = _LEVER_MAP.get(base_concept)
             if lever is None:

@@ -11,10 +11,11 @@ import json
 import time
 import uuid
 from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from typing import Optional
 
 from backend.core.db import get_connection
+from backend.core.entity_id import validate_entity_id
 from backend.db.triple_store import TripleStore
 from backend.registry.concept_registry import ConceptRegistry
 from backend.utils.log_utils import get_logger
@@ -52,6 +53,11 @@ class TriplePayload(BaseModel):
     canonical_id: Optional[str] = None
     resolution_method: Optional[str] = None
     resolution_confidence: Optional[float] = None
+
+    @field_validator("entity_id")
+    @classmethod
+    def _check_entity_id_shape(cls, v: str) -> str:
+        return validate_entity_id(v, field_name="entity_id")
 
 
 class IngestRequest(BaseModel):

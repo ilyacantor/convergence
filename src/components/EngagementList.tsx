@@ -215,7 +215,7 @@ export default function EngagementList() {
                 >
                   <td className="py-3 px-4">
                     <span className="text-white font-medium">
-                      {eng.engagement_short_name || eng.engagement_id.slice(0, 8)}
+                      {eng.engagement_short_name || `${eng.acquirer_entity_id} + ${eng.target_entity_id}`}
                     </span>
                   </td>
                   <td className="py-3 px-4">

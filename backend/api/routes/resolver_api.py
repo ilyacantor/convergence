@@ -180,18 +180,22 @@ async def get_catalog():
     """Entity snapshots available for Convergence engagements.
 
     Each snapshot = one entity_id under one tenant_id in convergence_triples.
-    The pair selector picks two entity_ids as acquirer and target.
+    Only entity_ids matching ENTITY_ID_PATTERN are surfaced — fixture names
+    that sit in the table stay orphaned. Sync from Farm snapshot catalog
+    runs via scripts/sync_entity_catalog.py; catalog reads local DB only.
     """
     from backend.core.db import get_connection
+    from backend.core.entity_id import ENTITY_ID_PATTERN
 
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
                 "SELECT tenant_id, entity_id, COUNT(*) as triple_count "
                 "FROM convergence_triples "
-                "WHERE is_active = true "
+                "WHERE is_active = true AND entity_id ~ %s "
                 "GROUP BY tenant_id, entity_id "
-                "ORDER BY triple_count DESC"
+                "ORDER BY triple_count DESC",
+                (ENTITY_ID_PATTERN,),
             )
             snapshots_raw = [
                 {"tenant_id": str(tid), "entity_id": eid, "triple_count": cnt}
@@ -199,7 +203,14 @@ async def get_catalog():
             ]
 
     if not snapshots_raw:
-        return {"passing_entities": [], "existing_engagements": []}
+        return {
+            "passing_entities": [],
+            "existing_engagements": [],
+            "empty_reason": (
+                "No shape-compliant entities in convergence_triples. "
+                "Run: python scripts/sync_entity_catalog.py"
+            ),
+        }
 
     contract_cache: dict[tuple[str, str], object] = {}
     for snap in snapshots_raw:

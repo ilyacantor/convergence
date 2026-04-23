@@ -14,6 +14,7 @@ interface CatalogEntity {
 interface CatalogResponse {
   passing_entities: CatalogEntity[];
   existing_engagements: { engagement_id: string; acquirer_entity_id: string; target_entity_id: string }[];
+  empty_reason?: string;
 }
 
 const BASE = '/api/convergence';
@@ -153,7 +154,8 @@ export default function PairSelector() {
   }
 
   return (
-    <div className="max-w-[900px] mx-auto p-6 space-y-6">
+    <div className="h-full overflow-y-auto">
+      <div className="max-w-[900px] mx-auto p-6 space-y-6">
       <div className="flex items-center gap-3">
         <button
           onClick={() => navigate('/engagements')}
@@ -173,9 +175,10 @@ export default function PairSelector() {
       {entities.length === 0 && !error ? (
         <div className="bg-amber-950/40 border border-amber-800/50 rounded-lg px-4 py-8 text-center">
           <AlertTriangle className="w-6 h-6 text-amber-400 mx-auto mb-3" />
-          <p className="text-amber-200 text-sm mb-1">No entities pass the contract check.</p>
+          <p className="text-amber-200 text-sm mb-1">No entities available for pair selection.</p>
           <p className="text-amber-400/60 text-xs">
-            Farm must push entities with namespace_type and business_record properties before pair selection is available.
+            {catalog?.empty_reason ||
+              'No shape-compliant entities in convergence_triples. Run: python scripts/sync_entity_catalog.py'}
           </p>
         </div>
       ) : (
@@ -221,7 +224,7 @@ export default function PairSelector() {
           {existingPair && (
             <div className="bg-amber-950/40 border border-amber-800/50 rounded-lg px-4 py-3 flex items-center gap-2 text-amber-200 text-sm">
               <AlertTriangle className="w-4 h-4 flex-shrink-0" />
-              This pair already has an engagement ({existingPair.engagement_id.slice(0, 8)}). You can still create a new one.
+              This pair already has an engagement (<strong>{existingPair.acquirer_entity_id} + {existingPair.target_entity_id}</strong>). You can still create a new one.
             </div>
           )}
 
@@ -247,6 +250,7 @@ export default function PairSelector() {
           </div>
         </>
       )}
+      </div>
     </div>
   );
 }

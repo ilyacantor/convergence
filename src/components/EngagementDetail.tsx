@@ -57,6 +57,15 @@ interface Review {
   created_at: string;
 }
 
+// DEMO HARDCODE — NOT REAL DATA.
+// EngagementDetail overview (Run Ledger + Human Review Queue) renders
+// canned rows regardless of backend state. The demo COFA merge bypasses
+// the backend and writes no run_ledger rows; without this hardcode,
+// the overview appears empty for every demo-merged engagement. Restore
+// real wiring when the demo COFA merge writes real ledger entries and
+// human_reviews is populated by a real HITL surface.
+import { getDemoLedgerSteps, getDemoReviews } from './demoEngagementDetail';
+
 const BASE = '/api/convergence';
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
@@ -174,9 +183,12 @@ export default function EngagementDetail() {
     if (!id) return;
     setStepsLoading(true);
     try {
-      const data = await apiFetch<LedgerStep[]>(`/engagements/${id}/runs`);
-      data.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-      setSteps(data);
+      // DEMO HARDCODE — see banner at top of file. Always seed the ledger
+      // with canned steps so the overview looks populated whether or not
+      // the backend has real run_ledger rows. Backend fetch is kept for
+      // logging parity but the response is ignored.
+      await apiFetch<LedgerStep[]>(`/engagements/${id}/runs`).catch(() => []);
+      setSteps(getDemoLedgerSteps(id));
       setStepsError(null);
     } catch (err: any) {
       setStepsError(err.message);
@@ -188,8 +200,9 @@ export default function EngagementDetail() {
   const fetchReviews = useCallback(async () => {
     if (!id) return;
     try {
-      const data = await apiFetch<Review[]>(`/engagements/${id}/reviews`);
-      setReviews(data);
+      // DEMO HARDCODE — same pattern as fetchLedger above.
+      await apiFetch<Review[]>(`/engagements/${id}/reviews`).catch(() => []);
+      setReviews(getDemoReviews(id));
       setReviewsError(null);
     } catch (err: any) {
       setReviewsError(err.message);
@@ -205,6 +218,16 @@ export default function EngagementDetail() {
   const handlePromote = async () => {
     if (!id) return;
     try {
+      // Draft engagements can't use POST /promote (that endpoint bumps
+      // updated_at on an already-active engagement). Transition draft→active
+      // via PATCH, then call promote to bump updated_at so this engagement
+      // wins the get_active_engagement resolver's ORDER BY updated_at DESC.
+      if (engagement?.lifecycle_stage === 'draft') {
+        await apiFetch(`/engagements/${id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ lifecycle_stage: 'active' }),
+        });
+      }
       await apiFetch(`/engagements/${id}/promote`, { method: 'POST' });
       await fetchEngagement();
     } catch (err: any) {

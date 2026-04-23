@@ -3,7 +3,7 @@ Engagement configuration loader.
 
 Provides entity-agnostic access to engagement parameters. Every engine reads
 entity names, file paths, and column keys from this config rather than
-hardcoding "meridian" / "cascadia".
+hardcoding specific entity_ids.
 
 Default engagement: data/engagements/demo-001.json
 Override via ENGAGEMENT_CONFIG env var or by calling load_engagement() with a path.

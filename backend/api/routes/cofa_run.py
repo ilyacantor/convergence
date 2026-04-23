@@ -131,36 +131,58 @@ def _get_consumed_dcl_ingest_ids(entity_ids: list[str]) -> list[str]:
 
 
 _POLICIES_DIR = Path(__file__).resolve().parent.parent.parent / "policies"
+_GENERIC_POLICY_PATH = _POLICIES_DIR / "_generic_policy.md"
 
 
-def _load_accounting_policies(entity_id: str) -> str:
-    """Load per-entity accounting policies from local Markdown files.
+def _load_accounting_policies(entity_id: str) -> tuple[str, str]:
+    """Load per-entity accounting policies.
 
-    Convergence owns entity policies (RACI: Convergence). Files live at
-    backend/policies/{entity_id}_policy.md. Raises HTTPException 422 if
-    the file is missing or empty — no silent fallback.
+    Returns (policy_text, policy_source) where policy_source is either
+    "entity" (backend/policies/{entity_id}_policy.md was present) or
+    "generic" (fell back to _generic_policy.md). The generic path emits
+    a WARN log so the fallback never goes silent — see deferred entry
+    for industry verticalization.
+
+    WIP: the previous behavior was a hard 422 reject on missing
+    entity-specific policy. That branch is commented in place below
+    until Farm WP2 emits accounting_policy triples per entity and
+    Convergence reads policy from the triple store instead of the
+    filesystem (convergence_deferred_work.md, industry verticalization).
     """
     policy_path = _POLICIES_DIR / f"{entity_id}_policy.md"
-    if not policy_path.is_file():
+    if policy_path.is_file():
+        text = policy_path.read_text(encoding="utf-8").strip()
+        if text:
+            return text, "entity"
+    # WIP: hard-reject branch kept for reference — restore when
+    # industry-specific policies ship (see deferred-work entry 25).
+    # if not policy_path.is_file():
+    #     raise HTTPException(422, detail=f"No accounting policy file for entity_id='{entity_id}'")
+
+    if not _GENERIC_POLICY_PATH.is_file():
         raise HTTPException(
-            status_code=422,
+            status_code=503,
             detail=(
-                f"No accounting policy file for entity_id='{entity_id}' "
-                f"(expected {policy_path}). Add "
-                f"backend/policies/{entity_id}_policy.md before running "
-                f"COFA merge."
+                "Generic policy fallback missing — neither "
+                f"{policy_path.name} nor _generic_policy.md exists under "
+                f"{_POLICIES_DIR}. COFA merge aborted."
             ),
         )
-    text = policy_path.read_text(encoding="utf-8").strip()
+    text = _GENERIC_POLICY_PATH.read_text(encoding="utf-8").strip()
     if not text:
         raise HTTPException(
-            status_code=422,
+            status_code=503,
             detail=(
-                f"Accounting policy file for entity_id='{entity_id}' is "
-                f"empty ({policy_path}). COFA merge aborted."
+                "Generic policy fallback is empty "
+                f"({_GENERIC_POLICY_PATH}). COFA merge aborted."
             ),
         )
-    return text
+    logger.warning(
+        "[cofa_merge] Generic policy in use for entity_id=%s. "
+        "Industry verticalization pending. See convergence_deferred_work.md.",
+        entity_id,
+    )
+    return text, "generic"
 
 
 def _orphan_detail(report: dict, acquirer_id: str, target_id: str) -> str:
@@ -244,8 +266,8 @@ async def run_cofa_merge(req: COFARunRequest):
     update_run_step(step_id, "running")
 
     try:
-        acquirer_policies = _load_accounting_policies(acquirer_id)
-        target_policies = _load_accounting_policies(target_id)
+        acquirer_policies, acquirer_policy_source = _load_accounting_policies(acquirer_id)
+        target_policies, target_policy_source = _load_accounting_policies(target_id)
     except HTTPException as exc:
         update_run_step(step_id, "failed", error=str(exc.detail))
         raise
@@ -337,6 +359,10 @@ async def run_cofa_merge(req: COFARunRequest):
             "acquirer_total": completeness["acquirer_total"],
             "target_mapped": completeness["target_mapped"],
             "target_total": completeness["target_total"],
+        },
+        "policy_sources": {
+            acquirer_id: acquirer_policy_source,
+            target_id: target_policy_source,
         },
     }
     if req.pipeline_run_id:

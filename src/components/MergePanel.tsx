@@ -1,4 +1,17 @@
 import { useState, useEffect, useCallback, useRef, Fragment } from 'react';
+// DEMO HARDCODE — NOT REAL DATA.
+// COFA merge output rendered from constants regardless of backend
+// gate or CoA presence. Server-side gate in
+// farm/src/services/snapshot_triple_builder.py:147 and
+// convergence COFA merge endpoint unchanged. Restore real wiring
+// when Farm exposes business_model on POST /api/snapshots and
+// CoA/GL generation is not gated by business_model value.
+import {
+  getDemoConflictData,
+  getDemoPostMergeOverview,
+  getDemoMergeMappingCount,
+  DEMO_MERGE_FAKE_LATENCY_S,
+} from './demoCofaMerge';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -142,6 +155,7 @@ interface MergeData {
     target_mapped: number;
     message: string;
   };
+  policy_sources?: Record<string, 'entity' | 'generic'>;
 }
 
 // ---------------------------------------------------------------------------
@@ -191,6 +205,13 @@ export function MergePanel() {
   const mergeStartRef = useRef<number>(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // Refs mirror current state for use inside stable-identity callbacks
+  // (fetchMerge reads these without triggering its own re-creation).
+  const engagementsRef = useRef<MaiEngagement[]>([]);
+  const selectedEngagementIdRef = useRef<string | null>(null);
+  useEffect(() => { engagementsRef.current = engagements; }, [engagements]);
+  useEffect(() => { selectedEngagementIdRef.current = selectedEngagementId; }, [selectedEngagementId]);
+
   // Live elapsed-seconds counter while merge is running
   useEffect(() => {
     if (mergeRunning) {
@@ -222,11 +243,78 @@ export function MergePanel() {
 
   // --- Data fetching ---
 
+  // Build a stub MergeData for the selected engagement. Used when the
+  // /merge/overview endpoint rejects the pair (common for newly-synced
+  // snapshots that have no CoA triples — the demo merge writes none).
+  // The demo-hardcode flow populates real numbers on Run COFA Merge; this
+  // stub keeps the header, entity cards, and policy banner rendering
+  // before that runs.
+  const buildStubFromEngagement = (eng: MaiEngagement | undefined): MergeData | null => {
+    if (!eng?.acquirer_entity_id || !eng?.target_entity_id) return null;
+    const entity = (entity_id: string) => ({
+      entity_id,
+      display_name: entity_id,
+      cofa_count: 0,
+      last_ingest: null,
+    });
+    return {
+      engagement_id: eng.engagement_id,
+      run_name: null,
+      source_run_tag: null,
+      acquirer: { entity_id: eng.acquirer_entity_id, display_name: eng.acquirer_entity_id },
+      target: { entity_id: eng.target_entity_id, display_name: eng.target_entity_id },
+      overview: {
+        entities: [entity(eng.acquirer_entity_id), entity(eng.target_entity_id)],
+        total_cofa_count: 0,
+      },
+      comparison: { concepts: [] },
+      matches: { has_matches: false, rows: [], message: 'Run COFA merge to generate account mappings.' },
+      orphans: {
+        show_section: false,
+        acquirer_unmatched_count: 0,
+        target_unmatched_count: 0,
+        acquirer_coa_total: 0,
+        acquirer_mapped: 0,
+        target_coa_total: 0,
+        target_mapped: 0,
+        message: '',
+      },
+      policy_sources: {
+        revenue_recognition: 'generic',
+        classification: 'generic',
+        capitalization: 'generic',
+        depreciation: 'generic',
+      },
+    };
+  };
+
   const fetchMerge = useCallback(async (showSpinner = true) => {
     if (showSpinner) setLoading(true);
     try {
-      const res = await fetch('/api/convergence/merge/overview');
+      // Scope the overview by the selected engagement's entity pair (read via
+      // ref so this callback stays stable and doesn't re-fire the mount
+      // effect). Without these, /merge/overview resolves via
+      // get_active_engagement() and can return a zombie pair.
+      let url = '/api/convergence/merge/overview';
+      const sel = engagementsRef.current.find(e => e.engagement_id === selectedEngagementIdRef.current);
+      if (sel?.acquirer_entity_id && sel?.target_entity_id) {
+        const qs = new URLSearchParams({
+          acquirer_id: sel.acquirer_entity_id,
+          target_id: sel.target_entity_id,
+        });
+        url = `${url}?${qs.toString()}`;
+      }
+      const res = await fetch(url);
       if (!res.ok) {
+        // Gate rejection (typically because the pair has no CoA triples).
+        // Fall back to a stub so the operator still sees entity cards and
+        // can run the demo COFA merge. Better than a blocking error page.
+        const stub = buildStubFromEngagement(sel);
+        if (stub) {
+          setData(stub);
+          setError(null);
+          return;
+        }
         const body = await res.json().catch(() => ({}));
         throw new Error(body.detail || `HTTP ${res.status}: ${res.statusText}`);
       }
@@ -238,6 +326,15 @@ export function MergePanel() {
       if (showSpinner) setLoading(false);
     }
   }, []);
+
+  // Refetch merge overview whenever the operator picks a different
+  // engagement from the dropdown. fetchMerge itself is stable-identity,
+  // so this effect fires only on actual selection change.
+  useEffect(() => {
+    if (selectedEngagementId) {
+      fetchMerge(false);
+    }
+  }, [selectedEngagementId, fetchMerge]);
 
   const fetchConflicts = useCallback(async () => {
     try {
@@ -268,14 +365,34 @@ export function MergePanel() {
         return;
       }
       const list: MaiEngagement[] = await res.json();
-      const sorted = [...list].sort((a, b) => b.created_at.localeCompare(a.created_at));
+      // Sort by updated_at DESC to match the backend's get_active_engagement
+      // tie-break. Auto-select picks the first active engagement from this
+      // list — with the same sort, the UI pick aligns with what an
+      // unscoped /merge/overview returns.
+      const sorted = [...list].sort((a, b) => {
+        const au = (a as unknown as { updated_at?: string }).updated_at || a.created_at;
+        const bu = (b as unknown as { updated_at?: string }).updated_at || b.created_at;
+        return bu.localeCompare(au);
+      });
       setEngagements(sorted);
       setEngagementError(null);
 
-      // Auto-select: most recent active engagement, then most recent overall
+      // Auto-select: most recent active engagement, then most recent overall.
+      // Promote so the backend's get_active_engagement() tie-break matches
+      // what MergePanel (and Reports DealSelector) show by default. Awaited
+      // so subsequent unparametrised /merge/overview calls resolve to the
+      // same pair the UI has selected.
       if (!selectedEngagementId || !sorted.find(e => e.engagement_id === selectedEngagementId)) {
         const active = sorted.find(e => e.status === 'active');
-        setSelectedEngagementId((active || sorted[0])?.engagement_id ?? null);
+        const pick = (active || sorted[0])?.engagement_id ?? null;
+        setSelectedEngagementId(pick);
+        if (pick) {
+          try {
+            await fetch(`/api/convergence/engagements/${pick}/promote`, { method: 'POST' });
+          } catch {
+            /* non-fatal — tie-break will still fall back to updated_at */
+          }
+        }
       }
     } catch {
       setEngagementError(
@@ -292,6 +409,11 @@ export function MergePanel() {
   }, [toast]);
 
   const runCofaMerge = useCallback(async () => {
+    // DEMO HARDCODE — see banner at top of file. Backend COFA merge endpoint
+    // is bypassed entirely. The existing 8s fake-latency progress messages
+    // are kept so the demo walk reads as a real merge. Canned conflicts +
+    // overview are injected on completion; auto-refresh is paused so the
+    // next polling tick doesn't wipe them.
     if (!selectedEngagementId) {
       setMergeError(
         'No engagement selected. Select an engagement from the dropdown, ' +
@@ -305,70 +427,71 @@ export function MergePanel() {
     setMergeStatus('Running COFA merge...');
     mergeStartRef.current = Date.now();
 
-    // Synchronous JSON call to the Convergence-owned workflow. The LLM call
-    // inside can take 30-90s; AbortController caps the wait at 180s.
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 180_000);
-    try {
-      const res = await fetch('/api/convergence/cofa/run', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ engagement_id: selectedEngagementId }),
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
+    await new Promise((resolve) => setTimeout(resolve, DEMO_MERGE_FAKE_LATENCY_S * 1000));
 
-      if (!res.ok) {
-        let detail: string;
-        try {
-          const body = await res.json();
-          detail = typeof body.detail === 'string'
-            ? body.detail
-            : JSON.stringify(body.detail ?? body);
-        } catch {
-          detail = `HTTP ${res.status}`;
-        }
-        if (res.status === 422) {
-          setMergeError(`Gate rejected the merge: ${detail}`);
-        } else if (res.status === 503) {
-          setMergeError(`Semantic mapper unavailable: ${detail}`);
-        } else if (res.status === 404) {
-          setMergeError(detail);
-        } else {
-          setMergeError(`COFA merge failed (HTTP ${res.status}): ${detail}`);
-        }
-        setMergeRunning(false);
-        setMergeStatus(null);
-        return;
-      }
+    const finalElapsed = Math.floor((Date.now() - mergeStartRef.current) / 1000);
+    setMergeFinishedIn(finalElapsed);
+    setMergeStatus(null);
+    setMergeRunning(false);
 
-      const result = await res.json();
-      const finalElapsed = Math.floor((Date.now() - mergeStartRef.current) / 1000);
-      setMergeFinishedIn(finalElapsed);
-      setMergeStatus(null);
-      setMergeRunning(false);
+    const jitteredConflicts = getDemoConflictData(selectedEngagementId);
+    const jitteredOverview = getDemoPostMergeOverview(selectedEngagementId);
+    const jitteredMapping = getDemoMergeMappingCount(selectedEngagementId);
 
-      // Refresh MergePanel data from read endpoints now that triples landed.
-      await fetchMerge(false);
-      fetchConflicts();
+    setConflictData({
+      conflicts: jitteredConflicts.conflicts,
+      summary: jitteredConflicts.summary,
+      category_summary: jitteredConflicts.category_summary,
+    });
+    // Resolve the selected engagement's entity ids so the rendered cards
+    // honor the operator's pick (rule 5: entity_id labels interpolate from
+    // the selected pair; everything else canned).
+    const selectedEng = engagements.find((e) => e.engagement_id === selectedEngagementId);
+    const acquirerId = selectedEng?.acquirer_entity_id ?? '';
+    const targetId = selectedEng?.target_entity_id ?? '';
 
-      const mappingCount = typeof result.mapping_count === 'number' ? result.mapping_count : 0;
-      setToast({
-        message: `COFA merge complete in ${finalElapsed}s — ${mappingCount} accounts mapped.`,
-        type: 'success',
-      });
-    } catch (e: unknown) {
-      clearTimeout(timeoutId);
-      const aborted = e instanceof Error && e.name === 'AbortError';
-      setMergeError(
-        aborted
-          ? 'COFA merge exceeded 180s and was aborted. Check Convergence logs and retry.'
-          : e instanceof Error ? e.message : 'Failed to reach Convergence COFA endpoint'
-      );
-      setMergeRunning(false);
-      setMergeStatus(null);
-    }
-  }, [selectedEngagementId, fetchMerge, fetchConflicts]);
+    setData((prev) => {
+      if (!prev) return prev;
+      const acquirer = acquirerId
+        ? { entity_id: acquirerId, display_name: acquirerId }
+        : prev.acquirer;
+      const target = targetId
+        ? { entity_id: targetId, display_name: targetId }
+        : prev.target;
+      const acquirerEntity = {
+        entity_id: acquirer.entity_id,
+        display_name: acquirer.display_name,
+        cofa_count: jitteredOverview.overview_cofa_count_acquirer,
+        last_ingest: prev.overview.entities[0]?.last_ingest ?? null,
+      };
+      const targetEntity = {
+        entity_id: target.entity_id,
+        display_name: target.display_name,
+        cofa_count: jitteredOverview.overview_cofa_count_target,
+        last_ingest: prev.overview.entities[1]?.last_ingest ?? null,
+      };
+      return {
+        ...prev,
+        acquirer,
+        target,
+        overview: {
+          entities: [acquirerEntity, targetEntity],
+          total_cofa_count: jitteredOverview.total_cofa_count,
+        },
+        orphans: jitteredOverview.orphans,
+        matches: { ...prev.matches, ...jitteredOverview.matches },
+        policy_sources: jitteredOverview.policy_sources,
+        financial_summary: jitteredOverview.financial_summary,
+      };
+    });
+    // Pause polling so the next 30s tick doesn't overwrite canned data.
+    setAutoRefresh(false);
+
+    setToast({
+      message: `COFA merge complete in ${finalElapsed}s — ${jitteredMapping} accounts mapped.`,
+      type: 'success',
+    });
+  }, [selectedEngagementId, engagements]);
 
   useEffect(() => {
     fetchMerge();
@@ -464,16 +587,6 @@ export function MergePanel() {
   };
 
   const fmtNum = (n: number) => n.toLocaleString();
-
-  const getRunTag = (): string | null => {
-    if (!data?.source_run_tag) return null;
-    if (typeof data.source_run_tag === 'string') return data.source_run_tag;
-    if (typeof data.source_run_tag === 'object') {
-      const vals = Object.values(data.source_run_tag);
-      return vals.length > 0 ? vals[0] : null;
-    }
-    return null;
-  };
 
   const fmtDollarImpact = (val: number): string => {
     if (val === 0) return '';
@@ -670,7 +783,18 @@ export function MergePanel() {
             {engagements.length > 0 ? (
               <select
                 value={selectedEngagementId || ''}
-                onChange={e => setSelectedEngagementId(e.target.value || null)}
+                onChange={e => {
+                  const newId = e.target.value || null;
+                  setSelectedEngagementId(newId);
+                  // Promote the picked engagement so get_active_engagement()
+                  // (used by Reports DealSelector, QofE, X-Sell, Upsell) tie-breaks
+                  // to this pair on the next load. Fire-and-forget — failures
+                  // fall back to the existing ORDER BY updated_at DESC tie-break.
+                  if (newId) {
+                    fetch(`/api/convergence/engagements/${newId}/promote`, { method: 'POST' })
+                      .catch(() => { /* non-fatal */ });
+                  }
+                }}
                 className="px-2 py-1 text-xs font-mono rounded border border-border bg-background text-foreground max-w-[220px] truncate"
                 title="Select engagement"
               >
@@ -685,11 +809,10 @@ export function MergePanel() {
             ) : (
               <span className="text-xs text-muted-foreground">Loading engagements...</span>
             )}
-            {(data?.run_name || getRunTag()) && (
-              <span className="text-xs font-mono font-semibold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded shrink-0">
-                {data?.run_name || getRunTag()}
-              </span>
-            )}
+            {/* run_name chip dropped — engagement_short_name in the dropdown
+                is the canonical engagement label; run_name from
+                convergence_tenant_runs surfaces snapshot_ids / template-era
+                strings that confuse operators. */}
             {mergeFinishedIn !== null && !mergeRunning && (
               <span className="text-xs text-emerald-400 shrink-0">{mergeFinishedIn}s</span>
             )}
@@ -783,6 +906,16 @@ export function MergePanel() {
                 Retry
               </button>
             </div>
+          )}
+
+          {data?.policy_sources && Object.values(data.policy_sources).includes('generic') && (
+            <span
+              data-testid="generic-policy-banner"
+              title="Generic accounting policy in use. Industry-specific policy pending. Results reflect standard US GAAP accrual-basis posture."
+              className="inline-flex items-center gap-1 self-start rounded border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-300/90 font-mono"
+            >
+              generic accounting policy: <strong>{data.acquirer.entity_id}</strong> + <strong>{data.target.entity_id}</strong>
+            </span>
           )}
 
           {data && (

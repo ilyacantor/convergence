@@ -12,8 +12,9 @@ from uuid import UUID
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
+from backend.core.entity_id import validate_entity_id
 from backend.db import engagement_store
 from backend.db.triple_store import TripleStore
 from backend.engine.contract_check import check_aos_contract, check_entity_contract
@@ -44,6 +45,13 @@ class CreateEngagementRequest(BaseModel):
     engagement_id: str | None = None
     config: dict | None = None
     created_by: str | None = None
+
+    @field_validator("acquirer_entity_id", "target_entity_id")
+    @classmethod
+    def _check_entity_id_shape(cls, v: str | None, info) -> str | None:
+        if v is None:
+            return v
+        return validate_entity_id(v, field_name=info.field_name)
 
 
 class UpdateEngagementRequest(BaseModel):

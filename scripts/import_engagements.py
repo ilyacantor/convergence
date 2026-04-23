@@ -40,19 +40,23 @@ if not DATABASE_URL:
 # AOS_TENANT_ID is the canonical tenant for this deployment
 TENANT_ID = os.environ.get("AOS_TENANT_ID")
 
-# Entity metadata from demo-001.json (the file-based config being replaced).
-# This populates the state JSONB with entity display names, business models,
-# source systems, deal parameters, and synergy targets.
-ENTITY_METADATA = {
-    "deal_name": "Meridian-Cascadia Integration",
-    "entity_a_name": "Meridian",
-    "entity_b_name": "Cascadia",
-    "entity_a_business_model": "consultancy",
-    "entity_b_business_model": "bpm",
-    "entity_a_source_systems": {"crm": "salesforce_crm", "erp": "sap_erp", "hcm": "workday_hcm"},
-    "entity_b_source_systems": {"crm": "oracle_erp", "erp": "oracle_erp", "hcm": "bamboohr_hcm"},
-    "deal_parameters": {"deal_value_M": 3200.0, "close_date": "2026-06-30", "integration_timeline_months": 18},
-    "synergy_targets": {"cost_synergies_target_M": 200.0, "revenue_synergies_target_M": 50.0},
+# Entity metadata placeholder. The fixture-era demo values (entity names,
+# source systems, deal parameters) were removed in feature/entity-id-freely-selectable.
+# This migration script is transitional — engagements are now created via the
+# PairSelector UI against the synced catalog, not by replaying demo-001.json.
+# If the script is invoked for a legacy import, the resolved engagement row
+# carries entity_ids from the source record itself; display names come from
+# the catalog endpoint. See convergence_deferred_work.md entry 10.
+ENTITY_METADATA: dict = {
+    "deal_name": "",
+    "entity_a_name": "",
+    "entity_b_name": "",
+    "entity_a_business_model": "",
+    "entity_b_business_model": "",
+    "entity_a_source_systems": {},
+    "entity_b_source_systems": {},
+    "deal_parameters": {},
+    "synergy_targets": {},
 }
 
 
