@@ -239,7 +239,19 @@ export function MergePanel() {
   const fetchMerge = useCallback(async (showSpinner = true) => {
     if (showSpinner) setLoading(true);
     try {
-      const res = await fetch('/api/convergence/merge/overview');
+      // Scope the overview by the selected engagement's entity pair so the
+      // render matches the dropdown pick. Without these, /merge/overview
+      // resolves via get_active_engagement() and can return a zombie pair.
+      let url = '/api/convergence/merge/overview';
+      const sel = engagements.find(e => e.engagement_id === selectedEngagementId);
+      if (sel?.acquirer_entity_id && sel?.target_entity_id) {
+        const qs = new URLSearchParams({
+          acquirer_id: sel.acquirer_entity_id,
+          target_id: sel.target_entity_id,
+        });
+        url = `${url}?${qs.toString()}`;
+      }
+      const res = await fetch(url);
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.detail || `HTTP ${res.status}: ${res.statusText}`);
@@ -251,7 +263,7 @@ export function MergePanel() {
     } finally {
       if (showSpinner) setLoading(false);
     }
-  }, []);
+  }, [engagements, selectedEngagementId]);
 
   const fetchConflicts = useCallback(async () => {
     try {
@@ -485,16 +497,6 @@ export function MergePanel() {
 
   const fmtNum = (n: number) => n.toLocaleString();
 
-  const getRunTag = (): string | null => {
-    if (!data?.source_run_tag) return null;
-    if (typeof data.source_run_tag === 'string') return data.source_run_tag;
-    if (typeof data.source_run_tag === 'object') {
-      const vals = Object.values(data.source_run_tag);
-      return vals.length > 0 ? vals[0] : null;
-    }
-    return null;
-  };
-
   const fmtDollarImpact = (val: number): string => {
     if (val === 0) return '';
     const abs = Math.abs(val);
@@ -690,7 +692,18 @@ export function MergePanel() {
             {engagements.length > 0 ? (
               <select
                 value={selectedEngagementId || ''}
-                onChange={e => setSelectedEngagementId(e.target.value || null)}
+                onChange={e => {
+                  const newId = e.target.value || null;
+                  setSelectedEngagementId(newId);
+                  // Promote the picked engagement so get_active_engagement()
+                  // (used by Reports DealSelector, QofE, X-Sell, Upsell) tie-breaks
+                  // to this pair on the next load. Fire-and-forget — failures
+                  // fall back to the existing ORDER BY updated_at DESC tie-break.
+                  if (newId) {
+                    fetch(`/api/convergence/engagements/${newId}/promote`, { method: 'POST' })
+                      .catch(() => { /* non-fatal */ });
+                  }
+                }}
                 className="px-2 py-1 text-xs font-mono rounded border border-border bg-background text-foreground max-w-[220px] truncate"
                 title="Select engagement"
               >
@@ -705,11 +718,10 @@ export function MergePanel() {
             ) : (
               <span className="text-xs text-muted-foreground">Loading engagements...</span>
             )}
-            {(data?.run_name || getRunTag()) && (
-              <span className="text-xs font-mono font-semibold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded shrink-0">
-                {data?.run_name || getRunTag()}
-              </span>
-            )}
+            {/* run_name chip dropped — engagement_short_name in the dropdown
+                is the canonical engagement label; run_name from
+                convergence_tenant_runs surfaces snapshot_ids / template-era
+                strings that confuse operators. */}
             {mergeFinishedIn !== null && !mergeRunning && (
               <span className="text-xs text-emerald-400 shrink-0">{mergeFinishedIn}s</span>
             )}
@@ -806,15 +818,13 @@ export function MergePanel() {
           )}
 
           {data?.policy_sources && Object.values(data.policy_sources).includes('generic') && (
-            <div
+            <span
               data-testid="generic-policy-banner"
-              className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-2.5 text-sm text-amber-200"
+              title={`Generic accounting policy in use for ${data.acquirer.entity_id} and ${data.target.entity_id}. Industry-specific policy pending. Results reflect standard US GAAP accrual-basis posture.`}
+              className="inline-flex items-center gap-1 self-start rounded border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-300/90 font-mono"
             >
-              Generic accounting policy in use for{' '}
-              <strong>{data.acquirer.entity_id}</strong> and{' '}
-              <strong>{data.target.entity_id}</strong>. Industry-specific policy
-              pending. Results reflect standard US GAAP accrual-basis posture.
-            </div>
+              generic policy
+            </span>
           )}
 
           {data && (
