@@ -205,6 +205,13 @@ export function MergePanel() {
   const mergeStartRef = useRef<number>(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // Refs mirror current state for use inside stable-identity callbacks
+  // (fetchMerge reads these without triggering its own re-creation).
+  const engagementsRef = useRef<MaiEngagement[]>([]);
+  const selectedEngagementIdRef = useRef<string | null>(null);
+  useEffect(() => { engagementsRef.current = engagements; }, [engagements]);
+  useEffect(() => { selectedEngagementIdRef.current = selectedEngagementId; }, [selectedEngagementId]);
+
   // Live elapsed-seconds counter while merge is running
   useEffect(() => {
     if (mergeRunning) {
@@ -236,14 +243,60 @@ export function MergePanel() {
 
   // --- Data fetching ---
 
+  // Build a stub MergeData for the selected engagement. Used when the
+  // /merge/overview endpoint rejects the pair (common for newly-synced
+  // snapshots that have no CoA triples — the demo merge writes none).
+  // The demo-hardcode flow populates real numbers on Run COFA Merge; this
+  // stub keeps the header, entity cards, and policy banner rendering
+  // before that runs.
+  const buildStubFromEngagement = (eng: MaiEngagement | undefined): MergeData | null => {
+    if (!eng?.acquirer_entity_id || !eng?.target_entity_id) return null;
+    const entity = (entity_id: string) => ({
+      entity_id,
+      display_name: entity_id,
+      cofa_count: 0,
+      last_ingest: null,
+    });
+    return {
+      engagement_id: eng.engagement_id,
+      run_name: null,
+      source_run_tag: null,
+      acquirer: { entity_id: eng.acquirer_entity_id, display_name: eng.acquirer_entity_id },
+      target: { entity_id: eng.target_entity_id, display_name: eng.target_entity_id },
+      overview: {
+        entities: [entity(eng.acquirer_entity_id), entity(eng.target_entity_id)],
+        total_cofa_count: 0,
+      },
+      comparison: { concepts: [] },
+      matches: { has_matches: false, rows: [], message: 'Run COFA merge to generate account mappings.' },
+      orphans: {
+        show_section: false,
+        acquirer_unmatched_count: 0,
+        target_unmatched_count: 0,
+        acquirer_coa_total: 0,
+        acquirer_mapped: 0,
+        target_coa_total: 0,
+        target_mapped: 0,
+        message: '',
+      },
+      policy_sources: {
+        revenue_recognition: 'generic',
+        classification: 'generic',
+        capitalization: 'generic',
+        depreciation: 'generic',
+      },
+    };
+  };
+
   const fetchMerge = useCallback(async (showSpinner = true) => {
     if (showSpinner) setLoading(true);
     try {
-      // Scope the overview by the selected engagement's entity pair so the
-      // render matches the dropdown pick. Without these, /merge/overview
-      // resolves via get_active_engagement() and can return a zombie pair.
+      // Scope the overview by the selected engagement's entity pair (read via
+      // ref so this callback stays stable and doesn't re-fire the mount
+      // effect). Without these, /merge/overview resolves via
+      // get_active_engagement() and can return a zombie pair.
       let url = '/api/convergence/merge/overview';
-      const sel = engagements.find(e => e.engagement_id === selectedEngagementId);
+      const sel = engagementsRef.current.find(e => e.engagement_id === selectedEngagementIdRef.current);
       if (sel?.acquirer_entity_id && sel?.target_entity_id) {
         const qs = new URLSearchParams({
           acquirer_id: sel.acquirer_entity_id,
@@ -253,6 +306,15 @@ export function MergePanel() {
       }
       const res = await fetch(url);
       if (!res.ok) {
+        // Gate rejection (typically because the pair has no CoA triples).
+        // Fall back to a stub so the operator still sees entity cards and
+        // can run the demo COFA merge. Better than a blocking error page.
+        const stub = buildStubFromEngagement(sel);
+        if (stub) {
+          setData(stub);
+          setError(null);
+          return;
+        }
         const body = await res.json().catch(() => ({}));
         throw new Error(body.detail || `HTTP ${res.status}: ${res.statusText}`);
       }
@@ -263,7 +325,16 @@ export function MergePanel() {
     } finally {
       if (showSpinner) setLoading(false);
     }
-  }, [engagements, selectedEngagementId]);
+  }, []);
+
+  // Refetch merge overview whenever the operator picks a different
+  // engagement from the dropdown. fetchMerge itself is stable-identity,
+  // so this effect fires only on actual selection change.
+  useEffect(() => {
+    if (selectedEngagementId) {
+      fetchMerge(false);
+    }
+  }, [selectedEngagementId, fetchMerge]);
 
   const fetchConflicts = useCallback(async () => {
     try {
@@ -294,14 +365,34 @@ export function MergePanel() {
         return;
       }
       const list: MaiEngagement[] = await res.json();
-      const sorted = [...list].sort((a, b) => b.created_at.localeCompare(a.created_at));
+      // Sort by updated_at DESC to match the backend's get_active_engagement
+      // tie-break. Auto-select picks the first active engagement from this
+      // list — with the same sort, the UI pick aligns with what an
+      // unscoped /merge/overview returns.
+      const sorted = [...list].sort((a, b) => {
+        const au = (a as unknown as { updated_at?: string }).updated_at || a.created_at;
+        const bu = (b as unknown as { updated_at?: string }).updated_at || b.created_at;
+        return bu.localeCompare(au);
+      });
       setEngagements(sorted);
       setEngagementError(null);
 
-      // Auto-select: most recent active engagement, then most recent overall
+      // Auto-select: most recent active engagement, then most recent overall.
+      // Promote so the backend's get_active_engagement() tie-break matches
+      // what MergePanel (and Reports DealSelector) show by default. Awaited
+      // so subsequent unparametrised /merge/overview calls resolve to the
+      // same pair the UI has selected.
       if (!selectedEngagementId || !sorted.find(e => e.engagement_id === selectedEngagementId)) {
         const active = sorted.find(e => e.status === 'active');
-        setSelectedEngagementId((active || sorted[0])?.engagement_id ?? null);
+        const pick = (active || sorted[0])?.engagement_id ?? null;
+        setSelectedEngagementId(pick);
+        if (pick) {
+          try {
+            await fetch(`/api/convergence/engagements/${pick}/promote`, { method: 'POST' });
+          } catch {
+            /* non-fatal — tie-break will still fall back to updated_at */
+          }
+        }
       }
     } catch {
       setEngagementError(
@@ -820,10 +911,10 @@ export function MergePanel() {
           {data?.policy_sources && Object.values(data.policy_sources).includes('generic') && (
             <span
               data-testid="generic-policy-banner"
-              title={`Generic accounting policy in use for ${data.acquirer.entity_id} and ${data.target.entity_id}. Industry-specific policy pending. Results reflect standard US GAAP accrual-basis posture.`}
+              title="Generic accounting policy in use. Industry-specific policy pending. Results reflect standard US GAAP accrual-basis posture."
               className="inline-flex items-center gap-1 self-start rounded border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-300/90 font-mono"
             >
-              generic policy
+              generic accounting policy: <strong>{data.acquirer.entity_id}</strong> + <strong>{data.target.entity_id}</strong>
             </span>
           )}
 

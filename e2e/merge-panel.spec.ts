@@ -18,16 +18,27 @@ test.describe('MergePanel', () => {
     const targetLabel = page.locator('text=Target').first();
     await expect(targetLabel).toBeVisible({ timeout: 5000 });
 
-    const overviewResp = await page.request.get('/api/convergence/merge/overview');
-    const overview = await overviewResp.json();
-    const acqName = overview.acquirer?.display_name;
-    const tgtName = overview.target?.display_name;
-    expect(typeof acqName, 'acquirer display_name missing from overview API').toBe('string');
-    expect(typeof tgtName, 'target display_name missing from overview API').toBe('string');
-    // entity_id may appear multiple times (card header, generic-policy banner,
+    // MergePanel now scopes /merge/overview by the selected engagement's
+    // pair (via acquirer_id/target_id query params). The unscoped
+    // endpoint falls back to alphabetical entities with CoA triples —
+    // which can differ from what the operator selected. Read the pair
+    // from the currently-selected engagement via the engagements list,
+    // not from the unscoped overview call.
+    const engListResp = await page.request.get(
+      '/api/convergence/engagements?tenant_id=69688df3-fc8e-51f8-a77c-9c13f9b3a784',
+    );
+    const engList = await engListResp.json();
+    expect(Array.isArray(engList), 'engagements list missing').toBe(true);
+    expect(engList.length, 'no engagements available').toBeGreaterThan(0);
+    const selEng = engList.find((e: { status: string }) => e.status === 'active') || engList[0];
+    const acqId = selEng.acquirer_entity_id;
+    const tgtId = selEng.target_entity_id;
+    expect(typeof acqId, 'acquirer_entity_id missing').toBe('string');
+    expect(typeof tgtId, 'target_entity_id missing').toBe('string');
+    // Entity name may appear multiple times (card header, policy banner,
     // entity badges). .first() is sufficient to prove the name is rendered.
-    await expect(page.getByText(acqName, { exact: true }).first()).toBeVisible({ timeout: 5000 });
-    await expect(page.getByText(tgtName, { exact: true }).first()).toBeVisible({ timeout: 5000 });
+    await expect(page.getByText(acqId, { exact: true }).first()).toBeVisible({ timeout: 5000 });
+    await expect(page.getByText(tgtId, { exact: true }).first()).toBeVisible({ timeout: 5000 });
   });
 
   test('shows triple counts for both entities', async ({ page }) => {
