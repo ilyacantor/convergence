@@ -114,7 +114,6 @@ export default function PairSelector() {
   const entities = catalog?.passing_entities || [];
 
   const selectedAcquirer = entities.find((e) => e.entity_id === acquirerEid);
-  const selectedTarget = entities.find((e) => e.entity_id === targetEid);
 
   const existingPair = catalog?.existing_engagements.find(
     (e) => e.acquirer_entity_id === acquirerEid && e.target_entity_id === targetEid,
