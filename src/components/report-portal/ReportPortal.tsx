@@ -2668,7 +2668,7 @@ export function ReportPortal({ onClose: _onClose }: { onClose: () => void }) {
         setLoading(false);
       }
     }
-  }, [tab, variant, effectivePeriod, seg, isStatementTab, pyYear, lastFullYear, quarter, cfQuarters, entity, dimensionsError]);
+  }, [tab, variant, effectivePeriod, seg, entity, dimensionsError]);
 
   useEffect(() => {
     if (isStatementTab) {
